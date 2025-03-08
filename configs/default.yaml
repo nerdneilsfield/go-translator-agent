@@ -1,0 +1,98 @@
+source_lang: "English"
+target_lang: "Chinese"
+country: "China"
+default_model_name: "gpt-3.5-turbo"
+active_step_set: "basic"
+max_tokens_per_chunk: 2000
+use_cache: true
+cache_dir: ""
+debug: false
+request_timeout: 300 # 5分钟超时
+
+models:
+  gpt-3.5-turbo:
+    name: "gpt-3.5-turbo"
+    model_id: "gpt-3.5-turbo"
+    api_type: "openai"
+    base_url: ""
+    key: ""
+    max_output_tokens: 4096
+    max_input_tokens: 4096
+    temperature: 0.7
+
+  gpt-4-turbo:
+    name: "gpt-4-turbo"
+    model_id: "gpt-4-turbo"
+    api_type: "openai"
+    base_url: ""
+    key: ""
+    max_output_tokens: 4096
+    max_input_tokens: 8192
+    temperature: 0.7
+
+  claude-3-sonnet:
+    name: "claude-3-sonnet"
+    model_id: "claude-3-sonnet"
+    api_type: "anthropic"
+    base_url: ""
+    key: ""
+    max_output_tokens: 4096
+    max_input_tokens: 8192
+    temperature: 0.7
+
+  claude-3-opus:
+    name: "claude-3-opus"
+    model_id: "claude-3-opus"
+    api_type: "anthropic"
+    base_url: ""
+    key: ""
+    max_output_tokens: 4096
+    max_input_tokens: 8192
+    temperature: 0.7
+
+  mistral-large:
+    name: "mistral-large"
+    model_id: "mistral-large"
+    api_type: "mistral"
+    base_url: ""
+    key: ""
+    max_output_tokens: 4096
+    max_input_tokens: 8192
+    temperature: 0.7
+
+step_sets:
+  basic:
+    id: "basic"
+    name: "基本翻译"
+    description: "基本的三步翻译过程"
+    initial_translation:
+      name: "初始翻译"
+      model_name: "gpt-3.5-turbo"
+      temperature: 0.5
+    reflection:
+      name: "反思"
+      model_name: "gpt-3.5-turbo"
+      temperature: 0.3
+    improvement:
+      name: "改进"
+      model_name: "gpt-3.5-turbo"
+      temperature: 0.5
+    fast_mode_threshold: 300
+
+  quality:
+    id: "quality"
+    name: "高质量翻译"
+    description: "使用高级模型的三步翻译过程"
+    initial_translation:
+      name: "初始翻译"
+      model_name: "gpt-4-turbo"
+      temperature: 0.5
+    reflection:
+      name: "反思"
+      model_name: "claude-3-opus"
+      temperature: 0.3
+    improvement:
+      name: "改进"
+      model_name: "gpt-4-turbo"
+      temperature: 0.5
+    fast_mode_threshold: 300

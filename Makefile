@@ -1,4 +1,4 @@
-projectname?=go-template
+projectname?=go-translator
 
 default: help
 
@@ -8,46 +8,51 @@ help: ## list makefile targets
 
 .PHONY: build
 build: ## build golang binary
-	@go build -ldflags "-X main.version=$(shell git describe --abbrev=0 --tags)" -o $(projectname)
+	@go build -ldflags "-X main.Version=dev -X main.Commit=$(shell git rev-parse --short HEAD 2>/dev/null || echo 'unknown') -X main.BuildDate=$(shell date +%Y-%m-%d)" -o $(projectname) ./cmd/translator
 
 .PHONY: install
 install: ## install golang binary
-	@go install -ldflags "-X main.version=$(shell git describe --abbrev=0 --tags)"
+	@go install -ldflags "-X main.Version=dev -X main.Commit=$(shell git rev-parse --short HEAD 2>/dev/null || echo 'unknown') -X main.BuildDate=$(shell date +%Y-%m-%d)" ./cmd/translator
 
 .PHONY: run
 run: ## run the app
-	@go run -ldflags "-X main.version=$(shell git describe --abbrev=0 --tags)"  main.go
+	@go run -ldflags "-X main.Version=dev -X main.Commit=$(shell git rev-parse --short HEAD 2>/dev/null || echo 'unknown') -X main.BuildDate=$(shell date +%Y-%m-%d)"  ./cmd/translator/main.go
 
 .PHONY: bootstrap
 bootstrap: ## install build deps
 	go generate -tags tools tools/tools.go
+	go mod tidy
 
-PHONY: test
+.PHONY: test
 test: clean ## display test coverage
 	go test --cover -parallel=1 -v -coverprofile=coverage.out ./...
 	go tool cover -func=coverage.out | sort -rnk3
 	
-PHONY: clean
+.PHONY: clean
 clean: ## clean up environment
 	@rm -rf coverage.out dist/ $(projectname)
 
-PHONY: cover
+.PHONY: cover
 cover: ## display test coverage
 	go test -v -race $(shell go list ./... | grep -v /vendor/) -v -coverprofile=coverage.out
 	go tool cover -func=coverage.out
 
-PHONY: fmt
+.PHONY: fmt
 fmt: ## format go files
 	gofumpt -w .
 	gci write .
 
-PHONY: lint
+.PHONY: lint
 lint: ## lint go files
-	golangci-lint run -c .golang-ci.yml
+	golangci-lint run -c .golangci.yml
 
-PHONY: release-test
+.PHONY: release-test
 release-test: ## test release
 	goreleaser release --rm-dist --snapshot --clean --skip-publish
+
+.PHONY: release
+release: ## release new version
+	goreleaser release --clean
 
 # .PHONY: pre-commit
 # pre-commit:	## run pre-commit hooks

@@ -1,125 +1,131 @@
 version: 2
 env:
-  - GO111MODULE=on
-  - CGO_ENABLED=0
+- GO111MODULE=on
+- CGO_ENABLED=0
 
-# before:
-#   hooks:
-#     - ./scripts/manpages.sh
-#     - ./scripts/completions.sh
+before:
+  hooks:
+  - go mod tidy
 
 builds:
-  -
-    binary: go-template
-    ldflags:
-      - -s -w
-      - -X main.version={{ .Version }}
-      - -X main.buildTime={{ .Date }}
-      - -X main.gitCommit={{ .FullCommit }}
-    goos:
-      - linux
-      - darwin
-      - windows
-      - freebsd
-    goarch:
-      - "386"
-      - amd64
-      - arm64
-    overrides:
-      - goos: darwin
-        goarch: amd64
-        ldflags:
-          - -s -w
-        env:
-          - CGO_ENABLED=0
-      - goos: darwin
-        goarch: arm64
-        ldflags:
-          - -s -w
-        env:
-          - CGO_ENABLED=0
-      - goos: linux
-        ldflags:
-          - -s -w -extldflags "-static"
-          - -X main.version={{ .Version }}
-          - -X main.buildTime={{ .Date }}
-          - -X main.gitCommit={{ .FullCommit }}
 
+- id: go-translator
+  binary: go-translator
+  main: ./cmd/translator
+  ldflags:
+  - -s -w
+  - -X main.Version={{ .Version }}
+  - -X main.BuildDate={{ .Date }}
+  - -X main.Commit={{ .ShortCommit }}
+  goos:
+  - linux
+  - darwin
+  - windows
+  - freebsd
+  goarch:
+  - "386"
+  - amd64
+  - arm64
+  overrides:
+  - goos: darwin
+    goarch: amd64
+    ldflags:
+    - -s -w
+    env:
+    - CGO_ENABLED=0
+  - goos: darwin
+    goarch: arm64
+    ldflags:
+    - -s -w
+    env:
+    - CGO_ENABLED=0
+  - goos: linux
+    goarch: amd64
+    ldflags:
+    - -s -w -extldflags "-static"
+    - -X main.Version={{ .Version }}
+    - -X main.BuildDate={{ .Date }}
+    - -X main.Commit={{ .ShortCommit }}
 
 archives:
-  -
-    builds:
-      - go-template
-    format_overrides:
-      - goos: windows
-        format: zip
-    # files:
-    #   - "config_example.toml"
+
+- id: go-translator
+  builds:
+  - go-translator
+  format_overrides:
+  - goos: windows
+    format: zip
+  files:
+  - configs/default.yaml
+  - README.md
+  - LICENSE
 
 release:
   github:
     owner: nerdneilsfield
-    name: go-template
+    name: go-translator-agent
 
 # dockers:
 # - image_templates:
-#   - 'nerdneils/go-template:{{ .Tag }}-amd64'
-#   - 'ghcr.io/nerdneilsfield/go-template:{{ .Tag }}-amd64'
+#   - 'nerdneils/translator:{{ .Tag }}-amd64'
+#   - 'ghcr.io/nerdneilsfield/translator:{{ .Tag }}-amd64'
 #   dockerfile: Dockerfile
 #   use: buildx
 #   build_flag_templates:
 #   - "--pull"
-#   - "--label=io.artifacthub.package.readme-url=https://raw.githubusercontent.com/nerdneilsfield/go-template/master/README.md"
+#   - "--label=io.artifacthub.package.readme-url=https://raw.githubusercontent.com/nerdneilsfield/go-translator-agent/master/README.md"
 #   - "--label=io.artifacthub.package.maintainers=[{\"name\":\"dengqqi\",\"email\":\"dengqqi935@gmail.com\"}]"
 #   - "--label=io.artifacthub.package.license=MIT"
-#   - "--label=org.opencontainers.image.description=A fast and flexible translation gateway that routes requests to various LLM endpoints with configurable rate limiting and model-specific prompts."
+#   - "--label=org.opencontainers.image.description=翻译工具是一个高质量、灵活的多语言翻译系统，采用三步翻译流程来确保翻译质量。"
 #   - "--label=org.opencontainers.image.created={{.Date}}"
 #   - "--label=org.opencontainers.image.name={{.ProjectName}}"
-#   - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+#   - "--label=org.opencontainers.image.revision={{.ShortCommit}}"
 #   - "--label=org.opencontainers.image.version={{.Version}}"
 #   - "--label=org.opencontainers.image.source={{.GitURL}}"
 #   - "--platform=linux/amd64"
+#   goarch: amd64
 #   extra_files:
-#       - "config_example.toml"
+#   - "configs/default.yaml"
+#   - "README.md"
 # - image_templates:
-#   - 'nerdneils/go-template:{{ .Tag }}-arm64'
-#   - 'ghcr.io/nerdneilsfield/go-template:{{ .Tag }}-arm64'
-#   dockerfile:  Dockerfile
+#   - 'nerdneils/translator:{{ .Tag }}-arm64'
+#   - 'ghcr.io/nerdneilsfield/translator:{{ .Tag }}-arm64'
+#   dockerfile: Dockerfile
 #   use: buildx
 #   build_flag_templates:
 #   - "--pull"
-#   - "--label=io.artifacthub.package.readme-url=https://raw.githubusercontent.com/nerdneilsfield/go-template/master/README.md"
-#   # - "--label=io.artifacthub.package.logo-url=https://raw.githubusercontent.com/nerdneilsfield/ghproxy-go/master/www/static/images/logo.png"
+#   - "--label=io.artifacthub.package.readme-url=https://raw.githubusercontent.com/nerdneilsfield/go-translator-agent/master/README.md"
 #   - "--label=io.artifacthub.package.maintainers=[{\"name\":\"dengqqi\",\"email\":\"dengqqi935@gmail.com\"}]"
 #   - "--label=io.artifacthub.package.license=MIT"
-#   - "--label=org.opencontainers.image.description=A fast and flexible translation gateway that routes requests to various LLM endpoints with configurable rate limiting and model-specific prompts."
+#   - "--label=org.opencontainers.image.description=翻译工具是一个高质量、灵活的多语言翻译系统，采用三步翻译流程来确保翻译质量。"
 #   - "--label=org.opencontainers.image.created={{.Date}}"
 #   - "--label=org.opencontainers.image.name={{.ProjectName}}"
-#   - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+#   - "--label=org.opencontainers.image.revision={{.ShortCommit}}"
 #   - "--label=org.opencontainers.image.version={{.Version}}"
 #   - "--label=org.opencontainers.image.source={{.GitURL}}"
 #   - "--platform=linux/arm64"
 #   goarch: arm64
 #   extra_files:
-#       - "config_example.toml"
+#   - "configs/default.yaml"
+#   - "README.md"
 
 # docker_manifests:
-# - name_template: 'nerdneils/go-template:{{ .Tag }}'
+# - name_template: 'nerdneils/translator:{{ .Tag }}'
 #   image_templates:
-#   - 'nerdneils/go-template:{{ .Tag }}-amd64'
-#   - 'nerdneils/go-template:{{ .Tag }}-arm64'
-# - name_template: 'ghcr.io/nerdneilsfield/go-template:{{ .Tag }}'
+#   - 'nerdneils/translator:{{ .Tag }}-amd64'
+#   - 'nerdneils/translator:{{ .Tag }}-arm64'
+# - name_template: 'ghcr.io/nerdneilsfield/translator:{{ .Tag }}'
 #   image_templates:
-#   - 'ghcr.io/nerdneilsfield/go-template:{{ .Tag }}-amd64'
-#   - 'ghcr.io/nerdneilsfield/go-template:{{ .Tag }}-arm64'
-# - name_template: 'nerdneils/go-template:latest'
+#   - 'ghcr.io/nerdneilsfield/translator:{{ .Tag }}-amd64'
+#   - 'ghcr.io/nerdneilsfield/translator:{{ .Tag }}-arm64'
+# - name_template: 'nerdneils/translator:latest'
 #   image_templates:
-#   - 'nerdneils/go-template:{{ .Tag }}-amd64'
-#   - 'nerdneils/go-template:{{ .Tag }}-arm64'
-# - name_template: 'ghcr.io/nerdneilsfield/go-template:latest'
+#   - 'nerdneils/translator:{{ .Tag }}-amd64'
+#   - 'nerdneils/translator:{{ .Tag }}-arm64'
+# - name_template: 'ghcr.io/nerdneilsfield/translator:latest'
 #   image_templates:
-#   - 'ghcr.io/nerdneilsfield/go-template:{{ .Tag }}-amd64'
-#   - 'ghcr.io/nerdneilsfield/go-template:{{ .Tag }}-arm64'
+#   - 'ghcr.io/nerdneilsfield/translator:{{ .Tag }}-amd64'
+#   - 'ghcr.io/nerdneilsfield/translator:{{ .Tag }}-arm64'
 
 checksum:
   name_template: "checksums.txt"
@@ -137,17 +143,17 @@ changelog:
     - Merge branch
     - go mod tidy
   groups:
-    - title: Dependency updates
-      regexp: '^.*?(feat|fix)\(deps\)!?:.+$'
-      order: 300
-    - title: 'New Features'
-      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
-      order: 100
-    - title: 'Bug fixes'
-      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
-      order: 200
-    - title: 'Documentation updates'
-      regexp: ^.*?doc(\([[:word:]]+\))??!?:.+$
-      order: 400
-    - title: Other work
-      order: 9999
+  - title: 依赖更新
+    regexp: '^.*?(feat|fix)\(deps\)!?:.+$'
+    order: 300
+  - title: '新功能'
+    regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+    order: 100
+  - title: '错误修复'
+    regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+    order: 200
+  - title: '文档更新'
+    regexp: ^.*?doc(\([[:word:]]+\))??!?:.+$
+    order: 400
+  - title: 其他工作
+    order: 9999

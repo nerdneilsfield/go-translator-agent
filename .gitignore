@@ -29,3 +29,5 @@ go.work.sum
 .idea/
 dist/
 go-template
+configs/test.yaml
+./translator

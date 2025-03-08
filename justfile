@@ -1,4 +1,4 @@
-projectname := "go-template"
+projectname := "go-translator"
 
 # 列出所有可用的命令
 default:
@@ -6,19 +6,20 @@ default:
 
 # 构建 Golang 二进制文件
 build:
-    go build -ldflags "-X main.version=$(git describe --abbrev=0 --tags)" -o {{projectname}}
+    go build -ldflags "-X main.Version=dev -X main.Commit=$(git rev-parse --short HEAD || echo 'unknown') -X main.BuildDate=$(date +%Y-%m-%d)" -o {{projectname}} ./cmd/translator
 
 # 安装 Golang 二进制文件
 install:
-    go install -ldflags "-X main.version=$(git describe --abbrev=0 --tags)"
+    go install -ldflags "-X main.Version=dev -X main.Commit=$(git rev-parse --short HEAD || echo 'unknown') -X main.BuildDate=$(date +%Y-%m-%d)" ./cmd/translator
 
 # 运行应用程序
-run:
-    go run -ldflags "-X main.version=$(git describe --abbrev=0 --tags)" main.go
+run *args:
+    go run -ldflags "-X main.Version=dev -X main.Commit=$(git rev-parse --short HEAD || echo 'unknown') -X main.BuildDate=$(date +%Y-%m-%d)" ./cmd/translator/main.go {{args}}
 
 # 安装构建依赖
 bootstrap:
     go generate -tags tools tools/tools.go
+    go mod tidy
 
 # 运行测试并显示覆盖率
 test: clean
@@ -41,12 +42,12 @@ fmt:
 
 # 运行 linter
 lint:
-    golangci-lint run -c .golang-ci.yml
+    golangci-lint run -c .golangci.yml
 
 # 测试发布
 release-test:
-    goreleaser release  --snapshot --clean
+    goreleaser release --snapshot --clean
 
-# 运行 pre-commit 钩子（已注释）
-# pre-commit:
-#     pre-commit run --all-files
+# 正式发布
+release:
+    goreleaser release --clean
