@@ -168,7 +168,7 @@ func NewDefaultConfig() *Config {
 		PreserveMath:            false,
 		TranslateFigureCaptions: false,
 		RetryFailedParts:        false,
-		PostProcessMarkdown:     false,
+		PostProcessMarkdown:     true,
 		FixMathFormulas:         false,
 		FixTableFormat:          false,
 		FixMixedContent:         false,

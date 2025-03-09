@@ -62,7 +62,7 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(translationTimeout)*time.Second)
 	defer cancel()
 
-	// 创建通道，用于接收翻译结果
+	// 创建通道，用于接收翻译结果和进度更新
 	resultCh := make(chan struct {
 		text string
 		err  error
@@ -84,6 +84,8 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 	// 创建临时结果变量
 	var partialResult string
 	var lastSaveTime time.Time = time.Now()
+
+	var progress *TranslationProgressTracker
 
 	// 等待翻译完成或超时
 	for {
@@ -132,26 +134,30 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 			return nil
 
 		case <-ticker.C:
-			// 自动保存
-			// 获取当前翻译进度（这里需要一个方法来获取当前进度）
-			if progress, ok := p.Translator.(interface{ GetProgress() string }); ok {
-				partialResult = progress.GetProgress()
+			// 自动保存和进度更新
+			if progress != nil {
+				totalChars, translatedChars, estimatedTimeRemaining := progress.GetProgress()
+				log.Info("翻译进度",
+					zap.Int("总字数", totalChars),
+					zap.Int("已翻译字数", translatedChars),
+					zap.Float64("完成百分比", float64(translatedChars)/float64(totalChars)*100),
+					zap.Float64("预计剩余时间(秒)", estimatedTimeRemaining),
+				)
+			}
 
-				// 如果有部分结果，保存它
-				if partialResult != "" {
-					tempOutputPath := outputPath + ".partial"
-					if err := os.WriteFile(tempOutputPath, []byte(partialResult), 0644); err != nil {
-						log.Error("自动保存失败",
-							zap.String("输出文件", tempOutputPath),
-							zap.Error(err),
-						)
-					} else {
-						log.Info("自动保存成功",
-							zap.String("输出文件", tempOutputPath),
-							zap.Duration("距上次保存", time.Since(lastSaveTime)),
-						)
-						lastSaveTime = time.Now()
-					}
+			if partialResult != "" {
+				tempOutputPath := outputPath + ".partial"
+				if err := os.WriteFile(tempOutputPath, []byte(partialResult), 0644); err != nil {
+					log.Error("自动保存失败",
+						zap.String("输出文件", tempOutputPath),
+						zap.Error(err),
+					)
+				} else {
+					log.Info("自动保存成功",
+						zap.String("输出文件", tempOutputPath),
+						zap.Duration("距上次保存", time.Since(lastSaveTime)),
+					)
+					lastSaveTime = time.Now()
 				}
 			}
 		}
@@ -182,8 +188,8 @@ func (p *TextProcessor) TranslateText(text string) (string, error) {
 		zap.Int("最大分割大小", maxSplitSize),
 	)
 
-	// 按段落分割文本
-	paragraphs := splitTextWithSizeLimit(text, minSplitSize, maxSplitSize)
+	// 按行分割文本，支持不同的换行符
+	paragraphs := splitTextByLines(text, minSplitSize, maxSplitSize)
 
 	log.Info("文本已分割",
 		zap.Int("段落数", len(paragraphs)),
@@ -215,6 +221,13 @@ func (p *TextProcessor) TranslateText(text string) (string, error) {
 		zap.Int("并行度", concurrency),
 	)
 
+	// 初始化进度跟踪
+	var totalChars int
+	for _, idx := range translatableParagraphs {
+		totalChars += len(paragraphs[idx])
+	}
+	progress := NewProgressTracker(totalChars)
+
 	// 如果没有需要翻译的段落，直接返回原文
 	if len(translatableParagraphs) == 0 {
 		return text, nil
@@ -238,6 +251,9 @@ func (p *TextProcessor) TranslateText(text string) (string, error) {
 			if err != nil {
 				return "", fmt.Errorf("翻译段落失败: %w", err)
 			}
+
+			// 更新进度
+			progress.UpdateProgress(len(paragraph))
 
 			// 更新翻译后的段落
 			paragraphs[i] = translated
@@ -267,6 +283,10 @@ func (p *TextProcessor) TranslateText(text string) (string, error) {
 				defer wg.Done()
 				for job := range jobs {
 					translated, err := p.Translator.Translate(job.content)
+					if err == nil {
+						// 更新进度
+						progress.UpdateProgress(len(job.content))
+					}
 					results <- translationResult{
 						index:      job.index,
 						translated: translated,
@@ -308,133 +328,69 @@ func (p *TextProcessor) TranslateText(text string) (string, error) {
 		}
 	}
 
-	// 组合翻译后的段落
-	translatedText := strings.Join(paragraphs, "\n\n")
+	// 组合翻译后的段落，保持原始换行符
+	translatedText := strings.Join(paragraphs, "\n")
+
+	// 获取最终进度信息
+	totalChars, translatedChars, _ := progress.GetProgress()
 
 	log.Info("文本翻译完成",
-		zap.Int("原始长度", len(text)),
-		zap.Int("翻译长度", len(translatedText)),
+		zap.Int("原始总字数", totalChars),
+		zap.Int("已翻译字数", translatedChars),
+		zap.Float64("翻译速度(字/秒)", float64(translatedChars)/time.Since(progress.startTime).Seconds()),
 	)
 
 	return translatedText, nil
 }
 
-// splitTextWithSizeLimit 按段落分割文本，并考虑大小限制
-func splitTextWithSizeLimit(text string, minSize, maxSize int) []string {
-	// 首先按段落分割
-	paragraphs := strings.Split(text, "\n\n")
+// splitTextByLines 按行分割文本，支持不同的换行符
+func splitTextByLines(text string, minSize, maxSize int) []string {
+	// 统一换行符为 \n
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
 
-	// 如果没有设置大小限制，直接返回段落
-	if maxSize <= 0 {
-		return paragraphs
+	// 按换行符分割
+	lines := strings.Split(text, "\n")
+
+	var paragraphs []string
+	var currentParagraph strings.Builder
+
+	for _, line := range lines {
+		// 如果是空行，表示段落结束
+		if strings.TrimSpace(line) == "" {
+			if currentParagraph.Len() > 0 {
+				paragraphs = append(paragraphs, currentParagraph.String())
+				currentParagraph.Reset()
+			}
+			// 保留空行
+			paragraphs = append(paragraphs, "")
+			continue
+		}
+
+		// 如果当前段落加上新行会超过最大大小，且当前段落已达到最小大小
+		if currentParagraph.Len()+len(line)+1 > maxSize && currentParagraph.Len() >= minSize {
+			paragraphs = append(paragraphs, currentParagraph.String())
+			currentParagraph.Reset()
+		}
+
+		// 添加新行到当前段落
+		if currentParagraph.Len() > 0 {
+			currentParagraph.WriteString("\n")
+		}
+		currentParagraph.WriteString(line)
 	}
 
-	var result []string
-
-	for _, paragraph := range paragraphs {
-		// 跳过空段落
-		if strings.TrimSpace(paragraph) == "" {
-			result = append(result, paragraph)
-			continue
-		}
-
-		// 如果段落小于最大大小，直接添加
-		if len(paragraph) <= maxSize {
-			result = append(result, paragraph)
-			continue
-		}
-
-		// 将大段落分割成更小的部分
-		var current strings.Builder
-		sentences := splitIntoSentences(paragraph)
-
-		for _, sentence := range sentences {
-			// 如果单个句子超过最大大小，按最大大小分割
-			if len(sentence) > maxSize {
-				chunks := splitBySize(sentence, maxSize)
-				for _, chunk := range chunks {
-					result = append(result, chunk)
-				}
-				continue
-			}
-
-			// 如果添加当前句子会超过最大大小，先保存当前部分
-			if current.Len()+len(sentence) > maxSize && current.Len() >= minSize {
-				result = append(result, current.String())
-				current.Reset()
-			}
-
-			// 添加句子
-			current.WriteString(sentence)
-		}
-
-		// 添加最后一部分
-		if current.Len() > 0 {
-			result = append(result, current.String())
-		}
+	// 添加最后一个段落
+	if currentParagraph.Len() > 0 {
+		paragraphs = append(paragraphs, currentParagraph.String())
 	}
 
 	// 合并太小的段落
 	if minSize > 0 {
-		result = mergeSmallParagraphs(result, minSize)
+		paragraphs = mergeSmallParagraphs(paragraphs, minSize)
 	}
 
-	return result
-}
-
-// splitIntoSentences 将文本分割成句子
-func splitIntoSentences(text string) []string {
-	// 简单的句子分割，可以根据需要改进
-	sentenceEnders := []string{". ", "! ", "? ", "。", "！", "？", "\n"}
-	var sentences []string
-
-	remaining := text
-	for len(remaining) > 0 {
-		bestIndex := len(remaining)
-
-		for _, ender := range sentenceEnders {
-			index := strings.Index(remaining, ender)
-			if index >= 0 && index < bestIndex {
-				bestIndex = index + len(ender)
-			}
-		}
-
-		if bestIndex < len(remaining) {
-			sentences = append(sentences, remaining[:bestIndex])
-			remaining = remaining[bestIndex:]
-		} else {
-			sentences = append(sentences, remaining)
-			break
-		}
-	}
-
-	return sentences
-}
-
-// splitBySize 按大小分割文本
-func splitBySize(text string, maxSize int) []string {
-	var result []string
-
-	for len(text) > 0 {
-		if len(text) <= maxSize {
-			result = append(result, text)
-			break
-		}
-
-		// 尝试在空格处分割
-		splitIndex := maxSize
-		for i := maxSize; i >= maxSize/2; i-- {
-			if i < len(text) && (text[i] == ' ' || text[i] == '\n') {
-				splitIndex = i + 1
-				break
-			}
-		}
-
-		result = append(result, text[:splitIndex])
-		text = text[splitIndex:]
-	}
-
-	return result
+	return paragraphs
 }
 
 // mergeSmallParagraphs 合并太小的段落
@@ -447,7 +403,7 @@ func mergeSmallParagraphs(paragraphs []string, minSize int) []string {
 	var current string
 
 	for i, paragraph := range paragraphs {
-		// 跳过空段落
+		// 保留空段落
 		if strings.TrimSpace(paragraph) == "" {
 			if current != "" {
 				result = append(result, current)
@@ -465,7 +421,7 @@ func mergeSmallParagraphs(paragraphs []string, minSize int) []string {
 
 		// 如果当前段落太小，合并
 		if len(paragraph) < minSize {
-			current += "\n\n" + paragraph
+			current += "\n" + paragraph
 		} else {
 			// 否则保存当前段落并开始新段落
 			result = append(result, current)
@@ -479,4 +435,109 @@ func mergeSmallParagraphs(paragraphs []string, minSize int) []string {
 	}
 
 	return result
+}
+
+// FormatFile 格式化文本文件
+func (p *TextProcessor) FormatFile(inputPath, outputPath string) error {
+	// 读取输入文件
+	content, err := os.ReadFile(inputPath)
+	if err != nil {
+		return fmt.Errorf("读取文件失败 %s: %w", inputPath, err)
+	}
+
+	log := p.Translator.GetLogger()
+	log.Info("开始格式化文件",
+		zap.String("输入文件", inputPath),
+		zap.String("输出文件", outputPath),
+	)
+
+	// 格式化文本（简单的行处理）
+	lines := strings.Split(string(content), "\n")
+	var formattedLines []string
+	var currentParagraph []string
+
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+		if trimmedLine == "" {
+			// 空行表示段落结束
+			if len(currentParagraph) > 0 {
+				formattedLines = append(formattedLines, strings.Join(currentParagraph, " "))
+				formattedLines = append(formattedLines, "")
+				currentParagraph = nil
+			}
+		} else {
+			currentParagraph = append(currentParagraph, trimmedLine)
+		}
+	}
+
+	// 处理最后一个段落
+	if len(currentParagraph) > 0 {
+		formattedLines = append(formattedLines, strings.Join(currentParagraph, " "))
+	}
+
+	// 写入输出文件
+	formattedText := strings.Join(formattedLines, "\n")
+	if err := os.WriteFile(outputPath, []byte(formattedText), 0644); err != nil {
+		return fmt.Errorf("写入文件失败 %s: %w", outputPath, err)
+	}
+
+	log.Info("格式化完成",
+		zap.String("输出文件", outputPath),
+	)
+
+	return nil
+}
+
+// TextFormattingProcessor 是文本格式化处理器
+type TextFormattingProcessor struct {
+	logger *zap.Logger
+}
+
+// NewTextFormattingProcessor 创建一个新的文本格式化处理器
+func NewTextFormattingProcessor() (*TextFormattingProcessor, error) {
+	zapLogger, _ := zap.NewProduction()
+	return &TextFormattingProcessor{
+		logger: zapLogger,
+	}, nil
+}
+
+// FormatFile 格式化文本文件
+func (p *TextFormattingProcessor) FormatFile(inputPath, outputPath string) error {
+	// 读取输入文件
+	content, err := os.ReadFile(inputPath)
+	if err != nil {
+		return fmt.Errorf("读取文件失败 %s: %w", inputPath, err)
+	}
+
+	// 格式化文本（简单的行处理）
+	lines := strings.Split(string(content), "\n")
+	var formattedLines []string
+	var currentParagraph []string
+
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+		if trimmedLine == "" {
+			// 空行表示段落结束
+			if len(currentParagraph) > 0 {
+				formattedLines = append(formattedLines, strings.Join(currentParagraph, " "))
+				formattedLines = append(formattedLines, "")
+				currentParagraph = nil
+			}
+		} else {
+			currentParagraph = append(currentParagraph, trimmedLine)
+		}
+	}
+
+	// 处理最后一个段落
+	if len(currentParagraph) > 0 {
+		formattedLines = append(formattedLines, strings.Join(currentParagraph, " "))
+	}
+
+	// 写入输出文件
+	formattedText := strings.Join(formattedLines, "\n")
+	if err := os.WriteFile(outputPath, []byte(formattedText), 0644); err != nil {
+		return fmt.Errorf("写入文件失败 %s: %w", outputPath, err)
+	}
+
+	return nil
 }

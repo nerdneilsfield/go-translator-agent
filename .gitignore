@@ -31,3 +31,10 @@ dist/
 go-template
 configs/test.yaml
 ./translator
+go-translator.exe
+go-translator
+releases/
+test/*.exe
+grok.yaml
+formats.md
+formats.xml

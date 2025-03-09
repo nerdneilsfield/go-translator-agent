@@ -18,6 +18,9 @@ type Processor interface {
 
 	// GetName 返回处理器的名称
 	GetName() string
+
+	// FormatFile 格式化文件内容并写入输出文件
+	FormatFile(inputPath, outputPath string) error
 }
 
 // processorRegistry 存储所有注册的格式处理器
@@ -83,6 +86,55 @@ func (p *BaseProcessor) GetName() string {
 	return p.Name
 }
 
+// FormattingProcessor 定义格式化处理器的接口
+type FormattingProcessor interface {
+	// FormatFile 格式化文件内容并写入输出文件
+	FormatFile(inputPath, outputPath string) error
+}
+
+// formattingProcessorRegistry 存储所有注册的格式化处理器
+var formattingProcessorRegistry = make(map[string]func() (FormattingProcessor, error))
+
+// RegisterFormattingProcessor 注册一个格式化处理器
+func RegisterFormattingProcessor(name string, factory func() (FormattingProcessor, error)) {
+	formattingProcessorRegistry[name] = factory
+}
+
+// NewFormattingProcessor 创建指定格式的格式化处理器
+func NewFormattingProcessor(format string) (FormattingProcessor, error) {
+	factory, ok := formattingProcessorRegistry[format]
+	if !ok {
+		return nil, fmt.Errorf("不支持的格式: %s", format)
+	}
+
+	return factory()
+}
+
+// FormattingProcessorFromFilePath 根据文件扩展名选择合适的格式化处理器
+func FormattingProcessorFromFilePath(filePath string) (FormattingProcessor, error) {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	if ext == "" {
+		return nil, fmt.Errorf("无法从文件路径确定格式: %s", filePath)
+	}
+
+	// 移除开头的点
+	ext = ext[1:]
+
+	// 处理特殊格式
+	switch ext {
+	case "md", "markdown":
+		return NewFormattingProcessor("markdown")
+	case "txt":
+		return NewFormattingProcessor("text")
+	case "epub":
+		return NewFormattingProcessor("epub")
+	case "tex":
+		return NewFormattingProcessor("latex")
+	default:
+		return nil, fmt.Errorf("不支持的文件扩展名: %s", ext)
+	}
+}
+
 // 初始化所有内置处理器
 func init() {
 	// 注册文本处理器
@@ -103,5 +155,22 @@ func init() {
 	// 注册LaTeX处理器
 	RegisterProcessor("latex", func(t translator.Translator) (Processor, error) {
 		return NewLaTeXProcessor(t)
+	})
+
+	// 初始化所有内置格式化处理器
+	RegisterFormattingProcessor("text", func() (FormattingProcessor, error) {
+		return NewTextFormattingProcessor()
+	})
+
+	RegisterFormattingProcessor("markdown", func() (FormattingProcessor, error) {
+		return NewMarkdownFormattingProcessor()
+	})
+
+	RegisterFormattingProcessor("epub", func() (FormattingProcessor, error) {
+		return NewEPUBFormattingProcessor()
+	})
+
+	RegisterFormattingProcessor("latex", func() (FormattingProcessor, error) {
+		return NewLaTeXFormattingProcessor()
 	})
 }

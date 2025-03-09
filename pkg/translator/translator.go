@@ -9,6 +9,7 @@ import (
 
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
+	"github.com/schollz/progressbar/v3"
 	"go.uber.org/zap"
 )
 
@@ -20,6 +21,7 @@ type TranslatorImpl struct {
 	activeSteps       *StepSetConfig
 	cache             Cache
 	forceCacheRefresh bool // 强制刷新缓存
+	progressBar       *progressbar.ProgressBar
 
 	// 进度跟踪
 	progressMu     sync.RWMutex
@@ -112,30 +114,8 @@ func New(cfg *config.Config, options ...Option) (*TranslatorImpl, error) {
 		activeSteps:       activeSteps,
 		cache:             opts.cache,
 		forceCacheRefresh: opts.forceCacheRefresh,
+		progressBar:       opts.progressBar,
 	}, nil
-}
-
-// Option 定义翻译器选项
-type Option func(*translatorOptions)
-
-// translatorOptions 包含翻译器选项
-type translatorOptions struct {
-	cache             Cache
-	forceCacheRefresh bool // 强制刷新缓存
-}
-
-// WithCache 设置缓存
-func WithCache(cache Cache) Option {
-	return func(opts *translatorOptions) {
-		opts.cache = cache
-	}
-}
-
-// WithForceCacheRefresh 设置强制刷新缓存
-func WithForceCacheRefresh() Option {
-	return func(opts *translatorOptions) {
-		opts.forceCacheRefresh = true
-	}
 }
 
 // GetLogger 返回日志记录器
@@ -387,14 +367,37 @@ func (t *TranslatorImpl) initialTranslation(text string) (string, error) {
 	}
 
 	// 构建提示词
-	prompt := fmt.Sprintf(`This is an %s to %s translation, please provide the %s translation for this text. 
-Do not provide any explanations or text apart from the translation.
-%s: %s
+	prompt := fmt.Sprintf(`This is an %s to %s translation. The following are the formatting requirements for the translation:
+IMPORTANT FORMATTING REQUIREMENTS:
+1. All original formatting must be preserved exactly:
+   - Keep all Markdown syntax (**, *, #, etc.) exactly as is
+   - DO NOT TRANSLATE ANY CONTENT INSIDE LaTeX formulas ($...$, $$...$$, \(...\), \[...\]) - leave them completely unchanged
+   - Keep all HTML tags (<...>) unchanged
+2. Keep all abbreviations and technical terms in their original form:
+   - Do not translate unknown abbreviations (e.g., FPGA, CPU, NDT)
+   - Keep all code identifiers and variables unchanged
+3. Maintain document structure:
+   - Keep all line breaks and paragraph spacing
+   - Preserve table formatting and alignment
+   - Keep list markers (numbers, bullets) unchanged
+4. DO NOT MODIFY OR TRANSLATE any text between ⚡⚡⚡ symbols (e.g., ⚡⚡⚡UNTRANSLATABLE_0⚡⚡⚡).
+   These are special markers that must remain exactly as they are.
 
-%s:`,
-		t.config.SourceLang, t.config.TargetLang, t.config.TargetLang,
-		t.config.SourceLang, text,
-		t.config.TargetLang)
+DO NOT TRANSLATE THE FORMATTING REQUIREMENTS.
+
+
+THE SOURCE LANGUAGE IS %s.
+
+THE TEXT TO TRANSLATE IS %s.
+
+FOLLOWING IS THE TEXT TO TRANSLATE, DO NOT TRANSLATE THE FORMATTING REQUIREMENTS.  PLEASE PROVIDE THE %s TRANSLATION FOR THIS TEXT, WHICH INCLUDE IN <TEXT TO TRANSLATE> TAG. 
+
+<TEXT TO TRANSLATE>
+%s
+</TEXT TO TRANSLATE>
+`,
+		t.config.SourceLang, t.config.TargetLang, t.config.SourceLang,
+		t.config.TargetLang, t.config.TargetLang, text)
 
 	// 调用语言模型
 	model := t.activeSteps.InitialModel
@@ -441,6 +444,21 @@ func (t *TranslatorImpl) reflection(sourceText, translation string) (string, err
 	prompt := fmt.Sprintf(`Your task is to carefully read a source text and a translation from %s to %s, and then give constructive criticism and helpful suggestions to improve the translation. 
 The final style and tone of the translation should match the style of %s colloquially spoken in %s.
 
+IMPORTANT FORMATTING REQUIREMENTS:
+1. All original formatting must be preserved exactly:
+   - Markdown syntax (**, *, #, etc.)
+   - LaTeX formulas ($...$, $$...$$, \(...\), \[...\])
+   - HTML tags (<...>)
+2. All abbreviations and technical terms must remain unchanged:
+   - Unknown abbreviations should be kept in original form
+   - Code identifiers and variables must be preserved
+3. Document structure must be maintained:
+   - Line breaks and paragraph spacing
+   - Table formatting and alignment
+   - List markers and numbering
+4. DO NOT MODIFY OR TRANSLATE any text between ⚡⚡⚡ symbols (e.g., ⚡⚡⚡UNTRANSLATABLE_0⚡⚡⚡).
+   These are special markers that must remain exactly as they are.
+
 The source text and initial translation, delimited by XML tags <SOURCE_TEXT></SOURCE_TEXT> and <TRANSLATION></TRANSLATION>, are as follows:
 
 <SOURCE_TEXT>
@@ -456,6 +474,7 @@ When writing suggestions, pay attention to whether there are ways to improve the
 (ii) fluency (by applying %s grammar, spelling and punctuation rules, and ensuring there are no unnecessary repetitions),
 (iii) style (by ensuring the translations reflect the style of the source text and take into account any cultural context),
 (iv) terminology (by ensuring terminology use is consistent and reflects the source text domain; and by only ensuring you use equivalent idioms %s).
+(v) formatting (by ensuring the translations reflect the formatting of the source text, including the use of Markdown syntax, LaTeX formulas, and HTML tags and Text formatting).
 
 Write a list of specific, helpful and constructive suggestions for improving the translation.
 Each suggestion should address one specific part of the translation.
@@ -512,6 +531,21 @@ func (t *TranslatorImpl) improvement(sourceText, translation, reflection string)
 	prompt := fmt.Sprintf(`Your task is to carefully read, then edit, a translation from %s to %s, taking into
 account a list of expert suggestions and constructive criticisms.
 
+CRITICAL FORMATTING REQUIREMENTS:
+1. The following elements MUST remain exactly as in the source:
+   - All Markdown formatting (**, *, #, etc.)
+   - All LaTeX formulas ($...$, $$...$$, \(...\), \[...\])
+   - All HTML tags (<...>)
+2. Preserve all technical elements:
+   - Keep unknown abbreviations in original form
+   - Maintain all code identifiers and variables
+   - Preserve all URLs and file paths
+3. Maintain document structure:
+   - Keep all line breaks and spacing
+   - Preserve table formatting
+   - Keep list markers and numbering
+4. DO NOT MODIFY OR TRANSLATE any text between ⚡⚡⚡ symbols (e.g., ⚡⚡⚡UNTRANSLATABLE_0⚡⚡⚡).
+
 The source text, the initial translation, and the expert linguist suggestions are delimited by XML tags <SOURCE_TEXT></SOURCE_TEXT>, <TRANSLATION></TRANSLATION> and <EXPERT_SUGGESTIONS></EXPERT_SUGGESTIONS> as follows:
 
 <SOURCE_TEXT>
@@ -532,7 +566,8 @@ Please take into account the expert suggestions when editing the translation. Ed
 (ii) fluency (by applying %s grammar, spelling and punctuation rules and ensuring there are no unnecessary repetitions),
 (iii) style (by ensuring the translations reflect the style of the source text)
 (iv) terminology (inappropriate for context, inconsistent use), or
-(v) other errors.
+(v) formatting (by ensuring the translations reflect the formatting of the source text, including the use of Markdown syntax, LaTeX formulas, and HTML tags and Text formatting).
+(vi) other errors.
 
 Output only the new translation and nothing else.`,
 		t.config.SourceLang, t.config.TargetLang,
@@ -604,6 +639,11 @@ func (t *TranslatorImpl) updateProgress(text string) {
 
 	t.partialResult = text
 	t.lastUpdateTime = time.Now()
+
+	// 更新进度条
+	if t.progressBar != nil {
+		_ = t.progressBar.Add(len(text))
+	}
 }
 
 // startProgress 开始跟踪翻译进度
@@ -615,6 +655,11 @@ func (t *TranslatorImpl) startProgress(text string) {
 	t.partialResult = ""
 	t.startTime = time.Now()
 	t.lastUpdateTime = time.Now()
+
+	// 重置进度条
+	if t.progressBar != nil {
+		t.progressBar.Reset()
+	}
 }
 
 // endProgress 结束翻译进度跟踪
@@ -624,4 +669,9 @@ func (t *TranslatorImpl) endProgress() {
 
 	t.currentText = ""
 	t.partialResult = ""
+
+	// 完成进度条
+	if t.progressBar != nil {
+		_ = t.progressBar.Finish()
+	}
 }

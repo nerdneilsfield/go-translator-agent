@@ -10,6 +10,7 @@
 - **格式保留**：保持原始文档的格式、结构和特殊元素
 - **灵活缓存**：避免重复翻译，提高效率和一致性
 - **命令行界面**：便于批处理和脚本集成
+- **Markdown后处理**：自动优化翻译后的Markdown格式
 
 ## 安装
 
@@ -41,9 +42,25 @@ max_tokens_per_chunk: 2000
 use_cache: true
 cache_dir: "~/.translator-cache"
 debug: false
+request_timeout: 300 # 5分钟超时
+concurrency: 4 # 并行翻译请求数
+min_split_size: 100 # 最小分割大小（字符数）
+max_split_size: 1000 # 最大分割大小（字符数）
+filter_reasoning: true # 过滤推理过程
+auto_save_interval: 300 # 自动保存间隔（秒）
+translation_timeout: 300 # 翻译超时时间（秒）
+
+# Markdown相关配置
+post_process_markdown: true # 默认开启Markdown后处理
+fix_math_formulas: false # 修复数学公式
+fix_table_format: false # 修复表格格式
+fix_mixed_content: false # 修复混合内容（中英文混合）
+fix_picture: false # 修复图片
 
 models:
-  - model_name: "gpt-3.5-turbo"
+  gpt-3.5-turbo:
+    name: "gpt-3.5-turbo"
+    model_id: "gpt-3.5-turbo"
     api_type: "openai"
     base_url: ""
     key: "YOUR_OPENAI_API_KEY" 
@@ -91,6 +108,18 @@ translator --source English --target Spanish document.md translated_document.md
 translator --step-set quality document.md translated_document.md
 ```
 
+禁用Markdown后处理（默认开启）：
+
+```bash
+translator --no-post-process document.md translated_document.md
+```
+
+仅格式化文件：
+
+```bash
+translator --format-only document.md formatted_document.md
+```
+
 显示帮助：
 
 ```bash
@@ -112,6 +141,10 @@ translator --cache=false document.md translated_document.md
 ## 支持的格式
 
 - Markdown (*.md, *.markdown)
+  - 自动格式化和优化
+  - 保持数学公式格式
+  - 修复表格和图片格式
+  - 优化中英文混排
 - 纯文本 (*.txt)
 - EPUB (*.epub) - 计划支持
 - LaTeX (*.tex) - 计划支持

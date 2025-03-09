@@ -8,6 +8,20 @@ use_cache: true
 cache_dir: ""
 debug: false
 request_timeout: 300 # 5分钟超时
+concurrency: 4 # 并行翻译请求数
+min_split_size: 100 # 最小分割大小（字符数）
+max_split_size: 1000 # 最大分割大小（字符数）
+filter_reasoning: true # 过滤推理过程
+auto_save_interval: 300 # 自动保存间隔（秒）
+translation_timeout: 300 # 翻译超时时间（秒）
+preserve_math: false # 保留数学公式
+translate_figure_captions: false # 翻译图表标题
+retry_failed_parts: false # 重试失败的部分
+post_process_markdown: true # 默认开启Markdown后处理
+fix_math_formulas: false # 修复数学公式
+fix_table_format: false # 修复表格格式
+fix_mixed_content: false # 修复混合内容（中英文混合）
+fix_picture: false # 修复图片
 
 models:
   gpt-3.5-turbo:

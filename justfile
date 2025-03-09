@@ -6,7 +6,11 @@ default:
 
 # 构建 Golang 二进制文件
 build:
-    go build -ldflags "-X main.Version=dev -X main.Commit=$(git rev-parse --short HEAD || echo 'unknown') -X main.BuildDate=$(date +%Y-%m-%d)" -o {{projectname}} ./cmd/translator
+    @if [ "{{os()}}" = "windows" ]; then \
+        go build -ldflags "-X main.Version=dev -X main.Commit=$(git rev-parse --short HEAD || echo 'unknown') -X main.BuildDate=$(date +%Y-%m-%d)" -o {{projectname}}.exe ./cmd/translator; \
+    else \
+        go build -ldflags "-X main.Version=dev -X main.Commit=$(git rev-parse --short HEAD || echo 'unknown') -X main.BuildDate=$(date +%Y-%m-%d)" -o {{projectname}} ./cmd/translator; \
+    fi
 
 # 安装 Golang 二进制文件
 install:

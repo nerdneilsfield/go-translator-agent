@@ -3,11 +3,13 @@ package cli
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/formats"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -27,6 +29,9 @@ var (
 	listFormats       bool
 	listStepSets      bool
 	forceCacheRefresh bool
+	listCache         bool
+	formatOnly        bool
+	noPostProcess     bool
 )
 
 // NewRootCommand 创建根命令
@@ -39,7 +44,7 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 		Version: fmt.Sprintf("%s (commit %s, built %s)", version, commit, buildDate),
 		Args: func(cmd *cobra.Command, args []string) error {
 			// 对于特殊的标志命令，不需要参数
-			if showVersion || listModels || listFormats || listStepSets {
+			if showVersion || listModels || listFormats || listStepSets || listCache {
 				return nil
 			}
 			// 其他情况需要两个参数：输入文件和输出文件
@@ -57,6 +62,43 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 
 			if showVersion {
 				fmt.Printf("翻译工具 %s (commit %s, built %s)\n", version, commit, buildDate)
+				return
+			}
+
+			// 获取输入和输出文件路径
+			inputPath := args[0]
+			outputPath := args[1]
+
+			if formatOnly {
+				log.Info("仅格式化文件",
+					zap.String("输入文件", inputPath),
+					zap.String("输出文件", outputPath),
+				)
+
+				// 获取文件处理器
+				var processor formats.FormattingProcessor
+				var err error
+				if formatType != "" {
+					// 使用指定格式
+					processor, err = formats.NewFormattingProcessor(formatType)
+				} else {
+					// 根据文件扩展名自动检测格式
+					processor, err = formats.FormattingProcessorFromFilePath(inputPath)
+				}
+
+				if err != nil {
+					log.Error("创建文件处理器失败", zap.Error(err))
+					os.Exit(1)
+				}
+
+				if err := processor.FormatFile(inputPath, outputPath); err != nil {
+					log.Error("格式化文件失败", zap.Error(err))
+					os.Exit(1)
+				}
+				log.Info("格式化完成",
+					zap.String("输入文件", inputPath),
+					zap.String("输出文件", outputPath),
+				)
 				return
 			}
 
@@ -89,6 +131,27 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			if cmd.Flags().Changed("debug") {
 				cfg.Debug = debugMode
 			}
+			if cmd.Flags().Changed("no-post-process") {
+				cfg.PostProcessMarkdown = !noPostProcess
+			}
+
+			if listCache {
+				// 显示缓存目录中的文件
+				files, err := os.ReadDir(cfg.CacheDir)
+				if err != nil {
+					log.Error("读取缓存目录失败", zap.Error(err))
+					os.Exit(1)
+				}
+				fmt.Printf("缓存目录 (%s) 中的文件:\n", cfg.CacheDir)
+				for _, file := range files {
+					info, err := file.Info()
+					if err != nil {
+						continue
+					}
+					fmt.Printf("  - %s (大小: %d 字节)\n", file.Name(), info.Size())
+				}
+				return
+			}
 
 			if listModels {
 				fmt.Println("支持的模型:")
@@ -120,10 +183,6 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 				fmt.Println("使用方法: translator [flags] input_file output_file")
 				os.Exit(1)
 			}
-
-			// 获取输入和输出文件路径
-			inputPath := args[0]
-			outputPath := args[1]
 
 			// 创建缓存目录（如果不存在）
 			if cfg.UseCache {
@@ -164,10 +223,37 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			}
 
 			// 翻译文件
+			bar := progressbar.NewOptions64(
+				-1,
+				progressbar.OptionSetDescription("正在翻译..."),
+				progressbar.OptionSetWriter(os.Stderr),
+				progressbar.OptionSetWidth(30),
+				progressbar.OptionThrottle(65*time.Millisecond),
+				progressbar.OptionShowCount(),
+				progressbar.OptionShowIts(),
+				progressbar.OptionSetItsString("字"),
+				progressbar.OptionSpinnerType(14),
+				progressbar.OptionFullWidth(),
+				progressbar.OptionSetRenderBlankState(true),
+				progressbar.OptionEnableColorCodes(true),
+				progressbar.OptionSetTheme(progressbar.Theme{
+					Saucer:        "[green]=[reset]",
+					SaucerHead:    "[green]>[reset]",
+					SaucerPadding: " ",
+					BarStart:      "[",
+					BarEnd:        "]",
+				}),
+			)
+
+			// 创建一个带有进度条的翻译器选项
+			translatorOptions = append(translatorOptions, translator.WithProgressBar(bar))
+
 			if err := processor.TranslateFile(inputPath, outputPath); err != nil {
+				_ = bar.Close()
 				log.Error("翻译文件失败", zap.Error(err))
 				os.Exit(1)
 			}
+			_ = bar.Finish()
 
 			log.Info("翻译完成",
 				zap.String("输入文件", inputPath),
@@ -194,6 +280,9 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 	rootCmd.PersistentFlags().BoolVar(&listModels, "list-models", false, "列出支持的模型")
 	rootCmd.PersistentFlags().BoolVar(&listFormats, "list-formats", false, "列出支持的文件格式")
 	rootCmd.PersistentFlags().BoolVar(&listStepSets, "list-step-sets", false, "列出可用的步骤集")
+	rootCmd.PersistentFlags().BoolVar(&listCache, "list-cache", false, "列出缓存文件")
+	rootCmd.PersistentFlags().BoolVar(&formatOnly, "format-only", false, "仅格式化文件，不进行翻译")
+	rootCmd.PersistentFlags().BoolVar(&noPostProcess, "no-post-process", false, "禁用翻译后的Markdown后处理")
 
 	return rootCmd
 }
