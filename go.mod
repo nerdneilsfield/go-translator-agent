@@ -5,8 +5,8 @@ go 1.23.2
 toolchain go1.23.4
 
 require (
+	github.com/BurntSushi/toml v1.4.0
 	github.com/litao91/goldmark-mathjax v0.0.0-20210217064022-a43cf739a50f
-	github.com/mdigger/goldmark-formatter v0.0.0-20220404131722-23e60f5056af
 	github.com/sashabaranov/go-openai v1.20.2
 	github.com/schollz/progressbar/v3 v3.18.0
 	github.com/spf13/cobra v1.9.1
@@ -21,8 +21,6 @@ require (
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
-	github.com/mdigger/goldmark-attributes v0.0.0-20210529130523-52da21a6bf2b // indirect
-	github.com/mdigger/goldmark-lineblocks v0.0.0-20210607112808-0ace3aa9a7d3 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect

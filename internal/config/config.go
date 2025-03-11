@@ -287,6 +287,27 @@ func DefaultStepSets() map[string]StepSetConfig {
 			},
 			FastModeThreshold: 300,
 		},
+		"simple": {
+			ID:          "simple",
+			Name:        "简单翻译",
+			Description: "仅执行初始翻译，不进行反思和改进",
+			InitialTranslation: StepConfig{
+				Name:        "初始翻译",
+				ModelName:   "gpt-3.5-turbo",
+				Temperature: 0.7,
+			},
+			Reflection: StepConfig{
+				Name:        "反思",
+				ModelName:   "none",
+				Temperature: 0.0,
+			},
+			Improvement: StepConfig{
+				Name:        "改进",
+				ModelName:   "none",
+				Temperature: 0.0,
+			},
+			FastModeThreshold: 300,
+		},
 	}
 }
 

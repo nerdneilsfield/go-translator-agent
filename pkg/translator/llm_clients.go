@@ -41,6 +41,11 @@ func initModels(cfg *config.Config, log logger.Logger) (map[string]LLMClient, er
 			// 使用流式专用客户端（用于处理推理过程）
 			client, err = newStreamOnlyOpenAIClient(modelCfg, log, timeout)
 			log.Info("使用流式推理专用OpenAI客户端", zap.String("模型", modelName))
+		case "raw":
+			// 使用原始文本返回客户端
+			client = NewRawClient()
+			log.Info("使用原始文本返回客户端", zap.String("模型", modelName))
+			err = nil
 		case "anthropic":
 			// 临时返回 OpenAI 客户端（未来完善 Anthropic 实现）
 			log.Warn(fmt.Sprintf("Anthropic API 客户端尚未完全实现，使用 OpenAI 客户端代替: %s", modelName))

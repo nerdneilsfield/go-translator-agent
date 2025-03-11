@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,15 +17,27 @@ import (
 // TextProcessor 是纯文本文件的处理器
 type TextProcessor struct {
 	BaseProcessor
+	replacements []ReplacementInfo
+	logger       *zap.Logger
 }
 
 // NewTextProcessor 创建一个新的文本处理器
-func NewTextProcessor(t translator.Translator) (*TextProcessor, error) {
+func NewTextProcessor(t translator.Translator, predefinedTranslations *config.PredefinedTranslation) (*TextProcessor, error) {
+	// 获取logger，如果无法转换则创建新的
+	zapLogger, _ := zap.NewProduction()
+	if loggerProvider, ok := t.GetLogger().(interface{ GetZapLogger() *zap.Logger }); ok {
+		if zl := loggerProvider.GetZapLogger(); zl != nil {
+			zapLogger = zl
+		}
+	}
 	return &TextProcessor{
 		BaseProcessor: BaseProcessor{
-			Translator: t,
-			Name:       "文本",
+			Translator:             t,
+			Name:                   "文本",
+			predefinedTranslations: predefinedTranslations,
 		},
+		replacements: []ReplacementInfo{},
+		logger:       zapLogger,
 	}, nil
 }
 
@@ -39,6 +52,9 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 	// 获取配置
 	var autoSaveInterval int = 300    // 默认5分钟
 	var translationTimeout int = 1800 // 默认30分钟
+	var minSplitSize int = 100        // 默认最小分割大小
+	var maxSplitSize int = 1000       // 默认最大分割大小
+	var concurrency int = 4           // 默认并行度
 
 	if cfg, ok := p.Translator.(interface{ GetConfig() *config.Config }); ok {
 		config := cfg.GetConfig()
@@ -48,6 +64,15 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 		if config.TranslationTimeout > 0 {
 			translationTimeout = config.TranslationTimeout
 		}
+		if config.MinSplitSize > 0 {
+			minSplitSize = config.MinSplitSize
+		}
+		if config.MaxSplitSize > 0 {
+			maxSplitSize = config.MaxSplitSize
+		}
+		if config.Concurrency > 0 {
+			concurrency = config.Concurrency
+		}
 	}
 
 	log := p.Translator.GetLogger()
@@ -56,13 +81,26 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 		zap.String("输出文件", outputPath),
 		zap.Int("自动保存间隔", autoSaveInterval),
 		zap.Int("翻译超时时间", translationTimeout),
+		zap.Int("最小分割大小", minSplitSize),
+		zap.Int("最大分割大小", maxSplitSize),
+		zap.Int("并行度", concurrency),
 	)
 
 	// 创建上下文，用于超时控制
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(translationTimeout)*time.Second)
 	defer cancel()
 
-	// 创建通道，用于接收翻译结果和进度更新
+	// 保护文本中的预定义翻译
+	protectedText, err := p.ProtectText(string(content))
+	if err != nil {
+		return fmt.Errorf("保护文本失败: %w", err)
+	}
+
+	// 分割文本为块
+	chunks := p.splitTextToChunks(protectedText, minSplitSize, maxSplitSize)
+	log.Info("文本分割完成", zap.Int("块数", len(chunks)))
+
+	// 创建通道，用于接收翻译结果
 	resultCh := make(chan struct {
 		text string
 		err  error
@@ -70,11 +108,38 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 
 	// 启动翻译协程
 	go func() {
-		translated, err := p.TranslateText(string(content))
+		// 并行翻译文本块
+		translatedChunks, err := parallelTranslateTextChunks(chunks, p, concurrency)
+		if err != nil {
+			resultCh <- struct {
+				text string
+				err  error
+			}{"", err}
+			return
+		}
+
+		// 合并翻译结果
+		var translatedBuilder strings.Builder
+		for _, chunk := range translatedChunks {
+			translatedBuilder.WriteString(chunk)
+			translatedBuilder.WriteString("\n\n")
+		}
+		translated := translatedBuilder.String()
+
+		// 还原被保护的文本
+		restoredText, err := p.RestoreText(translated)
+		if err != nil {
+			resultCh <- struct {
+				text string
+				err  error
+			}{"", fmt.Errorf("还原文本失败: %w", err)}
+			return
+		}
+
 		resultCh <- struct {
 			text string
 			err  error
-		}{translated, err}
+		}{restoredText, nil}
 	}()
 
 	// 创建自动保存计时器
@@ -84,8 +149,6 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 	// 创建临时结果变量
 	var partialResult string
 	var lastSaveTime time.Time = time.Now()
-
-	var progress *TranslationProgressTracker
 
 	// 等待翻译完成或超时
 	for {
@@ -134,17 +197,7 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 			return nil
 
 		case <-ticker.C:
-			// 自动保存和进度更新
-			if progress != nil {
-				totalChars, translatedChars, estimatedTimeRemaining := progress.GetProgress()
-				log.Info("翻译进度",
-					zap.Int("总字数", totalChars),
-					zap.Int("已翻译字数", translatedChars),
-					zap.Float64("完成百分比", float64(translatedChars)/float64(totalChars)*100),
-					zap.Float64("预计剩余时间(秒)", estimatedTimeRemaining),
-				)
-			}
-
+			// 自动保存
 			if partialResult != "" {
 				tempOutputPath := outputPath + ".partial"
 				if err := os.WriteFile(tempOutputPath, []byte(partialResult), 0644); err != nil {
@@ -164,14 +217,102 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 	}
 }
 
+// splitTextToChunks 将文本分割为适当大小的块，优先按自然段落分割
+func (p *TextProcessor) splitTextToChunks(text string, minSize, maxSize int) []Chunk {
+	if len(text) <= maxSize {
+		return []Chunk{
+			{
+				Text:            text,
+				NeedToTranslate: true,
+			},
+		}
+	}
+
+	var chunks []Chunk
+	var currentChunk strings.Builder
+	paragraphs := strings.Split(text, "\n\n") // 使用双换行符分割段落
+
+	for _, para := range paragraphs {
+		// 如果段落本身超过最大长度，需要进一步分割
+		if len(para) > maxSize {
+			// 如果当前chunk不为空，先保存它
+			if currentChunk.Len() > 0 {
+				chunks = append(chunks, Chunk{
+					Text:            currentChunk.String(),
+					NeedToTranslate: true,
+				})
+				currentChunk.Reset()
+			}
+
+			// 按句子分割大段落
+			start := 0
+			for start < len(para) {
+				end := start + maxSize
+				if end > len(para) {
+					end = len(para)
+				} else {
+					// 寻找合适的分割点（句号、问号、感叹号）
+					for i := end - 1; i > start+minSize; i-- {
+						if i < len(para)-1 {
+							r := []rune(para[i : i+1])[0]
+
+							// 检查是否是句子结束标记（英文或中文标点）
+							if r == '.' || r == '?' || r == '!' ||
+								r == '。' || r == '？' || r == '！' {
+								end = i + 1
+								break
+							}
+						}
+					}
+				}
+				chunks = append(chunks, Chunk{
+					Text:            para[start:end],
+					NeedToTranslate: true,
+				})
+				start = end
+			}
+			continue
+		}
+
+		// 检查添加当前段落是否会导致超出最大长度
+		if currentChunk.Len()+len(para) > maxSize {
+			// 如果当前chunk达到最小长度，保存它
+			if currentChunk.Len() >= minSize {
+				chunks = append(chunks, Chunk{
+					Text:            currentChunk.String(),
+					NeedToTranslate: true,
+				})
+				currentChunk.Reset()
+			}
+		}
+
+		// 添加段落和段落分隔符
+		if currentChunk.Len() > 0 {
+			currentChunk.WriteString("\n\n")
+		}
+		currentChunk.WriteString(para)
+	}
+
+	// 保存最后一个chunk
+	if currentChunk.Len() > 0 {
+		chunks = append(chunks, Chunk{
+			Text:            currentChunk.String(),
+			NeedToTranslate: true,
+		})
+	}
+
+	return chunks
+}
+
 // TranslateText 翻译文本内容
 func (p *TextProcessor) TranslateText(text string) (string, error) {
 	log := p.Translator.GetLogger()
 	log.Info("开始翻译文本")
 
 	// 获取配置的分割大小限制
-	minSplitSize := 100  // 默认最小分割大小
-	maxSplitSize := 1000 // 默认最大分割大小
+	minSplitSize := 100       // 默认最小分割大小
+	maxSplitSize := 1000      // 默认最大分割大小
+	retryFailedParts := false // 默认不重试失败的部分
 
 	if cfg, ok := p.Translator.(interface{ GetConfig() *config.Config }); ok {
 		config := cfg.GetConfig()
@@ -181,6 +322,7 @@ func (p *TextProcessor) TranslateText(text string) (string, error) {
 		if config.MaxSplitSize > 0 {
 			maxSplitSize = config.MaxSplitSize
 		}
+		retryFailedParts = config.RetryFailedParts
 	}
 
 	log.Debug("分割大小设置",
@@ -247,7 +389,7 @@ func (p *TextProcessor) TranslateText(text string) (string, error) {
 			)
 
 			// 翻译段落
-			translated, err := p.Translator.Translate(paragraph)
+			translated, err := p.Translator.Translate(paragraph, retryFailedParts)
 			if err != nil {
 				return "", fmt.Errorf("翻译段落失败: %w", err)
 			}
@@ -282,7 +424,7 @@ func (p *TextProcessor) TranslateText(text string) (string, error) {
 			go func() {
 				defer wg.Done()
 				for job := range jobs {
-					translated, err := p.Translator.Translate(job.content)
+					translated, err := p.Translator.Translate(job.content, retryFailedParts)
 					if err == nil {
 						// 更新进度
 						progress.UpdateProgress(len(job.content))
@@ -476,7 +618,7 @@ func (p *TextProcessor) FormatFile(inputPath, outputPath string) error {
 	}
 
 	// 写入输出文件
-	formattedText := strings.Join(formattedLines, "\n")
+	formattedText := strings.Join(formattedLines, "\n\n")
 	if err := os.WriteFile(outputPath, []byte(formattedText), 0644); err != nil {
 		return fmt.Errorf("写入文件失败 %s: %w", outputPath, err)
 	}
@@ -534,10 +676,126 @@ func (p *TextFormattingProcessor) FormatFile(inputPath, outputPath string) error
 	}
 
 	// 写入输出文件
-	formattedText := strings.Join(formattedLines, "\n")
+	formattedText := strings.Join(formattedLines, "\n\n")
 	if err := os.WriteFile(outputPath, []byte(formattedText), 0644); err != nil {
 		return fmt.Errorf("写入文件失败 %s: %w", outputPath, err)
 	}
 
 	return nil
+}
+
+func (p *TextProcessor) ProtectText(text string) (string, error) {
+	placeholderIndex := 0
+
+	for key, value := range p.predefinedTranslations.Translations {
+		placeholder := fmt.Sprintf("@@PRESERVE_%d@@", placeholderIndex)
+		p.replacements = append(p.replacements, ReplacementInfo{
+			Placeholder: placeholder,
+			Original:    value,
+		})
+		placeholderIndex++
+		text = strings.ReplaceAll(text, key, placeholder)
+	}
+
+	return text, nil
+}
+
+func (p *TextProcessor) RestoreText(text string) (string, error) {
+	for _, replacement := range p.replacements {
+		text = strings.ReplaceAll(text, replacement.Placeholder, replacement.Original)
+	}
+
+	// 2. 可能出现 PRESERVE 被翻译的情况，这里再处理一下
+	text = mdRePlaceholderWildcard.ReplaceAllStringFunc(text, func(match string) string {
+		// 提取出数字
+		parts := mdRePlaceholderWildcard.FindStringSubmatch(match)
+		if len(parts) == 3 {
+			wildcard := parts[1]
+			number := parts[2]
+			numberInt, err := strconv.Atoi(number)
+			if err != nil {
+				p.logger.Warn("无法将数字字符串转换为整数", zap.String("数字字符串", number))
+				return match
+			}
+			if numberInt < len(p.replacements) {
+				p.logger.Debug("有占位符被翻译了, 还原占位符",
+					zap.String("占位符", match),
+					zap.String("wildcard", wildcard),
+					zap.String("原始内容", p.replacements[numberInt].Original))
+				text = strings.ReplaceAll(text, match, p.replacements[numberInt].Original)
+				return text
+			}
+		}
+		return match
+	})
+
+	return text, nil
+}
+
+// parallelTranslateTextChunks 并行翻译文本块
+func parallelTranslateTextChunks(chunks []Chunk, processor *TextProcessor, concurrency int) ([]string, error) {
+	if len(chunks) == 0 {
+		return nil, nil
+	}
+
+	// 如果块数量小于并行度，调整并行度
+	if concurrency > len(chunks) {
+		concurrency = len(chunks)
+	}
+
+	// 创建工作通道和结果通道
+	jobs := make(chan Chunk, len(chunks))
+	results := make(chan struct {
+		index int
+		text  string
+		err   error
+	}, len(chunks))
+
+	// 启动工作协程
+	var wg sync.WaitGroup
+	for w := 0; w < concurrency; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for chunk := range jobs {
+				if !chunk.NeedToTranslate {
+					results <- struct {
+						index int
+						text  string
+						err   error
+					}{0, chunk.Text, nil}
+					continue
+				}
+				translated, err := processor.TranslateText(chunk.Text)
+				results <- struct {
+					index int
+					text  string
+					err   error
+				}{0, translated, err}
+			}
+		}()
+	}
+
+	// 发送翻译任务
+	for _, chunk := range chunks {
+		jobs <- chunk
+	}
+	close(jobs)
+
+	// 等待所有工作完成
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// 收集结果
+	translatedTexts := make([]string, 0, len(chunks))
+	for result := range results {
+		if result.err != nil {
+			return nil, result.err
+		}
+		translatedTexts = append(translatedTexts, result.text)
+	}
+
+	return translatedTexts, nil
 }

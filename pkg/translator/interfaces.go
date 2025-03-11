@@ -7,7 +7,7 @@ import (
 // Translator 提供从源语言到目标语言的翻译方法
 type Translator interface {
 	// Translate 将文本从源语言翻译到目标语言
-	Translate(text string) (string, error)
+	Translate(text string, retryFailedParts bool) (string, error)
 
 	// GetLogger 返回与翻译器关联的日志记录器
 	GetLogger() logger.Logger

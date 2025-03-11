@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,14 +59,12 @@ func New(cfg *config.Config, options ...Option) (*TranslatorImpl, error) {
 	}
 
 	// 记录配置信息
-	log.Debug("初始化翻译器",
+	log.Info("初始化翻译器",
 		zap.String("源语言", cfg.SourceLang),
 		zap.String("目标语言", cfg.TargetLang),
 		zap.String("国家/地区", cfg.Country),
+		zap.String("默认模型", cfg.DefaultModelName),
 		zap.String("活动步骤集", cfg.ActiveStepSet),
-		zap.Int("最大分块令牌数", cfg.MaxTokensPerChunk),
-		zap.Bool("使用缓存", cfg.UseCache),
-		zap.Int("请求超时(秒)", cfg.RequestTimeout),
 	)
 
 	// 初始化所有模型
@@ -82,18 +81,32 @@ func New(cfg *config.Config, options ...Option) (*TranslatorImpl, error) {
 
 	// 获取步骤模型
 	initialModel, ok := models[stepSet.InitialTranslation.ModelName]
-	if !ok {
+	if !ok && stepSet.InitialTranslation.ModelName != "none" && stepSet.InitialTranslation.ModelName != "raw" {
 		return nil, fmt.Errorf("未找到模型: %s", stepSet.InitialTranslation.ModelName)
 	}
 
-	reflectionModel, ok := models[stepSet.Reflection.ModelName]
-	if !ok {
-		return nil, fmt.Errorf("未找到模型: %s", stepSet.Reflection.ModelName)
+	// 处理反思模型
+	var reflectionModel LLMClient
+	if stepSet.Reflection.ModelName != "none" && stepSet.Reflection.ModelName != "raw" {
+		var ok bool
+		reflectionModel, ok = models[stepSet.Reflection.ModelName]
+		if !ok {
+			return nil, fmt.Errorf("未找到模型: %s", stepSet.Reflection.ModelName)
+		}
+	} else {
+		log.Info("反思步骤的模型设置为none或raw，将跳过此步骤")
 	}
 
-	improvementModel, ok := models[stepSet.Improvement.ModelName]
-	if !ok {
-		return nil, fmt.Errorf("未找到模型: %s", stepSet.Improvement.ModelName)
+	// 处理改进模型
+	var improvementModel LLMClient
+	if stepSet.Improvement.ModelName != "none" && stepSet.Improvement.ModelName != "raw" {
+		var ok bool
+		improvementModel, ok = models[stepSet.Improvement.ModelName]
+		if !ok {
+			return nil, fmt.Errorf("未找到模型: %s", stepSet.Improvement.ModelName)
+		}
+	} else {
+		log.Info("改进步骤的模型设置为none或raw，将跳过此步骤")
 	}
 
 	// 创建步骤集配置
@@ -118,34 +131,81 @@ func New(cfg *config.Config, options ...Option) (*TranslatorImpl, error) {
 	}, nil
 }
 
+func (t *TranslatorImpl) RemoveUsedTags(text string) string {
+	result := text
+	result = strings.ReplaceAll(result, "<SOURCE_TEXT>", "")
+	result = strings.ReplaceAll(result, "</SOURCE_TEXT>", "")
+	result = strings.ReplaceAll(result, "<TRANSLATION>", "")
+	result = strings.ReplaceAll(result, "</TRANSLATION>", "")
+	result = strings.ReplaceAll(result, "<EXPERT_SUGGESTIONS>", "")
+	result = strings.ReplaceAll(result, "</EXPERT_SUGGESTIONS>", "")
+	result = strings.ReplaceAll(result, "<TEXT TO EDIT>", "")
+	result = strings.ReplaceAll(result, "</TEXT TO EDIT>", "")
+	result = strings.ReplaceAll(result, "<TEXT TO TRANSLATE>", "")
+	result = strings.ReplaceAll(result, "</TEXT TO TRANSLATE>", "")
+	return result
+}
+
 // GetLogger 返回日志记录器
 func (t *TranslatorImpl) GetLogger() logger.Logger {
 	return t.logger
 }
 
+// shouldUseCache 判断是否应该使用缓存
+func (t *TranslatorImpl) shouldUseCache() bool {
+	return t.config.UseCache
+}
+
+// refreshCache 刷新缓存
+func (t *TranslatorImpl) refreshCache() error {
+	if t.forceCacheRefresh {
+		t.logger.Info("正在刷新缓存")
+		return t.cache.Clear()
+	}
+	return nil
+}
+
 // Translate 将文本从源语言翻译到目标语言
-func (t *TranslatorImpl) Translate(text string) (string, error) {
+func (t *TranslatorImpl) Translate(text string, retryFailedParts bool) (string, error) {
+	// 如果启用了强制刷新缓存，先清除缓存
+	if t.forceCacheRefresh {
+		if err := t.refreshCache(); err != nil {
+			t.logger.Warn("刷新缓存失败", zap.Error(err))
+		}
+	}
+
+	// 获取活动的步骤集配置
+	stepSet := t.config.StepSets[t.config.ActiveStepSet]
+
 	// 开始跟踪进度
 	t.startProgress(text)
 	defer t.endProgress()
 
 	// 检查是否需要重试失败的部分
-	retryFailedParts := false
 	maxRetries := 3 // 默认最大重试次数
 
-	if t.config.RetryFailedParts {
+	if retryFailedParts {
 		retryFailedParts = true
 	}
 
-	// 如果文本较短且低于快速模式阈值，跳过反思和改进步骤
-	if len(text) < t.activeSteps.FastModeThreshold {
-		t.logger.Info("文本较短，使用快速模式",
-			zap.Int("文本长度", len(text)),
-			zap.Int("阈值", t.activeSteps.FastModeThreshold),
-		)
+	// 检查步骤2和步骤3是否都设置为"none"
+	skipReflectionAndImprovement := stepSet.Reflection.ModelName == "none" && stepSet.Improvement.ModelName == "none"
+
+	if skipReflectionAndImprovement {
+		t.logger.Info("步骤2和步骤3都设置为none，将只执行初始翻译")
+	}
+
+	// 如果文本较短且低于快速模式阈值，或者步骤2和步骤3都设置为"none"，跳过反思和改进步骤
+	if len(text) < t.activeSteps.FastModeThreshold || skipReflectionAndImprovement {
+		if len(text) < t.activeSteps.FastModeThreshold {
+			t.logger.Info("文本较短，使用快速模式",
+				zap.Int("文本长度", len(text)),
+				zap.Int("阈值", t.activeSteps.FastModeThreshold),
+			)
+		}
 
 		// 检查是否已缓存最终结果
-		if t.config.UseCache && !t.forceCacheRefresh {
+		if t.shouldUseCache() {
 			cacheKey := t.generateCacheKey(text, "final")
 			if cached, ok := t.cache.Get(cacheKey); ok {
 				t.logger.Info("从缓存加载最终翻译结果",
@@ -180,7 +240,7 @@ func (t *TranslatorImpl) Translate(text string) (string, error) {
 		}
 
 		// 缓存结果
-		if t.config.UseCache {
+		if t.shouldUseCache() {
 			cacheKey := t.generateCacheKey(text, "final")
 			t.cache.Set(cacheKey, result)
 		}
@@ -189,7 +249,7 @@ func (t *TranslatorImpl) Translate(text string) (string, error) {
 	}
 
 	// 检查是否已缓存最终结果
-	if t.config.UseCache && !t.forceCacheRefresh {
+	if t.shouldUseCache() {
 		cacheKey := t.generateCacheKey(text, "final")
 		if cached, ok := t.cache.Get(cacheKey); ok {
 			t.logger.Info("从缓存加载最终翻译结果",
@@ -206,7 +266,7 @@ func (t *TranslatorImpl) Translate(text string) (string, error) {
 
 	// 检查是否已缓存初始翻译
 	initialCacheKey := t.generateCacheKey(text, "initial")
-	if t.config.UseCache && !t.forceCacheRefresh {
+	if t.shouldUseCache() {
 		if cached, ok := t.cache.Get(initialCacheKey); ok {
 			t.logger.Info("从缓存加载初始翻译",
 				zap.Int("文本长度", len(text)),
@@ -244,7 +304,7 @@ func (t *TranslatorImpl) Translate(text string) (string, error) {
 		}
 
 		// 缓存初始翻译结果
-		if t.config.UseCache {
+		if t.shouldUseCache() {
 			t.cache.Set(initialCacheKey, initialTranslation)
 		}
 	}
@@ -252,12 +312,24 @@ func (t *TranslatorImpl) Translate(text string) (string, error) {
 	// 更新进度
 	t.updateProgress(initialTranslation)
 
+	// 检查步骤2（反思）的模型是否为"none"
+	if stepSet.Reflection.ModelName == "none" {
+		t.logger.Info("步骤2（反思）的模型设置为none，跳过反思和改进步骤")
+
+		// 将初始翻译结果作为最终结果缓存
+		if t.shouldUseCache() {
+			t.cache.Set(t.generateCacheKey(text, "final"), initialTranslation)
+		}
+
+		return initialTranslation, nil
+	}
+
 	// 第二步：反思
 	var reflection string
 
 	// 检查是否已缓存反思结果
 	reflectionCacheKey := t.generateCacheKey(text+initialTranslation, "reflection")
-	if t.config.UseCache && !t.forceCacheRefresh {
+	if t.shouldUseCache() {
 		if cached, ok := t.cache.Get(reflectionCacheKey); ok {
 			t.logger.Info("从缓存加载反思结果",
 				zap.Int("文本长度", len(text)),
@@ -295,7 +367,7 @@ func (t *TranslatorImpl) Translate(text string) (string, error) {
 		}
 
 		// 缓存反思结果
-		if t.config.UseCache {
+		if t.shouldUseCache() {
 			t.cache.Set(reflectionCacheKey, reflection)
 		}
 	}
@@ -308,7 +380,7 @@ func (t *TranslatorImpl) Translate(text string) (string, error) {
 
 	// 检查是否已缓存改进结果
 	improvementCacheKey := t.generateCacheKey(text+initialTranslation+reflection, "improvement")
-	if t.config.UseCache && !t.forceCacheRefresh {
+	if t.shouldUseCache() {
 		if cached, ok := t.cache.Get(improvementCacheKey); ok {
 			t.logger.Info("从缓存加载改进结果",
 				zap.Int("文本长度", len(text)),
@@ -346,7 +418,7 @@ func (t *TranslatorImpl) Translate(text string) (string, error) {
 		}
 
 		// 缓存改进结果
-		if t.config.UseCache {
+		if t.shouldUseCache() {
 			t.cache.Set(improvementCacheKey, improvedTranslation)
 			t.cache.Set(t.generateCacheKey(text, "final"), improvedTranslation)
 		}
@@ -358,7 +430,7 @@ func (t *TranslatorImpl) Translate(text string) (string, error) {
 // initialTranslation 执行初始翻译
 func (t *TranslatorImpl) initialTranslation(text string) (string, error) {
 	// 检查缓存
-	if t.config.UseCache {
+	if t.shouldUseCache() {
 		cacheKey := t.generateCacheKey(text, "initial")
 		if cached, ok := t.cache.Get(cacheKey); ok {
 			t.logger.Debug("从缓存加载初始翻译结果")
@@ -366,41 +438,47 @@ func (t *TranslatorImpl) initialTranslation(text string) (string, error) {
 		}
 	}
 
+	// 获取模型
+	model := t.activeSteps.InitialModel
+
+	// 如果模型为 nil（设置为 raw 或 none）或类型为 raw，直接返回原文
+	if model == nil || model.Type() == "raw" {
+		t.logger.Info("使用 raw/none 模型，直接返回原文")
+		return text, nil
+	}
+
 	// 构建提示词
-	prompt := fmt.Sprintf(`This is an %s to %s translation. The following are the formatting requirements for the translation:
-IMPORTANT FORMATTING REQUIREMENTS:
-1. All original formatting must be preserved exactly:
-   - Keep all Markdown syntax (**, *, #, etc.) exactly as is
-   - DO NOT TRANSLATE ANY CONTENT INSIDE LaTeX formulas ($...$, $$...$$, \(...\), \[...\]) - leave them completely unchanged
-   - Keep all HTML tags (<...>) unchanged
-2. Keep all abbreviations and technical terms in their original form:
-   - Do not translate unknown abbreviations (e.g., FPGA, CPU, NDT)
-   - Keep all code identifiers and variables unchanged
-3. Maintain document structure:
-   - Keep all line breaks and paragraph spacing
-   - Preserve table formatting and alignment
-   - Keep list markers (numbers, bullets) unchanged
-4. DO NOT MODIFY OR TRANSLATE any text between ⚡⚡⚡ symbols (e.g., ⚡⚡⚡UNTRANSLATABLE_0⚡⚡⚡).
-   These are special markers that must remain exactly as they are.
+	prompt := fmt.Sprintf(`This is a translation task from %s to %s.
+[INTERNAL INSTRUCTIONS: The following formatting rules are for internal reference only and must NOT appear in the final output.]
 
-DO NOT TRANSLATE THE FORMATTING REQUIREMENTS.
+Formatting Rules:
+1. Preserve all original formatting exactly:
+	- Do not modify any Markdown syntax (**, *, #, etc.).
+	- Do not translate any content within LaTeX formulas ($...$, $$...$$, \( ... \), \[ ... \]) or any LaTeX commands.
+	- For LaTeX files, preserve all commands, environments (such as \begin{...} and \end{...}), and macros exactly as they are.
+	- Keep all HTML tags intact.
+2. Do not alter abbreviations, technical terms, or code identifiers.
+3. Preserve document structure, including line breaks, paragraph spacing, lists, and tables.
+4. IMPORTANT: Do not translate or modify any text matching the following pattern:
+  @@PRESERVE_<number>@@...@@/PRESERVE_<number>@@
+For example, if you see:
+  @@PRESERVE_0@@[1] Author et al.@@/PRESERVE_0@@
+or
+  @@PRESERVE_1@@$E = mc^2$@@/PRESERVE_1@@
+you must leave these parts exactly as they are.
+5. IMPORTANT: Preserve all paragraph breaks exactly as they are. Do not convert double newlines ("\n\n") into single newlines ("\n").
 
+[END OF INTERNAL INSTRUCTIONS]
 
-THE SOURCE LANGUAGE IS %s.
-
-THE TEXT TO TRANSLATE IS %s.
-
-FOLLOWING IS THE TEXT TO TRANSLATE, DO NOT TRANSLATE THE FORMATTING REQUIREMENTS.  PLEASE PROVIDE THE %s TRANSLATION FOR THIS TEXT, WHICH INCLUDE IN <TEXT TO TRANSLATE> TAG. 
+Please provide only the translation of the text below, strictly adhering to the above formatting rules.
 
 <TEXT TO TRANSLATE>
 %s
 </TEXT TO TRANSLATE>
-`,
-		t.config.SourceLang, t.config.TargetLang, t.config.SourceLang,
-		t.config.TargetLang, t.config.TargetLang, text)
+	`,
+		t.config.SourceLang, t.config.TargetLang, text)
 
 	// 调用语言模型
-	model := t.activeSteps.InitialModel
 	temperature := t.config.StepSets[t.config.ActiveStepSet].InitialTranslation.Temperature
 
 	t.logger.Debug("执行初始翻译",
@@ -418,8 +496,10 @@ FOLLOWING IS THE TEXT TO TRANSLATE, DO NOT TRANSLATE THE FORMATTING REQUIREMENTS
 		zap.Int("输出令牌数", outputTokens),
 	)
 
+	result = t.RemoveUsedTags(result)
+
 	// 缓存结果
-	if t.config.UseCache {
+	if t.shouldUseCache() {
 		cacheKey := t.generateCacheKey(text, "initial")
 		if err := t.cache.Set(cacheKey, result); err != nil {
 			t.logger.Warn("缓存初始翻译结果失败", zap.Error(err))
@@ -431,8 +511,20 @@ FOLLOWING IS THE TEXT TO TRANSLATE, DO NOT TRANSLATE THE FORMATTING REQUIREMENTS
 
 // reflection 执行反思
 func (t *TranslatorImpl) reflection(sourceText, translation string) (string, error) {
+	// 如果反思模型为nil（设置为"none"），则跳过反思步骤
+	if t.activeSteps.ReflectionModel == nil {
+		t.logger.Info("反思模型设置为none，跳过反思步骤")
+		return "", nil
+	}
+
+	// 如果反思模型类型为 raw，直接返回空字符串
+	if t.activeSteps.ReflectionModel.Type() == "raw" {
+		t.logger.Info("反思模型设置为raw，跳过反思步骤")
+		return "", nil
+	}
+
 	// 检查缓存
-	if t.config.UseCache {
+	if t.shouldUseCache() {
 		cacheKey := t.generateCacheKey(sourceText+translation, "reflection")
 		if cached, ok := t.cache.Get(cacheKey); ok {
 			t.logger.Debug("从缓存加载反思结果")
@@ -441,25 +533,38 @@ func (t *TranslatorImpl) reflection(sourceText, translation string) (string, err
 	}
 
 	// 构建提示词
-	prompt := fmt.Sprintf(`Your task is to carefully read a source text and a translation from %s to %s, and then give constructive criticism and helpful suggestions to improve the translation. 
-The final style and tone of the translation should match the style of %s colloquially spoken in %s.
+	prompt := fmt.Sprintf(`
+Your task is to review a source text and its translation from %s to %s, and then provide a list of constructive and specific suggestions to improve the translation. 
+The final style and tone should match the style of %s colloquially spoken in %s.
 
-IMPORTANT FORMATTING REQUIREMENTS:
-1. All original formatting must be preserved exactly:
-   - Markdown syntax (**, *, #, etc.)
-   - LaTeX formulas ($...$, $$...$$, \(...\), \[...\])
-   - HTML tags (<...>)
-2. All abbreviations and technical terms must remain unchanged:
-   - Unknown abbreviations should be kept in original form
-   - Code identifiers and variables must be preserved
-3. Document structure must be maintained:
-   - Line breaks and paragraph spacing
-   - Table formatting and alignment
-   - List markers and numbering
-4. DO NOT MODIFY OR TRANSLATE any text between ⚡⚡⚡ symbols (e.g., ⚡⚡⚡UNTRANSLATABLE_0⚡⚡⚡).
-   These are special markers that must remain exactly as they are.
+[INTERNAL INSTRUCTIONS: The following guidelines are for internal use only and must NOT appear in the final output.]
 
-The source text and initial translation, delimited by XML tags <SOURCE_TEXT></SOURCE_TEXT> and <TRANSLATION></TRANSLATION>, are as follows:
+Formatting and Review Guidelines:
+1. Preserve all original formatting exactly:
+	- Do not modify Markdown syntax (**, *, #, etc.).
+	- Do not alter any LaTeX formulas ($...$, $$...$$, \( ... \), \[ ... \]) or any LaTeX commands/environments.
+	- Do not change HTML tags (<...>).
+2. Maintain all abbreviations, technical terms, and code identifiers exactly as they appear.
+3. Preserve the document structure, including line breaks, paragraph spacing, table formatting, and list markers.
+4. IMPORTANT: Do not translate or modify any text matching the following pattern:
+  @@PRESERVE_<number>@@...@@/PRESERVE_<number>@@
+For example, if you see:
+  @@PRESERVE_0@@[1] Author et al.@@/PRESERVE_0@@
+or
+  @@PRESERVE_1@@$E = mc^2$@@/PRESERVE_1@@
+you must leave these parts exactly as they are.
+5. IMPORTANT: Preserve all paragraph breaks exactly as they are. Do not convert double newlines ("\n\n") into single newlines ("\n").
+
+Review Criteria:
+(i) Accuracy: Identify and correct any issues such as additions, mistranslations, omissions, or untranslated segments.
+(ii) Fluency: Ensure the translation follows %s grammar, spelling, and punctuation rules, avoiding unnecessary repetitions.
+(iii) Style: Verify that the translation reflects the source text's style and cultural context.
+(iv) Terminology: Ensure consistency in technical terms and that equivalent idioms in %s are properly used.
+(v) Formatting: Confirm that the translation maintains the original formatting, including Markdown, LaTeX, and HTML.
+
+[END OF INTERNAL INSTRUCTIONS]
+
+The source text and the initial translation are delimited by the following XML tags:
 
 <SOURCE_TEXT>
 %s
@@ -469,22 +574,13 @@ The source text and initial translation, delimited by XML tags <SOURCE_TEXT></SO
 %s
 </TRANSLATION>
 
-When writing suggestions, pay attention to whether there are ways to improve the translation's
-(i) accuracy (by correcting errors of addition, mistranslation, omission, or untranslated text),
-(ii) fluency (by applying %s grammar, spelling and punctuation rules, and ensuring there are no unnecessary repetitions),
-(iii) style (by ensuring the translations reflect the style of the source text and take into account any cultural context),
-(iv) terminology (by ensuring terminology use is consistent and reflects the source text domain; and by only ensuring you use equivalent idioms %s).
-(v) formatting (by ensuring the translations reflect the formatting of the source text, including the use of Markdown syntax, LaTeX formulas, and HTML tags and Text formatting).
-
-Write a list of specific, helpful and constructive suggestions for improving the translation.
-Each suggestion should address one specific part of the translation.
-Output only the suggestions and nothing else.`,
+Output only a list of constructive suggestions, each addressing a specific aspect of the translation, and nothing else.`,
 		t.config.SourceLang, t.config.TargetLang,
 		t.config.TargetLang, t.config.Country,
-		sourceText,
-		translation,
 		t.config.TargetLang,
-		t.config.TargetLang)
+		t.config.TargetLang,
+		sourceText,
+		translation)
 
 	// 调用语言模型
 	model := t.activeSteps.ReflectionModel
@@ -505,8 +601,10 @@ Output only the suggestions and nothing else.`,
 		zap.Int("输出令牌数", outputTokens),
 	)
 
+	result = t.RemoveUsedTags(result)
+
 	// 缓存结果
-	if t.config.UseCache {
+	if t.shouldUseCache() {
 		cacheKey := t.generateCacheKey(sourceText+translation, "reflection")
 		if err := t.cache.Set(cacheKey, result); err != nil {
 			t.logger.Warn("缓存反思结果失败", zap.Error(err))
@@ -518,8 +616,20 @@ Output only the suggestions and nothing else.`,
 
 // improvement 执行改进
 func (t *TranslatorImpl) improvement(sourceText, translation, reflection string) (string, error) {
+	// 如果改进模型为nil（设置为"none"），则跳过改进步骤
+	if t.activeSteps.ImprovementModel == nil {
+		t.logger.Info("改进模型设置为none，跳过改进步骤")
+		return translation, nil
+	}
+
+	// 如果改进模型类型为 raw，直接返回原翻译
+	if t.activeSteps.ImprovementModel.Type() == "raw" {
+		t.logger.Info("改进模型设置为raw，跳过改进步骤")
+		return translation, nil
+	}
+
 	// 检查缓存
-	if t.config.UseCache {
+	if t.shouldUseCache() {
 		cacheKey := t.generateCacheKey(sourceText+translation+reflection, "improvement")
 		if cached, ok := t.cache.Get(cacheKey); ok {
 			t.logger.Debug("从缓存加载改进结果")
@@ -528,13 +638,15 @@ func (t *TranslatorImpl) improvement(sourceText, translation, reflection string)
 	}
 
 	// 构建提示词
-	prompt := fmt.Sprintf(`Your task is to carefully read, then edit, a translation from %s to %s, taking into
-account a list of expert suggestions and constructive criticisms.
+	prompt := fmt.Sprintf(`
+Your task is to carefully read, then edit, a translation from %s to %s, taking into account a list of expert suggestions and constructive criticisms.
 
-CRITICAL FORMATTING REQUIREMENTS:
+[INTERNAL INSTRUCTIONS: The following guidelines are for internal use only and must NOT appear in the final output.]
+
+Critical Formatting Requirements:
 1. The following elements MUST remain exactly as in the source:
    - All Markdown formatting (**, *, #, etc.)
-   - All LaTeX formulas ($...$, $$...$$, \(...\), \[...\])
+   - All LaTeX formulas ($...$, $$...$$, \( ... \), \[ ... \])
    - All HTML tags (<...>)
 2. Preserve all technical elements:
    - Keep unknown abbreviations in original form
@@ -544,9 +656,27 @@ CRITICAL FORMATTING REQUIREMENTS:
    - Keep all line breaks and spacing
    - Preserve table formatting
    - Keep list markers and numbering
-4. DO NOT MODIFY OR TRANSLATE any text between ⚡⚡⚡ symbols (e.g., ⚡⚡⚡UNTRANSLATABLE_0⚡⚡⚡).
+4. IMPORTANT: Do not translate or modify any text matching the following pattern:
+  @@PRESERVE_<number>@@...@@/PRESERVE_<number>@@
+For example, if you see:
+  @@PRESERVE_0@@[1] Author et al.@@/PRESERVE_0@@
+or
+  @@PRESERVE_1@@$E = mc^2$@@/PRESERVE_1@@
+you must leave these parts exactly as they are.
+5. IMPORTANT: Preserve all paragraph breaks exactly as they are. Do not convert double newlines ("\n\n") into single newlines ("\n").
 
-The source text, the initial translation, and the expert linguist suggestions are delimited by XML tags <SOURCE_TEXT></SOURCE_TEXT>, <TRANSLATION></TRANSLATION> and <EXPERT_SUGGESTIONS></EXPERT_SUGGESTIONS> as follows:
+Editing Instructions:
+Please incorporate the following aspects when editing:
+(i) Accuracy: Correct any errors of addition, mistranslation, omission, or untranslated text.
+(ii) Fluency: Apply %s grammar, spelling, and punctuation rules and remove any unnecessary repetitions.
+(iii) Style: Ensure the translation reflects the style of the source text.
+(iv) Terminology: Address any inappropriate or inconsistent terminology.
+(v) Formatting: Ensure the translation preserves the original formatting, including Markdown, LaTeX, and HTML.
+(vi) Other errors as applicable.
+
+[END OF INTERNAL INSTRUCTIONS]
+
+The source text, the initial translation, and the expert suggestions are provided below:
 
 <SOURCE_TEXT>
 %s
@@ -560,21 +690,12 @@ The source text, the initial translation, and the expert linguist suggestions ar
 %s
 </EXPERT_SUGGESTIONS>
 
-Please take into account the expert suggestions when editing the translation. Edit the translation by ensuring:
-
-(i) accuracy (by correcting errors of addition, mistranslation, omission, or untranslated text),
-(ii) fluency (by applying %s grammar, spelling and punctuation rules and ensuring there are no unnecessary repetitions),
-(iii) style (by ensuring the translations reflect the style of the source text)
-(iv) terminology (inappropriate for context, inconsistent use), or
-(v) formatting (by ensuring the translations reflect the formatting of the source text, including the use of Markdown syntax, LaTeX formulas, and HTML tags and Text formatting).
-(vi) other errors.
-
-Output only the new translation and nothing else.`,
+Output only the new, edited translation and nothing else.`,
 		t.config.SourceLang, t.config.TargetLang,
+		t.config.TargetLang,
 		sourceText,
 		translation,
-		reflection,
-		t.config.TargetLang)
+		reflection)
 
 	// 调用语言模型
 	model := t.activeSteps.ImprovementModel
@@ -595,8 +716,10 @@ Output only the new translation and nothing else.`,
 		zap.Int("输出令牌数", outputTokens),
 	)
 
+	result = t.RemoveUsedTags(result)
+
 	// 缓存结果
-	if t.config.UseCache {
+	if t.shouldUseCache() {
 		cacheKey := t.generateCacheKey(sourceText+translation+reflection, "improvement")
 		if err := t.cache.Set(cacheKey, result); err != nil {
 			t.logger.Warn("缓存改进结果失败", zap.Error(err))

@@ -15,23 +15,24 @@ import (
 )
 
 var (
-	cfgFile           string
-	sourceLang        string
-	targetLang        string
-	country           string
-	stepSet           string
-	formatType        string
-	useCache          bool
-	cacheDir          string
-	debugMode         bool
-	showVersion       bool
-	listModels        bool
-	listFormats       bool
-	listStepSets      bool
-	forceCacheRefresh bool
-	listCache         bool
-	formatOnly        bool
-	noPostProcess     bool
+	cfgFile                    string
+	sourceLang                 string
+	targetLang                 string
+	country                    string
+	stepSet                    string
+	formatType                 string
+	useCache                   bool
+	cacheDir                   string
+	debugMode                  bool
+	showVersion                bool
+	listModels                 bool
+	listFormats                bool
+	listStepSets               bool
+	forceCacheRefresh          bool
+	listCache                  bool
+	formatOnly                 bool
+	noPostProcess              bool
+	predefinedTranslationsPath string
 )
 
 // NewRootCommand 创建根命令
@@ -70,43 +71,38 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			outputPath := args[1]
 
 			if formatOnly {
-				log.Info("仅格式化文件",
-					zap.String("输入文件", inputPath),
-					zap.String("输出文件", outputPath),
-				)
-
-				// 获取文件处理器
-				var processor formats.FormattingProcessor
-				var err error
-				if formatType != "" {
-					// 使用指定格式
-					processor, err = formats.NewFormattingProcessor(formatType)
-				} else {
-					// 根据文件扩展名自动检测格式
-					processor, err = formats.FormattingProcessorFromFilePath(inputPath)
-				}
-
-				if err != nil {
-					log.Error("创建文件处理器失败", zap.Error(err))
-					os.Exit(1)
-				}
-
-				if err := processor.FormatFile(inputPath, outputPath); err != nil {
+				if err := formats.FormatFile(inputPath); err != nil {
 					log.Error("格式化文件失败", zap.Error(err))
 					os.Exit(1)
 				}
-				log.Info("格式化完成",
-					zap.String("输入文件", inputPath),
-					zap.String("输出文件", outputPath),
-				)
+				log.Info("格式化完成", zap.String("文件", inputPath))
 				return
 			}
+
+			// 在翻译之前先格式化文件
+			if err := formats.FormatFile(inputPath); err != nil {
+				log.Error("文件格式化失败，无法继续翻译",
+					zap.String("文件", inputPath),
+					zap.Error(err))
+				os.Exit(1)
+			}
+			log.Info("文件格式化完成", zap.String("文件", inputPath))
 
 			// 加载配置
 			cfg, err := config.LoadConfig(cfgFile)
 			if err != nil {
 				log.Error("加载配置失败", zap.Error(err))
 				os.Exit(1)
+			}
+
+			predefinedTranslations := &config.PredefinedTranslation{}
+
+			if predefinedTranslationsPath != "" {
+				predefinedTranslations, err = config.LoadPredefinedTranslations(predefinedTranslationsPath)
+				if err != nil {
+					log.Error("加载预定义翻译失败", zap.Error(err))
+					os.Exit(1)
+				}
 			}
 
 			// 使用命令行参数覆盖配置
@@ -211,10 +207,10 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			var processor formats.Processor
 			if formatType != "" {
 				// 使用指定格式
-				processor, err = formats.NewProcessor(t, formatType)
+				processor, err = formats.NewProcessor(t, formatType, predefinedTranslations)
 			} else {
 				// 根据文件扩展名自动检测格式
-				processor, err = formats.ProcessorFromFilePath(t, inputPath)
+				processor, err = formats.ProcessorFromFilePath(t, inputPath, predefinedTranslations)
 			}
 
 			if err != nil {
@@ -283,6 +279,7 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 	rootCmd.PersistentFlags().BoolVar(&listCache, "list-cache", false, "列出缓存文件")
 	rootCmd.PersistentFlags().BoolVar(&formatOnly, "format-only", false, "仅格式化文件，不进行翻译")
 	rootCmd.PersistentFlags().BoolVar(&noPostProcess, "no-post-process", false, "禁用翻译后的Markdown后处理")
+	rootCmd.PersistentFlags().StringVar(&predefinedTranslationsPath, "predefined-translations", "", "预定义的翻译文件路径")
 
 	return rootCmd
 }

@@ -1,0 +1,9 @@
+*.md
+*.partial
+*.temp
+*.tmp
+*.bak
+*.old
+*.orig
+*.re
+*.json

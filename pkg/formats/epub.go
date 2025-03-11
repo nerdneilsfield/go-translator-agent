@@ -3,6 +3,7 @@ package formats
 import (
 	"fmt"
 
+	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 	"go.uber.org/zap"
 )
@@ -13,11 +14,12 @@ type EPUBProcessor struct {
 }
 
 // NewEPUBProcessor 创建一个新的EPUB处理器
-func NewEPUBProcessor(t translator.Translator) (*EPUBProcessor, error) {
+func NewEPUBProcessor(t translator.Translator, predefinedTranslations *config.PredefinedTranslation) (*EPUBProcessor, error) {
 	return &EPUBProcessor{
 		BaseProcessor: BaseProcessor{
-			Translator: t,
-			Name:       "EPUB",
+			Translator:             t,
+			Name:                   "EPUB",
+			predefinedTranslations: predefinedTranslations,
 		},
 	}, nil
 }

@@ -3,6 +3,7 @@ package formats
 import (
 	"fmt"
 
+	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 	"go.uber.org/zap"
 )
@@ -13,11 +14,12 @@ type LaTeXProcessor struct {
 }
 
 // NewLaTeXProcessor 创建一个新的LaTeX处理器
-func NewLaTeXProcessor(t translator.Translator) (*LaTeXProcessor, error) {
+func NewLaTeXProcessor(t translator.Translator, predefinedTranslations *config.PredefinedTranslation) (*LaTeXProcessor, error) {
 	return &LaTeXProcessor{
 		BaseProcessor: BaseProcessor{
-			Translator: t,
-			Name:       "LaTeX",
+			Translator:             t,
+			Name:                   "LaTeX",
+			predefinedTranslations: predefinedTranslations,
 		},
 	}, nil
 }

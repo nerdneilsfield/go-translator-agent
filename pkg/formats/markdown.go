@@ -1,966 +1,539 @@
 package formats
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
-	"sync"
-	"time"
 
-	formatter "github.com/mdigger/goldmark-formatter"
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/extension"
-	"github.com/yuin/goldmark/parser"
 	"go.uber.org/zap"
 )
 
-// MarkdownProcessor 是Markdown文件的处理器
+// TranslationResult 存储翻译结果和相关信息
+type TranslationResult struct {
+	RawTranslation string                 `json:"raw_translation"` // 原始翻译结果
+	Replacements   []ReplacementInfo      `json:"replacements"`    // 替换信息
+	Parts          []markdownPart         `json:"parts"`           // Markdown部分
+	Metadata       map[string]interface{} `json:"metadata"`        // 元数据
+}
+
+// markdownPart 表示Markdown文本的一部分
+type markdownPart struct {
+	Content      string `json:"content"`      // 内容
+	Translatable bool   `json:"translatable"` // 是否可翻译
+	PartType     string `json:"part_type"`    // 部分类型（如代码块、标题等）
+}
+
+// MarkdownProcessor 是Markdown文件处理器
 type MarkdownProcessor struct {
 	BaseProcessor
 	logger              *zap.Logger
 	currentInputFile    string // 当前正在处理的输入文件路径
 	currentReplacements []ReplacementInfo
-	currentParts        []markdownPart
+	config              *config.Config // 添加配置字段
 }
 
+// pre-compile regex
+var (
+	mdCodeBlockRegex  = regexp.MustCompile("(?s)```(.*?)```") // (?s) 让 . 能匹配换行
+	mdMultiMathRegex  = regexp.MustCompile(`(?s)\$\$(.*?)\$\$`)
+	mdTableBlockRegex = regexp.MustCompile(
+		`(?m)^[ \t]*\|.*\|[ \t]*\r?\n` +
+			`^[ \t]*\|[ :\-\.\|\t]+?\|[ \t]*\r?\n` +
+			`^(?:[ \t]*\|.*\|[ \t]*\r?\n)+`,
+	)
+	mdInlineCodeRegex = regexp.MustCompile("`[^`]+`")
+	mdInlineMathRegex = regexp.MustCompile(`\$[^$]+\$`)
+	mdImageRegex      = regexp.MustCompile(`!\[[^\]]*\]\([^)]*\)`)
+	// 匹配"只包含标点、空白、数字" (允许 \r\n 和所有 Unicode 空白(\p{Z})、标点(\p{P})、数字(\p{N}))
+	// ^...$ 表示整段文本从头到尾完全匹配
+	mdReOnlySymbols = regexp.MustCompile(`^[\p{P}\p{Z}\p{N}\r\n]*$`)
+)
+
 // NewMarkdownProcessor 创建一个新的Markdown处理器
-func NewMarkdownProcessor(t translator.Translator) (*MarkdownProcessor, error) {
-	// 获取 zap.Logger
-	var zapLogger *zap.Logger
-	if log, ok := t.GetLogger().(interface{ GetZapLogger() *zap.Logger }); ok {
-		zapLogger = log.GetZapLogger()
-	} else {
-		// 如果无法获取 zap.Logger，创建一个新的
-		zapLogger, _ = zap.NewProduction()
+func NewMarkdownProcessor(t translator.Translator, predefinedTranslations *config.PredefinedTranslation) (*MarkdownProcessor, error) {
+	var cfg *config.Config
+	if configProvider, ok := t.(interface{ GetConfig() *config.Config }); ok {
+		cfg = configProvider.GetConfig()
 	}
+
+	// 获取logger，如果无法转换则创建新的
+	zapLogger, _ := zap.NewProduction()
+	if loggerProvider, ok := t.GetLogger().(interface{ GetZapLogger() *zap.Logger }); ok {
+		if zl := loggerProvider.GetZapLogger(); zl != nil {
+			zapLogger = zl
+		}
+	}
+
+	log.Debug("Loading predefined translations", zap.Int("count", len(predefinedTranslations.Translations)))
 
 	return &MarkdownProcessor{
 		BaseProcessor: BaseProcessor{
-			Translator: t,
-			Name:       "Markdown",
+			Translator:             t,
+			Name:                   "Markdown",
+			predefinedTranslations: predefinedTranslations,
 		},
 		logger: zapLogger,
+		config: cfg,
 	}, nil
-}
-
-// TranslationResult 保存翻译结果和相关信息
-type TranslationResult struct {
-	RawTranslation string                 `json:"raw_translation"`
-	Replacements   []ReplacementInfo      `json:"replacements"`
-	Parts          []markdownPart         `json:"parts"`
-	Metadata       map[string]interface{} `json:"metadata"`
-}
-
-// ReplacementInfo 保存替换信息
-type ReplacementInfo struct {
-	Placeholder string `json:"placeholder"`
-	Original    string `json:"original"`
 }
 
 // TranslateFile 翻译Markdown文件
 func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
-	// 设置当前输入文件路径
-	p.currentInputFile = inputPath
 
-	// 读取输入文件
-	content, err := os.ReadFile(inputPath)
+	FormatFile(inputPath)
+
+	// 1. 读取文件内容
+	contentBytes, err := os.ReadFile(inputPath)
 	if err != nil {
-		return fmt.Errorf("读取文件失败 %s: %w", inputPath, err)
+		p.logger.Error("无法读取文件", zap.Error(err), zap.String("文件路径", inputPath))
+		return fmt.Errorf("无法读取文件 %s: %v", inputPath, err)
+	}
+	originalText := string(contentBytes)
+
+	// 2. 先进行占位符保护（先多行再单行）
+	protectedText, replacements := p.protectMarkdown(originalText)
+
+	p.currentReplacements = replacements
+
+	// 3.1 合并连续的占位符段落
+	protectedText = p.combineConsecutivePlaceholderParagraphs(protectedText)
+
+	// 3. 保存 replacements
+	replacementsJson, err := json.MarshalIndent(ReplacementInfoList{Replacements: p.currentReplacements}, "", "    ")
+	if err != nil {
+		p.logger.Error("无法序列化替换信息", zap.Error(err))
+		return fmt.Errorf("无法序列化替换信息: %v", err)
+	}
+	err = os.WriteFile(strings.TrimSuffix(outputPath, ".md")+".replacements.json", replacementsJson, os.ModePerm)
+	if err != nil {
+		p.logger.Error("无法写出替换信息", zap.Error(err), zap.String("文件路径", strings.TrimSuffix(outputPath, ".md")+".replacements.json"))
+		return fmt.Errorf("无法写出替换信息 %s: %v", strings.TrimSuffix(outputPath, ".md")+".replacements.json", err)
+	}
+	protectedTextFile := strings.TrimSuffix(outputPath, ".md") + ".protected.md"
+	err = os.WriteFile(protectedTextFile, []byte(protectedText), os.ModePerm)
+	if err != nil {
+		p.logger.Error("无法写出保护后的文本", zap.Error(err), zap.String("文件路径", protectedTextFile))
+		return fmt.Errorf("无法写出保护后的文本 %s: %v", protectedTextFile, err)
 	}
 
-	// 获取配置
-	var autoSaveInterval int = 300    // 默认5分钟
-	var translationTimeout int = 1800 // 默认30分钟
+	FormatFile(protectedTextFile)
 
-	if cfg, ok := p.Translator.(interface{ GetConfig() *config.Config }); ok {
-		config := cfg.GetConfig()
-		if config.AutoSaveInterval > 0 {
-			autoSaveInterval = config.AutoSaveInterval
-		}
-		if config.TranslationTimeout > 0 {
-			translationTimeout = config.TranslationTimeout
-		}
+	// 4. 使用 splitTextToChunks 分段
+	chunks := p.splitTextToChunks(protectedText, p.config.MinSplitSize, p.config.MaxSplitSize)
+	p.logger.Info("分段结果", zap.Int("Chunk数", len(chunks)))
+	p.logger.Debug("分段具体长度", zap.Int("Chunk数", len(chunks)))
+	for chundId, chunk := range chunks {
+		p.logger.Debug("分段ID", zap.Int("ID", chundId), zap.Int("内容长度", len(chunk.Text)), zap.Bool("是否需要翻译", chunk.NeedToTranslate))
 	}
 
-	log := p.logger
-	log.Info("开始翻译文件",
-		zap.String("输入文件", inputPath),
-		zap.String("输出文件", outputPath),
-		zap.Int("自动保存间隔", autoSaveInterval),
-		zap.Int("翻译超时时间", translationTimeout),
-	)
-
-	// 创建上下文，用于超时控制
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(translationTimeout)*time.Second)
-	defer cancel()
-
-	// 创建通道，用于接收翻译结果和进度更新
-	resultCh := make(chan struct {
-		text string
-		err  error
-	})
-
-	// 启动翻译协程
-	go func() {
-		translated, err := p.TranslateText(string(content))
-		resultCh <- struct {
-			text string
-			err  error
-		}{translated, err}
-	}()
-
-	// 创建自动保存计时器
-	ticker := time.NewTicker(time.Duration(autoSaveInterval) * time.Second)
-	defer ticker.Stop()
-
-	// 用于存储部分结果
-	var partialResult string
-
-	// 等待翻译完成或超时
-	for {
-		select {
-		case <-ctx.Done():
-			// 翻译超时
-			log.Error("翻译超时",
-				zap.String("输入文件", inputPath),
-				zap.Error(ctx.Err()),
-			)
-
-			// 如果有部分结果，保存它
-			if partialResult != "" {
-				tempOutputPath := outputPath + ".partial"
-				if err := os.WriteFile(tempOutputPath, []byte(partialResult), 0644); err != nil {
-					log.Error("保存部分结果失败",
-						zap.String("输出文件", tempOutputPath),
-						zap.Error(err),
-					)
-				} else {
-					log.Info("已保存部分结果",
-						zap.String("输出文件", tempOutputPath),
-					)
-				}
-			}
-
-			return fmt.Errorf("翻译超时: %w", ctx.Err())
-
-		case result := <-resultCh:
-			// 翻译完成
-			if result.err != nil {
-				return fmt.Errorf("翻译Markdown失败: %w", result.err)
-			}
-
-			// 写入输出文件
-			if err := os.WriteFile(outputPath, []byte(result.text), 0644); err != nil {
-				return fmt.Errorf("写入文件失败 %s: %w", outputPath, err)
-			}
-
-			// 保存原始翻译结果和替换信息
-			rawOutputPath := strings.TrimSuffix(outputPath, ".md") + "_raw.json"
-			translationResult := &TranslationResult{
-				RawTranslation: result.text,
-				Replacements:   p.currentReplacements,
-				Parts:          p.currentParts,
-				Metadata: map[string]interface{}{
-					"input_file":       inputPath,
-					"output_file":      outputPath,
-					"translation_time": time.Now().Format(time.RFC3339),
-				},
-			}
-
-			// 将结果转换为JSON并保存
-			jsonData, err := json.MarshalIndent(translationResult, "", "  ")
-			if err != nil {
-				log.Error("转换JSON失败", zap.Error(err))
-			} else {
-				if err := os.WriteFile(rawOutputPath, jsonData, 0644); err != nil {
-					log.Error("保存原始翻译结果失败",
-						zap.String("文件路径", rawOutputPath),
-						zap.Error(err))
-				} else {
-					log.Info("已保存原始翻译结果",
-						zap.String("文件路径", rawOutputPath))
-				}
-			}
-
-			log.Info("翻译完成",
-				zap.String("输出文件", outputPath),
-			)
-
-			return nil
-		case <-ticker.C:
-			// 自动保存和进度更新
-			if partialResult != "" {
-				tempOutputPath := outputPath + ".partial"
-				if err := os.WriteFile(tempOutputPath, []byte(partialResult), 0644); err != nil {
-					log.Error("自动保存失败",
-						zap.String("输出文件", tempOutputPath),
-						zap.Error(err),
-					)
-				} else {
-					log.Info("自动保存成功",
-						zap.String("输出文件", tempOutputPath),
-					)
-				}
-			}
-		}
+	// 5. 调用 TranslateText 翻译每个分段
+	var translatedBuilder strings.Builder
+	translatedChunks, err := parallelTranslateChunks(chunks, p, p.config.Concurrency)
+	if err != nil {
+		p.logger.Warn("翻译出错", zap.Error(err))
 	}
-}
-
-// translationProgress 用于跟踪翻译进度
-type translationProgress struct {
-	mu sync.Mutex
-	// 总字数
-	totalChars int
-	// 已翻译字数
-	translatedChars int
-	// 开始时间
-	startTime time.Time
-	// 预计剩余时间（秒）
-	estimatedTimeRemaining float64
-}
-
-// updateProgress 更新翻译进度
-func (tp *translationProgress) updateProgress(chars int) {
-	tp.mu.Lock()
-	defer tp.mu.Unlock()
-
-	tp.translatedChars += chars
-
-	// 计算预计剩余时间
-	elapsed := time.Since(tp.startTime).Seconds()
-	if tp.translatedChars > 0 {
-		charsPerSecond := float64(tp.translatedChars) / elapsed
-		remainingChars := tp.totalChars - tp.translatedChars
-		tp.estimatedTimeRemaining = float64(remainingChars) / charsPerSecond
+	for _, translatedChunk := range translatedChunks {
+		translatedBuilder.WriteString(translatedChunk + "\n\n")
 	}
-}
+	translated := translatedBuilder.String()
 
-// getProgress 获取当前进度信息
-func (tp *translationProgress) getProgress() (int, int, float64) {
-	tp.mu.Lock()
-	defer tp.mu.Unlock()
-	return tp.totalChars, tp.translatedChars, tp.estimatedTimeRemaining
-}
-
-// formatMarkdown 格式化 Markdown 文本
-func (p *MarkdownProcessor) formatMarkdown(text string) (string, error) {
-	// 预处理文本，处理图片换行和清理无效标记
-	text = processImages(text)
-	text = cleanInvalidImageTags(text)
-	text = fixTitleSeparators(text)
-	text = addMathSpaces(text)
-
-	// 创建一个新的 goldmark 实例，使用 formatter.Markdown 渲染器
-	md := goldmark.New(
-		goldmark.WithRenderer(formatter.Markdown), // markdown output
-		goldmark.WithExtensions(
-			extension.GFM,            // GitHub Flavored Markdown
-			extension.Typographer,    // 排版优化
-			extension.TaskList,       // 任务列表
-			extension.Table,          // 表格
-			extension.Strikethrough,  // 删除线
-			extension.DefinitionList, // 定义列表
-		),
-		goldmark.WithParserOptions(
-			parser.WithAutoHeadingID(), // 自动生成标题ID
-			parser.WithAttribute(),     // 允许属性设置
-		),
-	)
-
-	var buf bytes.Buffer
-	if err := md.Convert([]byte(text), &buf); err != nil {
-		return "", fmt.Errorf("格式化Markdown失败: %w", err)
+	// 6. 保存中间结果
+	outputPathWithExt := strings.TrimSuffix(outputPath, ".md") + ".intermediate.md"
+	err = os.WriteFile(outputPathWithExt, []byte(translated), os.ModePerm)
+	if err != nil {
+		p.logger.Error("无法写出中间结果", zap.Error(err), zap.String("文件路径", outputPathWithExt))
+		return fmt.Errorf("无法写出中间结果 %s: %v", outputPathWithExt, err)
 	}
 
-	return buf.String(), nil
-}
+	FormatFile(outputPathWithExt)
 
-// processImages 在图片标记后添加换行符
-func processImages(text string) string {
-	// 匹配完整的图片标记，确保后面没有换行符时添加换行符
-	re := regexp.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)([^\n]|$)`)
-	return re.ReplaceAllString(text, "![$1]($2)\n$3")
-}
+	// 7. 将翻译后的内容中占位符还原
+	finalResult := p.restoreMarkdown(translated, p.currentReplacements)
 
-// cleanInvalidImageTags 清理无效的图片标记
-func cleanInvalidImageTags(text string) string {
-	// 清理不完整的图片标记
-	patterns := []string{
-		`!\[图片\]\s*\n`,           // 匹配 ![图片]\n
-		`!\[图片\]\s*\n\s*!\[图片\]`, // 匹配 ![图片]\n![图片]
-		`!\[图片\]\s*$`,            // 匹配末尾的 ![图片]
-		`\(\s*\n\s*\)`,           // 匹配 (\n)
+	finalResult = RemoveRedundantNewlines(finalResult)
+
+	// 8. 写出翻译结果到目标文件
+	err = os.WriteFile(outputPath, []byte(finalResult), os.ModePerm)
+	if err != nil {
+		p.logger.Error("无法写出文件", zap.Error(err), zap.String("文件路径", outputPath))
+		return fmt.Errorf("无法写出文件 %s: %v", outputPath, err)
 	}
 
-	result := text
-	for _, pattern := range patterns {
-		re := regexp.MustCompile(pattern)
-		result = re.ReplaceAllString(result, "")
-	}
-	return result
-}
+	FormatFile(outputPath)
 
-// fixTitleSeparators 修正标题分隔符的格式
-func fixTitleSeparators(text string) string {
-	// 匹配标题和分隔符的模式
-	re := regexp.MustCompile(`(?m)^([^\n]+)\n\s*(={3,}|-{3,})\s*$`)
-
-	return re.ReplaceAllStringFunc(text, func(match string) string {
-		parts := re.FindStringSubmatch(match)
-		if len(parts) != 3 {
-			return match
-		}
-
-		content := parts[1]
-		separator := parts[2]
-
-		// 检查内容中是否包含句号
-		lastDotIndex := -1
-		for _, dot := range []string{"。", "."} {
-			if idx := strings.LastIndex(content, dot); idx > lastDotIndex {
-				lastDotIndex = idx
-			}
-		}
-
-		// 如果找到句号，将内容分成两部分
-		if lastDotIndex != -1 {
-			sentence := content[:lastDotIndex+1]
-			title := strings.TrimSpace(content[lastDotIndex+1:])
-			return fmt.Sprintf("%s\n\n%s\n\n%s\n\n", sentence, title, separator)
-		}
-
-		// 如果没有找到句号，在标题和分隔符之间添加换行
-		return fmt.Sprintf("%s\n\n%s\n\n", content, separator)
-	})
-}
-
-// addMathSpaces 在数学公式前后添加空格
-func addMathSpaces(text string) string {
-	// 处理行内公式
-	inlineMathRegex := regexp.MustCompile(`([^\s$])\$([^$]+)\$([^\s$])`)
-	text = inlineMathRegex.ReplaceAllString(text, "$1 $$$2$$ $3")
-
-	// 处理只缺少前面空格的情况
-	text = regexp.MustCompile(`([^\s$])\$([^$]+)\$\s`).ReplaceAllString(text, "$1 $$$2$$ ")
-
-	// 处理只缺少后面空格的情况
-	text = regexp.MustCompile(`\s\$([^$]+)\$([^\s$])`).ReplaceAllString(text, " $$$1$$ $2")
-
-	// 处理块级公式，添加双换行符
-	blockMathRegex := regexp.MustCompile(`([^\n])\$\$([^$]+)\$\$([^\n])`)
-	text = blockMathRegex.ReplaceAllString(text, "$1\n\n$$$$2$$$$\n\n$3")
-
-	// 处理只缺少前面换行的块级公式
-	text = regexp.MustCompile(`([^\n])\$\$([^$]+)\$\$\n`).ReplaceAllString(text, "$1\n\n$$$$2$$$$\n")
-
-	// 处理只缺少后面换行的块级公式
-	text = regexp.MustCompile(`\n\$\$([^$]+)\$\$([^\n])`).ReplaceAllString(text, "\n$$$$1$$$$\n\n$2")
-
-	return text
+	return nil
 }
 
 // TranslateText 翻译Markdown文本
 func (p *MarkdownProcessor) TranslateText(text string) (string, error) {
-	log := p.logger
-	log.Info("开始翻译Markdown文本")
-
-	// 重置当前状态
-	p.currentParts = nil
-	p.currentReplacements = nil
-
-	// 首先格式化 Markdown
-	formattedText, err := p.formatMarkdown(text)
+	// 这里实际实现可以直接调用 p.Translator.Translate(...)
+	// 或者使用你自定义的逻辑。以下仅示例：
+	translated, err := p.Translator.Translate(text, true)
 	if err != nil {
-		log.Warn("Markdown格式化失败，将使用原始文本", zap.Error(err))
-		formattedText = text
+		return "", err
 	}
+	return translated, nil
+}
 
-	// 保存格式化后的文件
-	if strings.HasSuffix(p.currentInputFile, ".md") {
-		formattedFilePath := strings.TrimSuffix(p.currentInputFile, ".md") + "_formatted.md"
-		if err := os.WriteFile(formattedFilePath, []byte(formattedText), 0644); err != nil {
-			log.Warn("保存格式化文件失败",
-				zap.String("文件路径", formattedFilePath),
-				zap.Error(err))
-		} else {
-			log.Info("已保存格式化文件",
-				zap.String("文件路径", formattedFilePath))
-		}
-	}
+// GetCurrentReplacements 获取当前的替换信息
+func (p *MarkdownProcessor) GetCurrentReplacements() []ReplacementInfo {
+	return p.currentReplacements
+}
 
-	// 获取配置的分割大小限制
-	minSplitSize := 100  // 默认最小分割大小
-	maxSplitSize := 1000 // 默认最大分割大小
-
-	if cfg, ok := p.Translator.(interface{ GetConfig() *config.Config }); ok {
-		config := cfg.GetConfig()
-		if config.MinSplitSize > 0 {
-			minSplitSize = config.MinSplitSize
-		}
-		if config.MaxSplitSize > 0 {
-			maxSplitSize = config.MaxSplitSize
-		}
-	}
-
-	log.Debug("分割大小设置",
-		zap.Int("最小分割大小", minSplitSize),
-		zap.Int("最大分割大小", maxSplitSize),
-	)
-
-	// 分割Markdown文本
-	parts, replacements, err := p.splitMarkdown(formattedText, minSplitSize, maxSplitSize)
-	if err != nil {
-		return "", fmt.Errorf("分割Markdown失败: %w", err)
-	}
-
-	// 找出需要翻译的部分
-	var translatableParts []int
-	for i, part := range parts {
-		if part.translatable {
-			translatableParts = append(translatableParts, i)
-		}
-	}
-
-	// 获取配置的并行度
-	concurrency := 4 // 默认并行度
-	if cfg, ok := p.Translator.(interface{ GetConfig() *config.Config }); ok {
-		if cfg.GetConfig().Concurrency > 0 {
-			concurrency = cfg.GetConfig().Concurrency
-		}
-	}
-
-	// 限制并行度不超过需要翻译的部分数量
-	if concurrency > len(translatableParts) {
-		concurrency = len(translatableParts)
-	}
-
-	log.Debug("并行翻译设置",
-		zap.Int("需要翻译的部分", len(translatableParts)),
-		zap.Int("并行度", concurrency),
-	)
-
-	// 初始化进度跟踪
-	var totalChars int
-	for _, idx := range translatableParts {
-		totalChars += len(parts[idx].content)
-	}
-	progress := NewProgressTracker(totalChars)
-
-	// 如果没有需要翻译的部分，直接返回原文
-	if len(translatableParts) == 0 {
-		return formattedText, nil
-	}
-
-	// 如果只有一个需要翻译的部分，或者并行度为1，使用串行处理
-	if len(translatableParts) == 1 || concurrency == 1 {
-		for i, part := range parts {
-			if part.translatable {
-				log.Debug("翻译Markdown部分",
-					zap.Int("部分索引", i),
-					zap.Int("部分长度", len(part.content)),
-					zap.String("部分类型", part.partType),
-				)
-
-				// 翻译内容
-				translated, err := p.Translator.Translate(part.content)
-				if err != nil {
-					return "", fmt.Errorf("翻译Markdown部分失败: %w", err)
-				}
-
-				// 更新进度
-				progress.UpdateProgress(len(part.content))
-
-				// 更新翻译后的内容
-				parts[i].content = translated
-			}
-		}
-	} else {
-		// 使用并行处理
-		type translationJob struct {
-			index   int
-			content string
-		}
-
-		type translationResult struct {
-			index      int
-			translated string
-			err        error
-		}
-
-		jobs := make(chan translationJob, len(translatableParts))
-		results := make(chan translationResult, len(translatableParts))
-		translatedParts := make([]string, len(translatableParts))
-
-		// 启动工作协程
-		var wg sync.WaitGroup
-		for w := 0; w < concurrency; w++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for job := range jobs {
-					translated, err := p.Translator.Translate(job.content)
-					if err == nil {
-						// 更新进度
-						progress.UpdateProgress(len(job.content))
-					}
-					results <- translationResult{
-						index:      job.index,
-						translated: translated,
-						err:        err,
-					}
-				}
-			}()
-		}
-
-		// 发送翻译任务
-		for i, idx := range translatableParts {
-			jobs <- translationJob{
-				index:   i, // 使用切片索引而不是部分索引
-				content: parts[idx].content,
-			}
-		}
-		close(jobs)
-
-		// 等待所有工作完成
-		go func() {
-			wg.Wait()
-			close(results)
-		}()
-
-		// 收集结果
-		for result := range results {
-			if result.err != nil {
-				return "", fmt.Errorf("翻译Markdown部分失败 (索引 %d): %w", result.index, result.err)
-			}
-
-			// 将结果存储在正确的位置
-			translatedParts[result.index] = result.translated
-		}
-
-		// 按顺序更新翻译后的内容
-		for i, idx := range translatableParts {
-			parts[idx].content = translatedParts[i]
-		}
-	}
-
-	// 组合翻译后的部分
-	var result strings.Builder
-	var lastPartWasEmpty bool
-
-	for i, part := range parts {
-		content := part.content
-
-		// 移除翻译指令
-		content = strings.TrimPrefix(content, "IMPORTANT: Translate the following text while strictly following these rules:")
-		content = strings.TrimPrefix(content, "Original text:")
-
-		// 如果是翻译部分，清理掉指令部分
-		if part.translatable {
-			if idx := strings.Index(content, "Placeholder mappings"); idx != -1 {
-				if endIdx := strings.Index(content[idx:], "Original text:"); endIdx != -1 {
-					content = content[idx+endIdx+len("Original text:"):]
-				}
-			}
-		}
-
-		// 清理空白
-		content = strings.TrimSpace(content)
-
-		// 如果当前部分不为空
-		if content != "" {
-			// 如果上一个部分不为空且当前部分不以换行开始，添加换行
-			if !lastPartWasEmpty && !strings.HasPrefix(content, "\n") {
-				result.WriteString("\n")
-			}
-
-			// 写入内容
-			result.WriteString(content)
-
-			// 如果不是最后一个部分且不以换行结束，添加换行
-			if i < len(parts)-1 && !strings.HasSuffix(content, "\n") {
-				result.WriteString("\n")
-			}
-
-			lastPartWasEmpty = false
-		} else {
-			lastPartWasEmpty = true
-		}
-	}
-
-	// 获取最终进度信息
-	totalChars, translatedChars, _ := progress.GetProgress()
-
-	log.Info("Markdown文本翻译完成",
-		zap.Int("原始总字数", totalChars),
-		zap.Int("已翻译字数", translatedChars),
-		zap.Float64("翻译速度(字/秒)", float64(translatedChars)/time.Since(progress.startTime).Seconds()),
-	)
-
-	// 获取合并后的文本
-	finalText := result.String()
-
-	// 还原占位符
-	for _, replacement := range p.currentReplacements {
-		// 使用正则表达式进行更精确的匹配
-		pattern := regexp.MustCompile(`⚡⚡⚡UNTRANSLATABLE_\d+⚡⚡⚡`)
-		matches := pattern.FindAllString(finalText, -1)
-
-		// 如果找不到精确匹配，尝试更宽松的匹配
-		if len(matches) == 0 {
-			// 提取占位符中的数字部分
-			numPattern := regexp.MustCompile(`UNTRANSLATABLE_(\d+)`)
-			numMatch := numPattern.FindStringSubmatch(replacement.Placeholder)
-
-			if len(numMatch) > 1 {
-				placeholderNum := numMatch[1]
-				// 构建更宽松的正则表达式
-				loosePattern := regexp.MustCompile(`⚡⚡⚡[^⚡]*` + placeholderNum + `[^⚡]*⚡⚡⚡`)
-				finalText = loosePattern.ReplaceAllString(finalText, replacement.Original)
-			}
-		} else {
-			// 使用精确的占位符进行替换
-			finalText = strings.ReplaceAll(finalText, replacement.Placeholder, replacement.Original)
-		}
-	}
-
-	// 移除翻译标记
-	finalText = strings.ReplaceAll(finalText, "<TEXT TO TRANSLATE>\n", "")
-	finalText = strings.ReplaceAll(finalText, "</TEXT TO TRANSLATE>", "")
-	finalText = strings.ReplaceAll(finalText, "</SOURCE_TEXT>", "")
-	finalText = strings.ReplaceAll(finalText, "<SOURCE_TEXT>", "")
-	finalText = strings.ReplaceAll(finalText, "<html><body>", "")
-	finalText = strings.ReplaceAll(finalText, "</html></body>", "")
-
-	// 保存原始翻译结果
-	if strings.HasSuffix(p.currentInputFile, ".md") {
-		rawMdPath := strings.TrimSuffix(p.currentInputFile, ".md") + "_raw.md"
-		if err := os.WriteFile(rawMdPath, []byte(finalText), 0644); err != nil {
-			log.Error("保存原始翻译结果失败",
-				zap.String("文件路径", rawMdPath),
-				zap.Error(err))
-		} else {
-			log.Info("已保存原始翻译结果",
-				zap.String("文件路径", rawMdPath))
-		}
-	}
-
-	// 应用后处理
-	if cfg, ok := p.Translator.(interface{ GetConfig() *config.Config }); ok {
-		config := cfg.GetConfig()
-		if config.PostProcessMarkdown {
-			postProcessor := NewMarkdownPostProcessor(config, p.logger)
-			finalText = postProcessor.ProcessMarkdown(finalText)
-		}
-	}
-
-	p.currentParts = parts
+// SetCurrentReplacements 设置当前的替换信息
+func (p *MarkdownProcessor) SetCurrentReplacements(replacements []ReplacementInfo) {
 	p.currentReplacements = replacements
-
-	return finalText, nil
 }
 
-// markdownPart 表示Markdown文本的一部分
-type markdownPart struct {
-	content      string // 内容
-	translatable bool   // 是否可翻译
-	partType     string // 部分类型（如代码块、标题等）
+// GetCurrentInputFile 获取当前正在处理的输入文件路径
+func (p *MarkdownProcessor) GetCurrentInputFile() string {
+	return p.currentInputFile
 }
 
-// splitMarkdown 将Markdown文本分割成可翻译和不可翻译的部分
-func (p *MarkdownProcessor) splitMarkdown(text string, minSplitSize, maxSplitSize int) ([]markdownPart, []ReplacementInfo, error) {
-	p.logger.Debug("分割Markdown文本",
-		zap.Int("最小分割大小", minSplitSize),
-		zap.Int("最大分割大小", maxSplitSize),
-	)
+// SetCurrentInputFile 设置当前正在处理的输入文件路径
+func (p *MarkdownProcessor) SetCurrentInputFile(path string) {
+	p.currentInputFile = path
+}
 
-	// 存储原始内容和对应的标记
+// GetConfig 获取配置
+func (p *MarkdownProcessor) GetConfig() *config.Config {
+	return p.config
+}
+
+// GetLogger 获取日志记录器
+func (p *MarkdownProcessor) GetLogger() *zap.Logger {
+	return p.logger
+}
+
+// protectMarkdown 会使用正则或其他方法，先把多行块（代码块、表格、数学公式等）
+// 再把单行元素（行内代码、行内数学公式、图片等）替换成占位符。
+func (p *MarkdownProcessor) protectMarkdown(text string) (string, []ReplacementInfo) {
 	var replacements []ReplacementInfo
-	placeholderCount := 0
+	placeholderIndex := 0
 
-	// 替换函数
-	replacePlaceholder := func(match string) string {
-		placeholder := fmt.Sprintf("⚡⚡⚡UNTRANSLATABLE_%d⚡⚡⚡", placeholderCount)
+	// 如果存在预定义的翻译，则先进行预定义的翻译
+	if p.predefinedTranslations != nil {
+		for key, value := range p.predefinedTranslations.Translations {
+			placeholder := fmt.Sprintf("@@PRESERVE_%d@@", placeholderIndex)
+			replacements = append(replacements, ReplacementInfo{
+				Placeholder: placeholder,
+				Original:    value,
+			})
+			placeholderIndex++
+			text = strings.ReplaceAll(text, key, placeholder)
+		}
+	}
+
+	/*
+	   =========================================
+	   1. 多行内容保护
+	   =========================================
+	*/
+
+	// 1.1 保护三引号包裹的多行代码块 ```...```
+	text = mdCodeBlockRegex.ReplaceAllStringFunc(text, func(match string) string {
+		placeholder := fmt.Sprintf("@@PRESERVE_%d@@", placeholderIndex)
 		replacements = append(replacements, ReplacementInfo{
 			Placeholder: placeholder,
 			Original:    match,
 		})
-		placeholderCount++
-		return placeholder
-	}
+		placeholderIndex++
+		return "\n" + placeholder + "\n"
+	})
 
-	// 定义需要替换的模式
-	patterns := []struct {
-		regex *regexp.Regexp
-		name  string
-	}{
-		{regexp.MustCompile("(?s)```.*?```"), "code_block"},
-		{regexp.MustCompile("`[^`]+`"), "inline_code"},
-		{regexp.MustCompile(`\$\$[^$]+\$\$`), "block_math"},
-		{regexp.MustCompile(`\$[^$]+\$`), "inline_math"},
-		{regexp.MustCompile(`\\\\?\(.*?\\\\?\)`), "latex_inline"},
-		{regexp.MustCompile(`\\\\?\[.*?\\\\?\]`), "latex_display"},
-		{regexp.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`), "image"},
-		{regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`), "link"},
-		{regexp.MustCompile(`<[^>]+>`), "html_tag"},
-		{regexp.MustCompile(`\b[A-Z]{2,}(?:-[A-Z]{2,})*(?:\d+)?(?:-\d+)?\b`), "abbreviation"},
-		{regexp.MustCompile(`(?m)^(#{1,6})\s+(.+)$`), "heading"},
-		// 添加学术引用文献格式的识别
-		{regexp.MustCompile(`\[\d+\]\s+[A-Z][^,]+,(?:\s+[^,]+,)*\s+"[^"]+,"\s+[^,]+,\s+vol\.\s+\d+`), "citation"},
-		{regexp.MustCompile(`\[\d+\]\s+[A-Z][^,]+,(?:\s+and\s+[^,]+)*,\s+"[^"]+,"\s+[^,]+,\s+\d{4}`), "citation"},
-	}
+	// 1.2 保护多行数学公式 $$...$$
 
-	// 替换所有特殊格式为占位符
-	processedText := text
-	for _, pattern := range patterns {
-		if pattern.name == "heading" {
-			// 特殊处理标题，保留#符号
-			processedText = pattern.regex.ReplaceAllStringFunc(processedText, func(match string) string {
-				parts := pattern.regex.FindStringSubmatch(match)
-				if len(parts) == 3 {
-					placeholder := replacePlaceholder(parts[2])
-					return parts[1] + " " + placeholder
-				}
-				return match
-			})
-		} else {
-			processedText = pattern.regex.ReplaceAllStringFunc(processedText, replacePlaceholder)
-		}
-	}
+	text = mdMultiMathRegex.ReplaceAllStringFunc(text, func(match string) string {
+		placeholder := fmt.Sprintf("@@PRESERVE_%d@@", placeholderIndex)
+		replacements = append(replacements, ReplacementInfo{
+			Placeholder: placeholder,
+			Original:    match,
+		})
+		placeholderIndex++
+		return "\n" + placeholder + "\n"
+	})
 
-	// 按行分割处理后的文本
-	lines := strings.Split(processedText, "\n")
-	var parts []markdownPart
-	var currentPart markdownPart
-	currentPart.translatable = true
-	currentPart.partType = "text"
+	// 1.3 保护 Markdown 表格
+	//     这里仅示例一种最常见的表格式写法：
+	//       | col1 | col2 |
+	//       |------|------|
+	//       | ...  | ...  |
+	//
+	//     正则逻辑：尝试匹配表头行 + 分割行 + 至少一行数据
+	//     在实际项目中，需要根据更多变体进行增强和测试。
+	text = mdTableBlockRegex.ReplaceAllStringFunc(text, func(match string) string {
+		placeholder := fmt.Sprintf("@@PRESERVE_%d@@", placeholderIndex)
+		replacements = append(replacements, ReplacementInfo{
+			Placeholder: placeholder,
+			Original:    match,
+		})
+		placeholderIndex++
+		return "\n" + placeholder + "\n"
+	})
 
-	// 按行组合文本
+	/*
+	   =========================================
+	   2. 单行内容保护
+	   =========================================
+	*/
+
+	// 2.1 保护行内代码块 `...`
+	text = mdInlineCodeRegex.ReplaceAllStringFunc(text, func(match string) string {
+		placeholder := fmt.Sprintf("@@PRESERVE_%d@@", placeholderIndex)
+		replacements = append(replacements, ReplacementInfo{
+			Placeholder: placeholder,
+			Original:    match,
+		})
+		placeholderIndex++
+		return " " + placeholder + " "
+	})
+
+	// 2.2 保护行内数学公式 $...$
+	text = mdInlineMathRegex.ReplaceAllStringFunc(text, func(match string) string {
+		placeholder := fmt.Sprintf("@@PRESERVE_%d@@", placeholderIndex)
+		replacements = append(replacements, ReplacementInfo{
+			Placeholder: placeholder,
+			Original:    match,
+		})
+		placeholderIndex++
+		return " " + placeholder + " "
+	})
+
+	// 2.3 保护 Markdown 图片（简化，只要匹配到 `![...](...)` 就处理）
+	text = mdImageRegex.ReplaceAllStringFunc(text, func(match string) string {
+		placeholder := fmt.Sprintf("@@PRESERVE_%d@@", placeholderIndex)
+		replacements = append(replacements, ReplacementInfo{
+			Placeholder: placeholder,
+			Original:    match,
+		})
+		placeholderIndex++
+		return "\n" + placeholder + "\n"
+	})
+
+	// 如果还有其他需要保护的内容，比如 [1] Author et al.、超链接 [文本](链接)，
+	// 也可以使用类似方法继续往下加
+
+	lines := strings.Split(text, "\n")
+	find_lines := []string{}
 	for _, line := range lines {
-		newContent := currentPart.content
-		if len(newContent) > 0 {
-			newContent += "\n"
+		// 保护 Markdown 图片（简化，只要匹配到 `![...](...)` 就处理）
+		if strings.HasPrefix(line, "![") {
+			placeholder := fmt.Sprintf("@@PRESERVE_%d@@", placeholderIndex)
+			replacements = append(replacements, ReplacementInfo{
+				Placeholder: placeholder,
+				Original:    line,
+			})
+			find_lines = append(find_lines, "\n\n"+placeholder+"\n\n")
+			placeholderIndex++
+			continue
 		}
-		newContent += line
+		// 保护 [1] Author et al.
+		if strings.HasPrefix(line, "[") {
+			placeholder := fmt.Sprintf("@@PRESERVE_%d@@", placeholderIndex)
+			replacements = append(replacements, ReplacementInfo{
+				Placeholder: placeholder,
+				Original:    line,
+			})
+			find_lines = append(find_lines, "\n\n"+placeholder+"\n\n")
+			placeholderIndex++
+			continue
+		}
+		find_lines = append(find_lines, line)
+	}
 
-		if len(newContent) > maxSplitSize && len(currentPart.content) >= minSplitSize {
-			// 如果添加会超过最大大小且当前部分已达到最小大小，保存当前部分
-			parts = append(parts, currentPart)
-			currentPart = markdownPart{
-				content:      line + "\n",
-				translatable: true,
-				partType:     "text",
+	text = strings.Join(find_lines, "\n")
+
+	text = RemoveRedundantNewlines(text)
+
+	return text, replacements
+}
+
+// restoreMarkdown 将翻译后的文本里的占位符替换回原来的内容
+func (p *MarkdownProcessor) restoreMarkdown(translated string, replacements []ReplacementInfo) string {
+	// 1. 为了避免部分占位符还原干扰，这里最好一次性从序号最大的开始恢复
+	for i := len(replacements) - 1; i >= 0; i-- {
+		r := replacements[i]
+		translated = strings.ReplaceAll(translated, r.Placeholder, r.Original)
+	}
+	// 2. 可能出现 PRESERVE 被翻译的情况，这里再处理一下
+	translated = mdRePlaceholderWildcard.ReplaceAllStringFunc(translated, func(match string) string {
+		// 提取出数字
+		parts := mdRePlaceholderWildcard.FindStringSubmatch(match)
+		if len(parts) == 3 {
+			wildcard := parts[1]
+			number := parts[2]
+			numberInt, err := strconv.Atoi(number)
+			if err != nil {
+				p.logger.Warn("无法将数字字符串转换为整数", zap.String("数字字符串", number))
+				return match
 			}
-		} else {
-			// 否则添加到当前部分
-			currentPart.content = newContent
-		}
-	}
-
-	// 添加最后一个部分（如果不为空且达到最小大小）
-	if len(currentPart.content) >= minSplitSize {
-		parts = append(parts, currentPart)
-	}
-
-	p.currentParts = parts
-	p.currentReplacements = replacements
-
-	p.logger.Debug("Markdown文本分割完成",
-		zap.Int("部分数量", len(parts)),
-	)
-
-	return parts, replacements, nil
-}
-
-// splitByPattern 按指定模式分割文本
-func splitByPattern(text, pattern string) []string {
-	// 处理特殊情况：空文本或空模式
-	if text == "" || pattern == "" {
-		return []string{text}
-	}
-
-	// 分割文本
-	parts := strings.Split(text, pattern)
-
-	// 重新添加分隔符（除了最后一个部分）
-	for i := 0; i < len(parts)-1; i++ {
-		parts[i] = parts[i] + pattern
-	}
-
-	// 过滤空部分
-	var result []string
-	for _, part := range parts {
-		if part != "" {
-			result = append(result, part)
-		}
-	}
-
-	return result
-}
-
-// mergeSmallParts 合并太小的部分
-func (p *MarkdownProcessor) mergeSmallParts(parts []markdownPart, minSize int) []markdownPart {
-	if len(parts) <= 1 {
-		return parts
-	}
-
-	var result []markdownPart
-	var current markdownPart
-	current = parts[0]
-
-	for i := 1; i < len(parts); i++ {
-		// 如果当前部分和下一个部分都是可翻译的，并且当前部分太小，则合并
-		if current.translatable && parts[i].translatable && len(current.content) < minSize {
-			current.content += parts[i].content
-		} else {
-			// 否则，添加当前部分到结果中，并开始新的部分
-			result = append(result, current)
-			current = parts[i]
-		}
-	}
-
-	// 添加最后一个部分
-	result = append(result, current)
-
-	return result
-}
-
-// splitIntoSentences 将文本分割成句子
-func (p *MarkdownProcessor) splitIntoSentences(text string) []string {
-	// 简单的句子分割，可以根据需要改进
-	sentenceEnders := []string{". ", "! ", "? ", "。", "！", "？", "\n"}
-	var sentences []string
-
-	remaining := text
-	for len(remaining) > 0 {
-		bestIndex := len(remaining)
-
-		for _, ender := range sentenceEnders {
-			index := strings.Index(remaining, ender)
-			if index >= 0 && index < bestIndex {
-				bestIndex = index + len(ender)
+			if numberInt < len(replacements) {
+				p.logger.Debug("有占位符被翻译了, 还原占位符",
+					zap.String("占位符", match),
+					zap.String("wildcard", wildcard),
+					zap.String("原始内容", replacements[numberInt].Original))
+				translated = strings.ReplaceAll(translated, match, replacements[numberInt].Original)
+				return translated
 			}
 		}
+		return match
+	})
 
-		if bestIndex < len(remaining) {
-			sentences = append(sentences, remaining[:bestIndex])
-			remaining = remaining[bestIndex:]
+	return translated
+}
+
+func (p *MarkdownProcessor) isNeedToTranslate(text string) bool {
+	// 1. 去除占位符
+	withoutPlaceholders := mdRePlaceholder.ReplaceAllString(text, "")
+
+	// 2. 去除首尾空白
+	withoutPlaceholders = strings.TrimSpace(withoutPlaceholders)
+
+	// 3. 用正则判断是否只包含标点、数字、空白（包括换行）
+	if mdReOnlySymbols.MatchString(withoutPlaceholders) {
+		// 如果完全匹配，只剩标点、空白、数字 => 不需要翻译
+		return false
+	}
+	// 否则 => 需要翻译
+	return true
+}
+
+// splitTextToChunks 将文本分割为适当大小的块，优先按自然段落分割
+func (p *MarkdownProcessor) splitTextToChunks(text string, minSize, maxSize int) []Chunk {
+	if len(text) <= maxSize {
+		return []Chunk{
+			{
+				Text:            text,
+				NeedToTranslate: p.isNeedToTranslate(text),
+			},
+		}
+	}
+
+	var chunks []Chunk
+	var currentChunk strings.Builder
+	paragraphs := strings.Split(text, "\n\n") // 使用双换行符分割段落
+
+	for _, para := range paragraphs {
+		// 如果段落本身超过最大长度，需要进一步分割
+		if len(para) > maxSize {
+			// 如果当前chunk不为空，先保存它
+			if currentChunk.Len() > 0 {
+				chunks = append(chunks, Chunk{
+					Text:            currentChunk.String(),
+					NeedToTranslate: p.isNeedToTranslate(currentChunk.String()),
+				})
+				currentChunk.Reset()
+			}
+
+			// 按句子分割大段落
+			start := 0
+			for start < len(para) {
+				end := start + maxSize
+				if end > len(para) {
+					end = len(para)
+				} else {
+					// 寻找合适的分割点（句号、问号、感叹号）
+					for i := end - 1; i > start+minSize; i-- {
+						if i < len(para)-1 {
+							r := []rune(para[i : i+1])[0]
+
+							// 检查是否是句子结束标记（英文或中文标点）
+							if r == '.' || r == '?' || r == '!' ||
+								r == '。' || r == '？' || r == '！' {
+								end = i + 1
+								break
+							}
+						}
+					}
+				}
+				chunks = append(chunks, Chunk{
+					Text:            para[start:end],
+					NeedToTranslate: p.isNeedToTranslate(para[start:end]),
+				})
+				start = end
+			}
+			continue
+		}
+
+		// 检查添加当前段落是否会导致超出最大长度
+		if currentChunk.Len()+len(para) > maxSize {
+			// 如果当前chunk达到最小长度，保存它
+			if currentChunk.Len() >= minSize {
+				chunks = append(chunks, Chunk{
+					Text:            currentChunk.String(),
+					NeedToTranslate: p.isNeedToTranslate(currentChunk.String()),
+				})
+				currentChunk.Reset()
+			}
+		}
+
+		// 添加段落和段落分隔符
+		if currentChunk.Len() > 0 {
+			currentChunk.WriteString("\n\n")
+		}
+		currentChunk.WriteString(para)
+	}
+
+	// 保存最后一个chunk
+	if currentChunk.Len() > 0 {
+		chunks = append(chunks, Chunk{
+			Text:            currentChunk.String(),
+			NeedToTranslate: p.isNeedToTranslate(currentChunk.String()),
+		})
+	}
+
+	return chunks
+}
+
+func (p *MarkdownProcessor) isParagraphAllPlaceholder(text string) bool {
+	paragraphs := strings.TrimSpace(text)
+	paragraphs = strings.ReplaceAll(paragraphs, "\n", "")
+	paragraphs = strings.ReplaceAll(paragraphs, " ", "")
+	return mdRestrictedPlaceholder.MatchString(paragraphs)
+}
+
+func (p *MarkdownProcessor) combineConsecutivePlaceholderParagraphs(text string) string {
+	paragraphs := strings.Split(text, "\n\n")
+
+	var output []string
+	var placeholderBuffer []string
+
+	bigPlaceholderIndex := len(p.currentReplacements)
+
+	for _, paragraph := range paragraphs {
+		if p.isParagraphAllPlaceholder(paragraph) {
+			placeholderBuffer = append(placeholderBuffer, paragraph)
 		} else {
-			sentences = append(sentences, remaining)
-			break
+			if len(placeholderBuffer) > 0 {
+				bigPlaceholderBufferString := strings.Join(placeholderBuffer, "\n\n")
+				restored := p.restoreMarkdown(bigPlaceholderBufferString, p.currentReplacements)
+				newPlaceholder := fmt.Sprintf("@@PRESERVE_%d@@", bigPlaceholderIndex)
+				p.currentReplacements = append(p.currentReplacements, ReplacementInfo{
+					Placeholder: newPlaceholder,
+					Original:    restored,
+				})
+				bigPlaceholderIndex++
+				output = append(output, newPlaceholder)
+				placeholderBuffer = []string{}
+			}
+			output = append(output, paragraph)
 		}
 	}
 
-	return sentences
-}
-
-// isLikelyCodeIdentifier 判断是否可能是代码标识符
-func isLikelyCodeIdentifier(s string) bool {
-	// 检查是否包含典型的代码结构特征
-	if strings.Contains(s, ".") || strings.Contains(s, "_") {
-		return true
+	if len(placeholderBuffer) > 0 {
+		bigPlaceholderBufferString := strings.Join(placeholderBuffer, "\n\n")
+		restored := p.restoreMarkdown(bigPlaceholderBufferString, p.currentReplacements)
+		newPlaceholder := fmt.Sprintf("@@PRESERVE_%d@@", bigPlaceholderIndex)
+		p.currentReplacements = append(p.currentReplacements, ReplacementInfo{
+			Placeholder: newPlaceholder,
+			Original:    restored,
+		})
+		output = append(output, newPlaceholder)
 	}
-
-	// 检查是否是驼峰命名
-	if regexp.MustCompile(`[a-z][A-Z]`).MatchString(s) {
-		return true
-	}
-
-	// 检查是否可能是常见的编程语言关键词或函数
-	commonCodeTerms := []string{"get", "set", "init", "func", "var", "const", "val", "let", "fn", "def", "func", "append", "remove", "add"}
-	for _, term := range commonCodeTerms {
-		if strings.HasPrefix(strings.ToLower(s), term) || strings.HasSuffix(strings.ToLower(s), term) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// FormatFile 格式化Markdown文件
-func (p *MarkdownProcessor) FormatFile(inputPath, outputPath string) error {
-	// 读取输入文件
-	content, err := os.ReadFile(inputPath)
-	if err != nil {
-		return fmt.Errorf("读取文件失败 %s: %w", inputPath, err)
-	}
-
-	log := p.logger
-	log.Info("开始格式化文件",
-		zap.String("输入文件", inputPath),
-		zap.String("输出文件", outputPath),
-	)
-
-	// 格式化 Markdown
-	formattedText, err := p.formatMarkdown(string(content))
-	if err != nil {
-		return fmt.Errorf("格式化Markdown失败: %w", err)
-	}
-
-	// 写入输出文件
-	if err := os.WriteFile(outputPath, []byte(formattedText), 0644); err != nil {
-		return fmt.Errorf("写入文件失败 %s: %w", outputPath, err)
-	}
-
-	log.Info("格式化完成",
-		zap.String("输出文件", outputPath),
-	)
-
-	return nil
-}
-
-// MarkdownFormattingProcessor 是 Markdown 格式化处理器
-type MarkdownFormattingProcessor struct {
-	logger *zap.Logger
-}
-
-// NewMarkdownFormattingProcessor 创建一个新的 Markdown 格式化处理器
-func NewMarkdownFormattingProcessor() (*MarkdownFormattingProcessor, error) {
-	zapLogger, _ := zap.NewProduction()
-	return &MarkdownFormattingProcessor{
-		logger: zapLogger,
-	}, nil
-}
-
-// FormatFile 格式化 Markdown 文件
-func (p *MarkdownFormattingProcessor) FormatFile(inputPath, outputPath string) error {
-	// 读取输入文件
-	content, err := os.ReadFile(inputPath)
-	if err != nil {
-		return fmt.Errorf("读取文件失败 %s: %w", inputPath, err)
-	}
-
-	// 创建一个新的 goldmark 实例，使用 formatter.Markdown 渲染器
-	md := goldmark.New(
-		goldmark.WithRenderer(formatter.Markdown), // markdown output
-		goldmark.WithExtensions(
-			extension.GFM,            // GitHub Flavored Markdown
-			extension.Typographer,    // 排版优化
-			extension.TaskList,       // 任务列表
-			extension.Table,          // 表格
-			extension.Strikethrough,  // 删除线
-			extension.DefinitionList, // 定义列表
-		),
-		goldmark.WithParserOptions(
-			parser.WithAutoHeadingID(), // 自动生成标题ID
-			parser.WithAttribute(),     // 允许属性设置
-		),
-	)
-
-	var buf bytes.Buffer
-	if err := md.Convert(content, &buf); err != nil {
-		return fmt.Errorf("格式化Markdown失败: %w", err)
-	}
-
-	// 写入输出文件
-	if err := os.WriteFile(outputPath, buf.Bytes(), 0644); err != nil {
-		return fmt.Errorf("写入文件失败 %s: %w", outputPath, err)
-	}
-
-	return nil
+	return strings.Join(output, "\n\n")
 }
