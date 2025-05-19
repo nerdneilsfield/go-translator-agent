@@ -1,11 +1,17 @@
 package formats
 
 import (
+	"bytes"
 	"os"
 	"strings"
 	"sync"
+	"unicode"
 
+	"github.com/PuerkitoBio/goquery"
 	"go.uber.org/zap"
+	"golang.org/x/net/html"
+
+	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 )
 
 type Chunk struct {
@@ -86,4 +92,65 @@ func parallelTranslateChunks(chunks []Chunk, p *MarkdownProcessor, concurrency i
 func IsFileExists(path string) bool {
 	_, err := os.Stat(path)
 	return !os.IsNotExist(err)
+}
+
+// TranslateHTMLDOM 翻译 HTML 字符串中的文本节点，保持原有的 DOM 结构
+func TranslateHTMLDOM(htmlStr string, t translator.Translator, logger *zap.Logger) (string, error) {
+	root, err := html.Parse(strings.NewReader(htmlStr))
+	if err != nil {
+		return "", err
+	}
+
+	translateHTMLNode(root, t, logger)
+
+	var buf bytes.Buffer
+	if err := html.Render(&buf, root); err != nil {
+		return "", err
+	}
+	// goquery 用于获取 body 内部的实际内容，避免额外的 <html><head> 包装
+	doc, err := goquery.NewDocumentFromReader(&buf)
+	if err != nil {
+		return "", err
+	}
+	htmlResult, err := doc.Html()
+	if err != nil {
+		return "", err
+	}
+	return htmlResult, nil
+}
+
+func translateHTMLNode(n *html.Node, t translator.Translator, logger *zap.Logger) {
+	if n.Type == html.ElementNode {
+		if n.Data == "script" || n.Data == "style" {
+			return
+		}
+	}
+
+	if n.Type == html.TextNode {
+		if strings.TrimSpace(n.Data) != "" {
+			leading := leadingWhitespace(n.Data)
+			trailing := trailingWhitespace(n.Data)
+			core := strings.TrimSpace(n.Data)
+			translated, err := t.Translate(core, true)
+			if err != nil {
+				logger.Warn("translate html node failed", zap.Error(err))
+			} else {
+				n.Data = leading + translated + trailing
+			}
+		}
+	}
+
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		translateHTMLNode(c, t, logger)
+	}
+}
+
+func leadingWhitespace(s string) string {
+	trimmed := strings.TrimLeftFunc(s, unicode.IsSpace)
+	return s[:len(s)-len(trimmed)]
+}
+
+func trailingWhitespace(s string) string {
+	trimmed := strings.TrimRightFunc(s, unicode.IsSpace)
+	return s[len(trimmed):]
 }

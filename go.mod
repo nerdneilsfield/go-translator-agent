@@ -7,6 +7,7 @@ toolchain go1.23.4
 require (
 	github.com/BurntSushi/toml v1.4.0
 	github.com/Kunde21/markdownfmt/v3 v3.1.0
+	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/jedib0t/go-pretty/v6 v6.6.7
 	github.com/litao91/goldmark-mathjax v0.0.0-20210217064022-a43cf739a50f
 	github.com/sashabaranov/go-openai v1.20.2
@@ -15,10 +16,10 @@ require (
 	github.com/yuin/goldmark v1.7.8
 	github.com/yuin/goldmark-meta v1.1.0
 	go.uber.org/zap v1.27.0
+	golang.org/x/net v0.40.0
 )
 
 require (
-	github.com/PuerkitoBio/goquery v1.10.3 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
@@ -38,7 +39,6 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20241009180824-f66d83c29e7c // indirect
-	golang.org/x/net v0.40.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
 	golang.org/x/term v0.32.0 // indirect
 	golang.org/x/text v0.25.0 // indirect
