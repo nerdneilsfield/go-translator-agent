@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/jedib0t/go-pretty/v6/progress"
@@ -98,29 +97,11 @@ func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
 
 // TranslateText 翻译EPUB内容
 func (p *EPUBProcessor) TranslateText(text string) (string, error) {
-	// 使用正则将 HTML 标签替换为占位符
-	tagRe := regexp.MustCompile(`(<[^>]+>)`)
-	parts := tagRe.Split(text, -1)
-	tags := tagRe.FindAllString(text, -1)
-
-	var builder strings.Builder
-	for i, part := range parts {
-		trimmed := strings.TrimSpace(part)
-		if trimmed != "" {
-			translated, err := p.Translator.Translate(part, true)
-			if err != nil {
-				return "", err
-			}
-			builder.WriteString(translated)
-		} else {
-			builder.WriteString(part)
-		}
-		if i < len(tags) {
-			builder.WriteString(tags[i])
-		}
+	translated, err := TranslateHTMLDOM(text, p.Translator, p.logger)
+	if err != nil {
+		return "", err
 	}
-
-	return builder.String(), nil
+	return translated, nil
 }
 
 // FormatFile 格式化EPUB文件
