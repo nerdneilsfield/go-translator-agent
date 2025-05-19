@@ -69,7 +69,7 @@ func NewMarkdownProcessor(t translator.Translator, predefinedTranslations *confi
 		}
 	}
 
-	log.Debug("Loading predefined translations", zap.Int("count", len(predefinedTranslations.Translations)))
+	zapLogger.Debug("Loading predefined translations", zap.Int("count", len(predefinedTranslations.Translations)))
 
 	return &MarkdownProcessor{
 		BaseProcessor: BaseProcessor{
@@ -85,7 +85,9 @@ func NewMarkdownProcessor(t translator.Translator, predefinedTranslations *confi
 // TranslateFile 翻译Markdown文件
 func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 
-	FormatFile(inputPath)
+	if err := FormatFile(inputPath); err != nil {
+		p.logger.Warn("格式化输入文件失败", zap.Error(err))
+	}
 
 	// 1. 读取文件内容
 	contentBytes, err := os.ReadFile(inputPath)
@@ -121,14 +123,16 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 		return fmt.Errorf("无法写出保护后的文本 %s: %v", protectedTextFile, err)
 	}
 
-	FormatFile(protectedTextFile)
+	if err := FormatFile(protectedTextFile); err != nil {
+		p.logger.Warn("格式化保护后的文本失败", zap.Error(err))
+	}
 
 	// 4. 使用 splitTextToChunks 分段
 	chunks := p.splitTextToChunks(protectedText, p.config.MinSplitSize, p.config.MaxSplitSize)
 	p.logger.Info("分段结果", zap.Int("Chunk数", len(chunks)))
 	p.logger.Debug("分段具体长度", zap.Int("Chunk数", len(chunks)))
-	for chundId, chunk := range chunks {
-		p.logger.Debug("分段ID", zap.Int("ID", chundId), zap.Int("内容长度", len(chunk.Text)), zap.Bool("是否需要翻译", chunk.NeedToTranslate))
+	for chunkID, chunk := range chunks {
+		p.logger.Debug("分段ID", zap.Int("ID", chunkID), zap.Int("内容长度", len(chunk.Text)), zap.Bool("是否需要翻译", chunk.NeedToTranslate))
 	}
 
 	// 5. 调用 TranslateText 翻译每个分段
@@ -150,7 +154,9 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 		return fmt.Errorf("无法写出中间结果 %s: %v", outputPathWithExt, err)
 	}
 
-	FormatFile(outputPathWithExt)
+	if err := FormatFile(outputPathWithExt); err != nil {
+		p.logger.Warn("格式化中间结果失败", zap.Error(err))
+	}
 
 	// 7. 将翻译后的内容中占位符还原
 	finalResult := p.restoreMarkdown(translated, p.currentReplacements)
@@ -164,7 +170,9 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 		return fmt.Errorf("无法写出文件 %s: %v", outputPath, err)
 	}
 
-	FormatFile(outputPath)
+	if err := FormatFile(outputPath); err != nil {
+		p.logger.Warn("格式化输出文件失败", zap.Error(err))
+	}
 
 	return nil
 }
