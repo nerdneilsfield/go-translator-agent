@@ -166,6 +166,7 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 		FormatFile(protectedTextFile)
 
 	} else {
+		// 从已生成的受保护文本继续翻译
 		protectedTextBytes, err := os.ReadFile(protectedTextFile)
 		if err != nil {
 			p.logger.Error("无法读取保护后的文本", zap.Error(err), zap.String("文件路径", protectedTextFile))
@@ -185,6 +186,13 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 			return fmt.Errorf("无法反序列化替换信息 %s: %v", replacementsPath, err)
 		}
 		p.currentReplacements = replacements.Replacements
+
+		// 重新计算进度信息
+		originalBytes, err := os.ReadFile(inputPath)
+		if err == nil {
+			p.Translator.GetProgressTracker().SetRealTotalChars(len(originalBytes))
+		}
+		p.Translator.GetProgressTracker().SetTotalChars(len(protectedText))
 	}
 
 	p.Translator.InitTranslator()
