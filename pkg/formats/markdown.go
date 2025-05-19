@@ -70,7 +70,7 @@ func NewMarkdownProcessor(t translator.Translator, predefinedTranslations *confi
 		}
 	}
 
-	log.Debug("Loading predefined translations", zap.Int("count", len(predefinedTranslations.Translations)))
+	zapLogger.Debug("Loading predefined translations", zap.Int("count", len(predefinedTranslations.Translations)))
 
 	return &MarkdownProcessor{
 		BaseProcessor: BaseProcessor{
@@ -87,11 +87,39 @@ func NewMarkdownProcessor(t translator.Translator, predefinedTranslations *confi
 // TranslateFile 翻译Markdown文件
 func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 
-	replacementsPath := strings.TrimSuffix(outputPath, ".md") + ".replacements.json"
-	protectedTextFile := strings.TrimSuffix(outputPath, ".md") + ".protected.md"
+	if err := FormatFile(inputPath); err != nil {
+		p.logger.Warn("格式化输入文件失败", zap.Error(err))
+	}
 
-	var protectedText string
-	var err error
+	// 1. 读取文件内容
+	contentBytes, err := os.ReadFile(inputPath)
+	if err != nil {
+		p.logger.Error("无法读取文件", zap.Error(err), zap.String("文件路径", inputPath))
+		return fmt.Errorf("无法读取文件 %s: %v", inputPath, err)
+	}
+	originalText := string(contentBytes)
+
+	// 2. 先进行占位符保护（先多行再单行）
+	protectedText, replacements := p.protectMarkdown(originalText)
+
+	p.currentReplacements = replacements
+
+	// 3.1 合并连续的占位符段落
+	protectedText = p.combineConsecutivePlaceholderParagraphs(protectedText)
+
+	// 3. 保存 replacements
+	replacementsJson, err := json.MarshalIndent(ReplacementInfoList{Replacements: p.currentReplacements}, "", "    ")
+	if err != nil {
+		p.logger.Error("无法序列化替换信息", zap.Error(err))
+		return fmt.Errorf("无法序列化替换信息: %v", err)
+	}
+	replacementsPath := strings.TrimSuffix(outputPath, ".md") + ".replacements.json"
+	err = os.WriteFile(replacementsPath, replacementsJson, os.ModePerm)
+	if err != nil {
+		p.logger.Error("无法写出替换信息", zap.Error(err), zap.String("文件路径", replacementsPath))
+		return fmt.Errorf("无法写出替换信息 %s: %v", replacementsPath, err)
+	}
+	protectedTextFile := strings.TrimSuffix(outputPath, ".md") + ".protected.md"
 
 	if !IsFileExists(replacementsPath) || !IsFileExists(protectedTextFile) {
 
@@ -125,8 +153,8 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 		}
 		err = os.WriteFile(replacementsPath, replacementsJson, os.ModePerm)
 		if err != nil {
-			p.logger.Error("无法写出替换信息", zap.Error(err), zap.String("文件路径", strings.TrimSuffix(outputPath, ".md")+".replacements.json"))
-			return fmt.Errorf("无法写出替换信息 %s: %v", strings.TrimSuffix(outputPath, ".md")+".replacements.json", err)
+			p.logger.Error("无法写出替换信息", zap.Error(err), zap.String("文件路径", replacementsPath))
+			return fmt.Errorf("无法写出替换信息 %s: %v", replacementsPath, err)
 		}
 
 		err = os.WriteFile(protectedTextFile, []byte(protectedText), os.ModePerm)
@@ -165,8 +193,8 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 	chunks := p.splitTextToChunks(protectedText, p.config.MinSplitSize, p.config.MaxSplitSize)
 	p.logger.Info("分段结果", zap.Int("Chunk数", len(chunks)))
 	p.logger.Debug("分段具体长度", zap.Int("Chunk数", len(chunks)))
-	for chundId, chunk := range chunks {
-		p.logger.Debug("分段ID", zap.Int("ID", chundId), zap.Int("内容长度", len(chunk.Text)), zap.Bool("是否需要翻译", chunk.NeedToTranslate))
+	for chunkID, chunk := range chunks {
+		p.logger.Debug("分段ID", zap.Int("ID", chunkID), zap.Int("内容长度", len(chunk.Text)), zap.Bool("是否需要翻译", chunk.NeedToTranslate))
 	}
 
 	// 5. 调用 TranslateText 翻译每个分段
@@ -188,7 +216,9 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 		return fmt.Errorf("无法写出中间结果 %s: %v", outputPathWithExt, err)
 	}
 
-	FormatFile(outputPathWithExt)
+	if err := FormatFile(outputPathWithExt); err != nil {
+		p.logger.Warn("格式化中间结果失败", zap.Error(err))
+	}
 
 	// 7. 将翻译后的内容中占位符还原
 	finalResult := p.restoreMarkdown(translated, p.currentReplacements)
@@ -202,7 +232,9 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 		return fmt.Errorf("无法写出文件 %s: %v", outputPath, err)
 	}
 
-	FormatFile(outputPath)
+	if err := FormatFile(outputPath); err != nil {
+		p.logger.Warn("格式化输出文件失败", zap.Error(err))
+	}
 
 	p.Translator.GetProgressTracker().UpdateRealTranslatedChars(len(finalResult))
 

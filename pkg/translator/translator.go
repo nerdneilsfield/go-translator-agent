@@ -233,7 +233,8 @@ func (t *TranslatorImpl) Translate(text string, retryFailedParts bool) (string, 
 	// 检查是否需要重试失败的部分
 	maxRetries := 3 // 默认最大重试次数
 
-	if retryFailedParts {
+	// 如果配置中启用了重试失败部分，则强制开启
+	if t.config.RetryFailedParts {
 		retryFailedParts = true
 	}
 
