@@ -16,6 +16,25 @@ import (
 	"go.uber.org/zap"
 )
 
+// snippet returns a small excerpt of the provided text for debug logging.
+// It includes the beginning, a middle section and the end of the string,
+// separated by ellipses if the text is long.
+func snippet(s string) string {
+	const seg = 20
+	if len(s) <= seg*3 {
+		return s
+	}
+	start := s[:seg]
+	midIdx := len(s) / 2
+	midStart := midIdx - seg/2
+	if midStart < seg {
+		midStart = seg
+	}
+	mid := s[midStart : midStart+seg]
+	end := s[len(s)-seg:]
+	return start + " ... " + mid + " ... " + end
+}
+
 type ModelPrice struct {
 	InitialModelInputPrice      float64
 	InitialModelOutputPrice     float64
@@ -220,6 +239,7 @@ func (t *TranslatorImpl) InitTranslator() {
 
 // Translate 将文本从源语言翻译到目标语言
 func (t *TranslatorImpl) Translate(text string, retryFailedParts bool) (string, error) {
+	t.logger.Debug("待翻译文本片段", zap.String("snippet", snippet(text)), zap.Int("长度", len(text)))
 	// 如果启用了强制刷新缓存，先清除缓存
 	if t.forceCacheRefresh {
 		if err := t.refreshCache(); err != nil {
@@ -531,6 +551,7 @@ Please provide only the translation of the text below, strictly adhering to the 
 	t.logger.Debug("执行初始翻译",
 		zap.String("模型", model.Name()),
 		zap.Float64("温度", temperature),
+		zap.Int("最大输出令牌", model.MaxOutputTokens()),
 	)
 
 	result, inputTokens, outputTokens, err := model.Complete(prompt, model.MaxOutputTokens(), temperature)
@@ -823,6 +844,10 @@ func (t *TranslatorImpl) updateProgress(text string) {
 
 // startProgress 开始跟踪翻译进度
 func (t *TranslatorImpl) startProgress() {
+	if t.progressBar == nil {
+		return
+	}
+
 	t.progressMu.Lock()
 	defer t.progressMu.Unlock()
 
@@ -864,6 +889,11 @@ func (t *TranslatorImpl) GetProgressTracker() *TranslationProgressTracker {
 func (t *TranslatorImpl) SetTotalChars(realTotalChars int, totalChars int) {
 	t.progressTracker.SetRealTotalChars(realTotalChars)
 	t.progressTracker.SetTotalChars(totalChars)
+
+	// 如果进度条已创建，更新其总值
+	if t.translated_tracker != nil {
+		t.translated_tracker.UpdateTotal(int64(totalChars))
+	}
 }
 
 func (t *TranslatorImpl) Finish() {
@@ -904,5 +934,9 @@ func (t *TranslatorImpl) Finish() {
 		})
 
 		fmt.Println(tw.Render())
+
+		if t.progressBar != nil {
+			(*t.progressBar).Stop()
+		}
 	}()
 }

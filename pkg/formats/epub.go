@@ -44,8 +44,6 @@ func NewEPUBProcessor(t translator.Translator, predefinedTranslations *config.Pr
 
 // TranslateFile 翻译EPUB文件
 func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
-	p.Translator.InitTranslator()
-	defer p.Translator.Finish()
 
 	var totalChars int
 
@@ -73,6 +71,10 @@ func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
 
 	p.Translator.GetProgressTracker().SetRealTotalChars(totalChars)
 	p.Translator.GetProgressTracker().SetTotalChars(totalChars)
+
+	// 初始化翻译器并开始进度跟踪
+	p.Translator.InitTranslator()
+	defer p.Translator.Finish()
 
 	// 创建临时目录
 	tempDir, err := os.MkdirTemp("", "epub_work")

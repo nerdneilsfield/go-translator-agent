@@ -552,7 +552,7 @@ func (c *OpenAIClient) manualStreamRequest(ctx context.Context, req openai.ChatC
 		if err := json.Unmarshal(respBody, &jsonResponse); err == nil {
 			content := c.extractContentFromJSON(jsonResponse)
 			if content != "" {
-				c.log.Info("从错误响应中提取到有效内容",
+				c.log.Debug("从错误响应中提取到有效内容",
 					zap.String("内容", content),
 				)
 				return content, nil

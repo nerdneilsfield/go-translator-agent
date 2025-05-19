@@ -101,6 +101,9 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 	}
 	p.Translator.GetProgressTracker().SetTotalChars(len(protectedText))
 
+	// 初始化翻译器并启动进度跟踪
+	p.Translator.InitTranslator()
+
 	// 分割文本为块
 	chunks := p.splitTextToChunks(protectedText, minSplitSize, maxSplitSize)
 	log.Info("文本分割完成", zap.Int("块数", len(chunks)))
