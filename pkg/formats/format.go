@@ -142,6 +142,8 @@ func FormatFile(filePath string) error {
 			return fmt.Errorf("google-java-format 未安装，请参考 https://github.com/google/google-java-format")
 		}
 		return formatJava(filePath)
+	case ".epub":
+		return nil
 	default:
 		return fmt.Errorf("不支持的文件类型: %s", ext)
 	}
