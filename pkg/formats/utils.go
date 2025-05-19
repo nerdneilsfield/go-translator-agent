@@ -95,19 +95,61 @@ func IsFileExists(path string) bool {
 }
 
 // TranslateHTMLDOM 翻译 HTML 字符串中的文本节点，保持原有的 DOM 结构
+// TranslateHTMLDOM 翻译 HTML 字符串中的文本节点，保持原有的 DOM 结构
 func TranslateHTMLDOM(htmlStr string, t translator.Translator, logger *zap.Logger) (string, error) {
 	root, err := html.Parse(strings.NewReader(htmlStr))
 	if err != nil {
 		return "", err
 	}
 
-	translateHTMLNode(root, t, logger)
+	cfg := t.GetConfig()
+	chunkSize := 6000
+	if cfg != nil {
+		if modelCfg, ok := cfg.ModelConfigs[cfg.DefaultModelName]; ok {
+			if modelCfg.MaxInputTokens > 0 {
+				chunkSize = modelCfg.MaxInputTokens - 2000
+				if chunkSize <= 0 {
+					chunkSize = modelCfg.MaxInputTokens
+				}
+			}
+		}
+	}
+
+	var textNodes []*html.Node
+	collectTextNodes(root, &textNodes)
+	groups := groupTextNodes(textNodes, chunkSize)
+
+	for _, group := range groups {
+		var builder strings.Builder
+		for i, n := range group {
+			if i > 0 {
+				builder.WriteString("\n\n")
+			}
+			builder.WriteString(strings.TrimSpace(n.Data))
+		}
+
+		translated, err := t.Translate(builder.String(), true)
+		if err != nil {
+			logger.Warn("translate html node group failed", zap.Error(err))
+			continue
+		}
+
+		parts := strings.SplitN(translated, "\n\n", len(group))
+		for i, n := range group {
+			translatedText := strings.TrimSpace(n.Data)
+			if i < len(parts) {
+				translatedText = strings.TrimSpace(parts[i])
+			}
+			leading := leadingWhitespace(n.Data)
+			trailing := trailingWhitespace(n.Data)
+			n.Data = leading + translatedText + trailing
+		}
+	}
 
 	var buf bytes.Buffer
 	if err := html.Render(&buf, root); err != nil {
 		return "", err
 	}
-	// goquery 用于获取 body 内部的实际内容，避免额外的 <html><head> 包装
 	doc, err := goquery.NewDocumentFromReader(&buf)
 	if err != nil {
 		return "", err
@@ -153,4 +195,43 @@ func leadingWhitespace(s string) string {
 func trailingWhitespace(s string) string {
 	trimmed := strings.TrimRightFunc(s, unicode.IsSpace)
 	return s[len(trimmed):]
+}
+
+func collectTextNodes(n *html.Node, nodes *[]*html.Node) {
+	if n.Type == html.ElementNode {
+		switch n.Data {
+		case "script", "style", "pre", "code":
+			return
+		}
+	}
+
+	if n.Type == html.TextNode {
+		if strings.TrimSpace(n.Data) != "" {
+			*nodes = append(*nodes, n)
+		}
+	}
+
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		collectTextNodes(c, nodes)
+	}
+}
+
+func groupTextNodes(nodes []*html.Node, limit int) [][]*html.Node {
+	var groups [][]*html.Node
+	var current []*html.Node
+	currentLen := 0
+	for _, n := range nodes {
+		text := strings.TrimSpace(n.Data)
+		if currentLen+len(text) > limit && len(current) > 0 {
+			groups = append(groups, current)
+			current = nil
+			currentLen = 0
+		}
+		current = append(current, n)
+		currentLen += len(text)
+	}
+	if len(current) > 0 {
+		groups = append(groups, current)
+	}
+	return groups
 }

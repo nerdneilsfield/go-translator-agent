@@ -44,6 +44,36 @@ func NewEPUBProcessor(t translator.Translator, predefinedTranslations *config.Pr
 
 // TranslateFile 翻译EPUB文件
 func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
+	p.Translator.InitTranslator()
+	defer p.Translator.Finish()
+
+	var totalChars int
+
+	// 计算总字符数
+	err := filepath.Walk(inputPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".html" || ext == ".xhtml" || ext == ".htm" {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			totalChars += len(data)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	p.Translator.GetProgressTracker().SetRealTotalChars(totalChars)
+	p.Translator.GetProgressTracker().SetTotalChars(totalChars)
+
 	// 创建临时目录
 	tempDir, err := os.MkdirTemp("", "epub_work")
 	if err != nil {
