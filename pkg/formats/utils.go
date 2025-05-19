@@ -1,6 +1,7 @@
 package formats
 
 import (
+	"os"
 	"strings"
 	"sync"
 
@@ -52,20 +53,20 @@ func parallelTranslateChunks(chunks []Chunk, p *MarkdownProcessor, concurrency i
 
 			// 翻译
 			if textChunk.NeedToTranslate {
-				p.logger.Debug("需要翻译", zap.String("text", textChunk.Text))
+				p.logger.Debug("需要翻译", zap.Int("idx", idx))
 				translatedChunk, err := p.TranslateText(textChunk.Text)
 				if err != nil {
 					mu.Lock()
 					translateErr = err
 					mu.Unlock()
-					p.logger.Warn("翻译出错", zap.Error(err), zap.String("text", textChunk.Text))
+					p.logger.Warn("翻译出错", zap.Error(err), zap.Int("idx", idx))
 					results[idx] = textChunk.Text // 如果翻译出错，则返回原始内容
 				} else {
-					p.logger.Debug("翻译成功", zap.String("text", translatedChunk))
+					p.logger.Debug("翻译成功", zap.Int("idx", idx))
 					results[idx] = translatedChunk
 				}
 			} else {
-				p.logger.Debug("不需要翻译", zap.String("text", textChunk.Text))
+				p.logger.Debug("不需要翻译", zap.Int("idx", idx))
 				results[idx] = textChunk.Text
 			}
 
@@ -80,4 +81,9 @@ func parallelTranslateChunks(chunks []Chunk, p *MarkdownProcessor, concurrency i
 		return nil, translateErr
 	}
 	return results, nil
+}
+
+func IsFileExists(path string) bool {
+	_, err := os.Stat(path)
+	return !os.IsNotExist(err)
 }

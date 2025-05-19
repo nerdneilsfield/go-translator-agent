@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jedib0t/go-pretty/v6/progress"
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 	"go.uber.org/zap"
@@ -52,25 +53,25 @@ var (
 )
 
 // processorRegistry 存储所有注册的格式处理器
-var processorRegistry = make(map[string]func(translator.Translator, *config.PredefinedTranslation) (Processor, error))
+var processorRegistry = make(map[string]func(translator.Translator, *config.PredefinedTranslation, *progress.Writer) (Processor, error))
 
 // RegisterProcessor 注册一个格式处理器
-func RegisterProcessor(name string, factory func(translator.Translator, *config.PredefinedTranslation) (Processor, error)) {
+func RegisterProcessor(name string, factory func(translator.Translator, *config.PredefinedTranslation, *progress.Writer) (Processor, error)) {
 	processorRegistry[name] = factory
 }
 
 // NewProcessor 创建指定格式的处理器
-func NewProcessor(t translator.Translator, format string, predefinedTranslations *config.PredefinedTranslation) (Processor, error) {
+func NewProcessor(t translator.Translator, format string, predefinedTranslations *config.PredefinedTranslation, progressBar *progress.Writer) (Processor, error) {
 	factory, ok := processorRegistry[format]
 	if !ok {
 		return nil, fmt.Errorf("不支持的格式: %s", format)
 	}
 
-	return factory(t, predefinedTranslations)
+	return factory(t, predefinedTranslations, progressBar)
 }
 
 // ProcessorFromFilePath 根据文件扩展名选择合适的处理器
-func ProcessorFromFilePath(t translator.Translator, filePath string, predefinedTranslations *config.PredefinedTranslation) (Processor, error) {
+func ProcessorFromFilePath(t translator.Translator, filePath string, predefinedTranslations *config.PredefinedTranslation, progressBar *progress.Writer) (Processor, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 	if ext == "" {
 		return nil, fmt.Errorf("无法从文件路径确定格式: %s", filePath)
@@ -82,13 +83,13 @@ func ProcessorFromFilePath(t translator.Translator, filePath string, predefinedT
 	// 处理特殊格式
 	switch ext {
 	case "md", "markdown":
-		return NewProcessor(t, "markdown", predefinedTranslations)
+		return NewProcessor(t, "markdown", predefinedTranslations, progressBar)
 	case "txt":
-		return NewProcessor(t, "text", predefinedTranslations)
+		return NewProcessor(t, "text", predefinedTranslations, progressBar)
 	case "epub":
-		return NewProcessor(t, "epub", predefinedTranslations)
+		return NewProcessor(t, "epub", predefinedTranslations, progressBar)
 	case "tex":
-		return NewProcessor(t, "latex", predefinedTranslations)
+		return NewProcessor(t, "latex", predefinedTranslations, progressBar)
 	default:
 		return nil, fmt.Errorf("不支持的文件扩展名: %s", ext)
 	}
@@ -108,6 +109,7 @@ type BaseProcessor struct {
 	Translator             translator.Translator
 	Name                   string
 	predefinedTranslations *config.PredefinedTranslation
+	progressBar            *progress.Writer
 }
 
 // GetName 返回处理器的名称
@@ -121,10 +123,10 @@ func FormatFile(filePath string) error {
 
 	switch ext {
 	case ".md", ".markdown":
-		if !checkCommand("prettier") {
-			return fmt.Errorf("prettier 未安装，请使用以下命令安装：npm install -g prettier")
-		}
-		return formatWithPrettier(filePath)
+		// if !checkCommand("prettier") {
+		// 	return fmt.Errorf("prettier 未安装，请使用以下命令安装：npm install -g prettier")
+		// }
+		return FormatMarkdown(filePath)
 	case ".tex":
 		if !checkCommand("latexindent") {
 			return fmt.Errorf("latexindent 未安装，请安装 texlive 或相关 LaTeX 发行版")
@@ -148,15 +150,6 @@ func FormatFile(filePath string) error {
 func checkCommand(cmd string) bool {
 	_, err := exec.LookPath(cmd)
 	return err == nil
-}
-
-func formatMarkdown(filePath string) error {
-	cmd := exec.Command("markdownlint", "--fix", filePath)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("markdownlint 执行失败: %v\n输出: %s", err, string(output))
-	}
-	return nil
 }
 
 func formatLatex(filePath string) error {
@@ -212,22 +205,22 @@ func formatJava(filePath string) error {
 // 初始化所有内置处理器
 func init() {
 	// 注册文本处理器
-	RegisterProcessor("text", func(t translator.Translator, predefinedTranslations *config.PredefinedTranslation) (Processor, error) {
-		return NewTextProcessor(t, predefinedTranslations)
+	RegisterProcessor("text", func(t translator.Translator, predefinedTranslations *config.PredefinedTranslation, progressBar *progress.Writer) (Processor, error) {
+		return NewTextProcessor(t, predefinedTranslations, progressBar)
 	})
 
 	// 注册Markdown处理器
-	RegisterProcessor("markdown", func(t translator.Translator, predefinedTranslations *config.PredefinedTranslation) (Processor, error) {
-		return NewMarkdownProcessor(t, predefinedTranslations)
+	RegisterProcessor("markdown", func(t translator.Translator, predefinedTranslations *config.PredefinedTranslation, progressBar *progress.Writer) (Processor, error) {
+		return NewMarkdownProcessor(t, predefinedTranslations, progressBar)
 	})
 
 	// 注册EPUB处理器
-	RegisterProcessor("epub", func(t translator.Translator, predefinedTranslations *config.PredefinedTranslation) (Processor, error) {
-		return NewEPUBProcessor(t, predefinedTranslations)
+	RegisterProcessor("epub", func(t translator.Translator, predefinedTranslations *config.PredefinedTranslation, progressBar *progress.Writer) (Processor, error) {
+		return NewEPUBProcessor(t, predefinedTranslations, progressBar)
 	})
 
 	// 注册LaTeX处理器
-	RegisterProcessor("latex", func(t translator.Translator, predefinedTranslations *config.PredefinedTranslation) (Processor, error) {
-		return NewLaTeXProcessor(t, predefinedTranslations)
+	RegisterProcessor("latex", func(t translator.Translator, predefinedTranslations *config.PredefinedTranslation, progressBar *progress.Writer) (Processor, error) {
+		return NewLaTeXProcessor(t, predefinedTranslations, progressBar)
 	})
 }

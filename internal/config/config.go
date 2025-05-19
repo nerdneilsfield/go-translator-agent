@@ -9,14 +9,17 @@ import (
 
 // ModelConfig 保存模型配置
 type ModelConfig struct {
-	Name            string  `mapstructure:"name"`
-	ModelID         string  `mapstructure:"model_id"`
-	APIType         string  `mapstructure:"api_type"`
-	BaseURL         string  `mapstructure:"base_url"`
-	Key             string  `mapstructure:"key"`
-	MaxOutputTokens int     `mapstructure:"max_output_tokens"`
-	MaxInputTokens  int     `mapstructure:"max_input_tokens"`
-	Temperature     float64 `mapstructure:"temperature"`
+	Name             string  `mapstructure:"name"`
+	ModelID          string  `mapstructure:"model_id"`
+	APIType          string  `mapstructure:"api_type"`
+	BaseURL          string  `mapstructure:"base_url"`
+	Key              string  `mapstructure:"key"`
+	MaxOutputTokens  int     `mapstructure:"max_output_tokens"`
+	MaxInputTokens   int     `mapstructure:"max_input_tokens"`
+	Temperature      float64 `mapstructure:"temperature"`
+	InputTokenPrice  float64 `mapstructure:"input_token_price"`  // 1M Token 的价格
+	OutputTokenPrice float64 `mapstructure:"output_token_price"` // 1M Token 的价格
+	PriceUnit        string  `mapstructure:"price_unit"`         // 价格单位
 }
 
 // StepConfig 保存步骤配置
@@ -180,24 +183,30 @@ func NewDefaultConfig() *Config {
 func DefaultModelConfigs() map[string]ModelConfig {
 	return map[string]ModelConfig{
 		"gpt-3.5-turbo": {
-			Name:            "gpt-3.5-turbo",
-			ModelID:         "gpt-3.5-turbo",
-			APIType:         "openai",
-			BaseURL:         "",
-			Key:             "",
-			MaxOutputTokens: 4096,
-			MaxInputTokens:  4096,
-			Temperature:     0.7,
+			Name:             "gpt-3.5-turbo",
+			ModelID:          "gpt-3.5-turbo",
+			APIType:          "openai",
+			BaseURL:          "",
+			Key:              "",
+			MaxOutputTokens:  4096,
+			MaxInputTokens:   4096,
+			Temperature:      0.7,
+			InputTokenPrice:  0.5,
+			OutputTokenPrice: 1.5,
+			PriceUnit:        "USD",
 		},
-		"gpt-4": {
-			Name:            "gpt-4",
-			ModelID:         "gpt-4",
-			APIType:         "openai",
-			BaseURL:         "",
-			Key:             "",
-			MaxOutputTokens: 8192,
-			MaxInputTokens:  8192,
-			Temperature:     0.7,
+		"gpt-4o": {
+			Name:             "gpt-4",
+			ModelID:          "gpt-4",
+			APIType:          "openai",
+			BaseURL:          "",
+			Key:              "",
+			MaxOutputTokens:  8192,
+			MaxInputTokens:   8192,
+			Temperature:      0.7,
+			InputTokenPrice:  2.5,
+			OutputTokenPrice: 10,
+			PriceUnit:        "USD",
 		},
 		"qwen-plus": {
 			Name:            "qwen-plus",

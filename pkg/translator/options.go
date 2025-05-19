@@ -1,6 +1,8 @@
 package translator
 
-import "github.com/schollz/progressbar/v3"
+import (
+	"github.com/jedib0t/go-pretty/v6/progress"
+)
 
 // Option 定义翻译器选项
 type Option func(*translatorOptions)
@@ -9,7 +11,7 @@ type Option func(*translatorOptions)
 type translatorOptions struct {
 	cache             Cache
 	forceCacheRefresh bool // 强制刷新缓存
-	progressBar       *progressbar.ProgressBar
+	progressBar       *progress.Writer
 }
 
 // WithCache 设置缓存
@@ -27,7 +29,7 @@ func WithForceCacheRefresh() Option {
 }
 
 // WithProgressBar 设置进度条
-func WithProgressBar(bar *progressbar.ProgressBar) Option {
+func WithProgressBar(bar *progress.Writer) Option {
 	return func(opts *translatorOptions) {
 		opts.progressBar = bar
 	}

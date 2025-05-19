@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jedib0t/go-pretty/v6/progress"
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 	"go.uber.org/zap"
@@ -55,7 +56,7 @@ var (
 )
 
 // NewMarkdownProcessor 创建一个新的Markdown处理器
-func NewMarkdownProcessor(t translator.Translator, predefinedTranslations *config.PredefinedTranslation) (*MarkdownProcessor, error) {
+func NewMarkdownProcessor(t translator.Translator, predefinedTranslations *config.PredefinedTranslation, progressBar *progress.Writer) (*MarkdownProcessor, error) {
 	var cfg *config.Config
 	if configProvider, ok := t.(interface{ GetConfig() *config.Config }); ok {
 		cfg = configProvider.GetConfig()
@@ -76,6 +77,7 @@ func NewMarkdownProcessor(t translator.Translator, predefinedTranslations *confi
 			Translator:             t,
 			Name:                   "Markdown",
 			predefinedTranslations: predefinedTranslations,
+			progressBar:            progressBar,
 		},
 		logger: zapLogger,
 		config: cfg,
@@ -85,43 +87,79 @@ func NewMarkdownProcessor(t translator.Translator, predefinedTranslations *confi
 // TranslateFile 翻译Markdown文件
 func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 
-	FormatFile(inputPath)
-
-	// 1. 读取文件内容
-	contentBytes, err := os.ReadFile(inputPath)
-	if err != nil {
-		p.logger.Error("无法读取文件", zap.Error(err), zap.String("文件路径", inputPath))
-		return fmt.Errorf("无法读取文件 %s: %v", inputPath, err)
-	}
-	originalText := string(contentBytes)
-
-	// 2. 先进行占位符保护（先多行再单行）
-	protectedText, replacements := p.protectMarkdown(originalText)
-
-	p.currentReplacements = replacements
-
-	// 3.1 合并连续的占位符段落
-	protectedText = p.combineConsecutivePlaceholderParagraphs(protectedText)
-
-	// 3. 保存 replacements
-	replacementsJson, err := json.MarshalIndent(ReplacementInfoList{Replacements: p.currentReplacements}, "", "    ")
-	if err != nil {
-		p.logger.Error("无法序列化替换信息", zap.Error(err))
-		return fmt.Errorf("无法序列化替换信息: %v", err)
-	}
-	err = os.WriteFile(strings.TrimSuffix(outputPath, ".md")+".replacements.json", replacementsJson, os.ModePerm)
-	if err != nil {
-		p.logger.Error("无法写出替换信息", zap.Error(err), zap.String("文件路径", strings.TrimSuffix(outputPath, ".md")+".replacements.json"))
-		return fmt.Errorf("无法写出替换信息 %s: %v", strings.TrimSuffix(outputPath, ".md")+".replacements.json", err)
-	}
+	replacementsPath := strings.TrimSuffix(outputPath, ".md") + ".replacements.json"
 	protectedTextFile := strings.TrimSuffix(outputPath, ".md") + ".protected.md"
-	err = os.WriteFile(protectedTextFile, []byte(protectedText), os.ModePerm)
-	if err != nil {
-		p.logger.Error("无法写出保护后的文本", zap.Error(err), zap.String("文件路径", protectedTextFile))
-		return fmt.Errorf("无法写出保护后的文本 %s: %v", protectedTextFile, err)
+
+	var protectedText string
+	var err error
+
+	if !IsFileExists(replacementsPath) || !IsFileExists(protectedTextFile) {
+
+		FormatFile(inputPath)
+
+		// 1. 读取文件内容
+		contentBytes, err := os.ReadFile(inputPath)
+		if err != nil {
+			p.logger.Error("无法读取文件", zap.Error(err), zap.String("文件路径", inputPath))
+			return fmt.Errorf("无法读取文件 %s: %v", inputPath, err)
+		}
+		originalText := string(contentBytes)
+
+		p.Translator.GetProgressTracker().SetRealTotalChars(len(originalText))
+
+		// 2. 先进行占位符保护（先多行再单行）
+		protectedText, replacements := p.protectMarkdown(originalText)
+
+		p.currentReplacements = replacements
+
+		// 3.1 合并连续的占位符段落
+		protectedText = p.combineConsecutivePlaceholderParagraphs(protectedText)
+
+		p.Translator.GetProgressTracker().SetTotalChars(len(protectedText))
+
+		// 3. 保存 replacements
+		replacementsJson, err := json.MarshalIndent(ReplacementInfoList{Replacements: p.currentReplacements}, "", "    ")
+		if err != nil {
+			p.logger.Error("无法序列化替换信息", zap.Error(err))
+			return fmt.Errorf("无法序列化替换信息: %v", err)
+		}
+		err = os.WriteFile(replacementsPath, replacementsJson, os.ModePerm)
+		if err != nil {
+			p.logger.Error("无法写出替换信息", zap.Error(err), zap.String("文件路径", strings.TrimSuffix(outputPath, ".md")+".replacements.json"))
+			return fmt.Errorf("无法写出替换信息 %s: %v", strings.TrimSuffix(outputPath, ".md")+".replacements.json", err)
+		}
+
+		err = os.WriteFile(protectedTextFile, []byte(protectedText), os.ModePerm)
+		if err != nil {
+			p.logger.Error("无法写出保护后的文本", zap.Error(err), zap.String("文件路径", protectedTextFile))
+			return fmt.Errorf("无法写出保护后的文本 %s: %v", protectedTextFile, err)
+		}
+
+		FormatFile(protectedTextFile)
+
+	} else {
+		protectedTextBytes, err := os.ReadFile(protectedTextFile)
+		if err != nil {
+			p.logger.Error("无法读取保护后的文本", zap.Error(err), zap.String("文件路径", protectedTextFile))
+			return fmt.Errorf("无法读取保护后的文本 %s: %v", protectedTextFile, err)
+		}
+		protectedText = string(protectedTextBytes)
+
+		replacementsJson, err := os.ReadFile(replacementsPath)
+		if err != nil {
+			p.logger.Error("无法读取替换信息", zap.Error(err), zap.String("文件路径", replacementsPath))
+			return fmt.Errorf("无法读取替换信息 %s: %v", replacementsPath, err)
+		}
+		var replacements ReplacementInfoList
+		err = json.Unmarshal(replacementsJson, &replacements)
+		if err != nil {
+			p.logger.Error("无法反序列化替换信息", zap.Error(err), zap.String("文件路径", replacementsPath))
+			return fmt.Errorf("无法反序列化替换信息 %s: %v", replacementsPath, err)
+		}
+		p.currentReplacements = replacements.Replacements
 	}
 
-	FormatFile(protectedTextFile)
+	p.Translator.InitTranslator()
 
 	// 4. 使用 splitTextToChunks 分段
 	chunks := p.splitTextToChunks(protectedText, p.config.MinSplitSize, p.config.MaxSplitSize)
@@ -165,6 +203,10 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 	}
 
 	FormatFile(outputPath)
+
+	p.Translator.GetProgressTracker().UpdateRealTranslatedChars(len(finalResult))
+
+	p.Translator.Finish()
 
 	return nil
 }

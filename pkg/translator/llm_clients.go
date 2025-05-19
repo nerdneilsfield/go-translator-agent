@@ -70,17 +70,20 @@ func initModels(cfg *config.Config, log logger.Logger) (map[string]LLMClient, er
 
 // OpenAIClient 是对OpenAI API的客户端封装
 type OpenAIClient struct {
-	client          *openai.Client
-	modelName       string
-	modelID         string // 用于 API 请求的模型 ID
-	modelType       string
-	maxInputTokens  int
-	maxOutputTokens int
-	log             logger.Logger
-	baseURL         string
-	apiKey          string
-	httpClient      *http.Client  // 用于自定义请求
-	timeout         time.Duration // 请求超时时间
+	client           *openai.Client
+	modelName        string
+	modelID          string // 用于 API 请求的模型 ID
+	modelType        string
+	maxInputTokens   int
+	maxOutputTokens  int
+	log              logger.Logger
+	baseURL          string
+	apiKey           string
+	httpClient       *http.Client  // 用于自定义请求
+	timeout          time.Duration // 请求超时时间
+	inputTokenPrice  float64
+	outputTokenPrice float64
+	priceUnit        string
 }
 
 // maskAuthToken 遮蔽认证令牌，只显示前4位和后4位
@@ -134,18 +137,36 @@ func newOpenAIClient(cfg config.ModelConfig, log logger.Logger, timeout time.Dur
 	}
 
 	return &OpenAIClient{
-		client:          client,
-		modelName:       cfg.Name,
-		modelID:         modelID,
-		modelType:       "openai",
-		maxInputTokens:  cfg.MaxInputTokens,
-		maxOutputTokens: cfg.MaxOutputTokens,
-		log:             log,
-		baseURL:         baseURL,
-		apiKey:          cfg.Key,
-		httpClient:      httpClient,
-		timeout:         timeout,
+		client:           client,
+		modelName:        cfg.Name,
+		modelID:          modelID,
+		modelType:        "openai",
+		maxInputTokens:   cfg.MaxInputTokens,
+		maxOutputTokens:  cfg.MaxOutputTokens,
+		log:              log,
+		baseURL:          baseURL,
+		apiKey:           cfg.Key,
+		httpClient:       httpClient,
+		timeout:          timeout,
+		inputTokenPrice:  cfg.InputTokenPrice,
+		outputTokenPrice: cfg.OutputTokenPrice,
+		priceUnit:        cfg.PriceUnit,
 	}, nil
+}
+
+// GetInputTokenPrice 返回输入令牌价格
+func (c *OpenAIClient) GetInputTokenPrice() float64 {
+	return c.inputTokenPrice
+}
+
+// GetOutputTokenPrice 返回输出令牌价格
+func (c *OpenAIClient) GetOutputTokenPrice() float64 {
+	return c.outputTokenPrice
+}
+
+// GetPriceUnit 返回价格单位
+func (c *OpenAIClient) GetPriceUnit() string {
+	return c.priceUnit
 }
 
 // Complete 从提示词生成文本
@@ -177,6 +198,9 @@ func (c *OpenAIClient) Complete(prompt string, maxTokens int, temperature float6
 		zap.Int("最大令牌数", maxTokens),
 		zap.Int("提示词长度", len(prompt)),
 		zap.Duration("超时时间", c.timeout),
+		zap.Float64("输入令牌价格", c.inputTokenPrice),
+		zap.Float64("输出令牌价格", c.outputTokenPrice),
+		zap.String("价格单位", c.priceUnit),
 	)
 
 	// 尝试使用标准客户端
@@ -198,8 +222,8 @@ func (c *OpenAIClient) Complete(prompt string, maxTokens int, temperature float6
 		if detailedError == "" {
 			content, promptTokens, completionTokens := c.tryExtractContentFromErrorResponse(ctx, req)
 			if content != "" {
-				c.log.Warn("从错误响应中提取到有效内容",
-					zap.String("内容", content),
+				c.log.Debug("从错误响应中提取到有效内容",
+					// zap.String("内容", content),
 					zap.Int("提示词令牌数", promptTokens),
 					zap.Int("完成令牌数", completionTokens),
 				)
@@ -219,6 +243,9 @@ func (c *OpenAIClient) Complete(prompt string, maxTokens int, temperature float6
 		}
 
 		if detailedError != "" {
+			c.log.Error("OpenAI API调用失败",
+				zap.String("详细错误", detailedError),
+			)
 			return "", 0, 0, fmt.Errorf("OpenAI API调用失败: %w\n详细错误: %s", err, detailedError)
 		}
 
@@ -729,7 +756,7 @@ func (c *OpenAIClient) sendManualRequest(ctx context.Context, req openai.ChatCom
 	// 记录响应详情
 	c.log.Debug("HTTP 响应详情",
 		zap.Int("状态码", resp.StatusCode),
-		zap.String("响应体", string(respBody)),
+		zap.Int("响应体长度", len(respBody)),
 	)
 
 	// 检查响应是否包含有效的JSON内容
@@ -744,7 +771,8 @@ func (c *OpenAIClient) sendManualRequest(ctx context.Context, req openai.ChatCom
 							// 发现有效的翻译内容，记录警告但不视为错误
 							c.log.Warn("API返回非200状态码但包含有效内容",
 								zap.Int("状态码", resp.StatusCode),
-								zap.String("内容", content),
+								zap.Int("内容长度", len(content)),
+								// zap.String("内容", content),
 							)
 							// 返回空字符串，表示不视为错误
 							return ""
@@ -816,6 +844,9 @@ func (c *StreamOnlyOpenAIClient) Complete(prompt string, maxTokens int, temperat
 		zap.Float64("温度", temperature),
 		zap.Int("最大令牌数", maxTokens),
 		zap.Int("提示词长度", len(prompt)),
+		zap.Float64("输入令牌价格", c.inputTokenPrice),
+		zap.Float64("输出令牌价格", c.outputTokenPrice),
+		zap.String("价格单位", c.priceUnit),
 	)
 
 	// 使用流式API

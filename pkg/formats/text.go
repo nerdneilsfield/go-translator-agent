@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jedib0t/go-pretty/v6/progress"
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 	"go.uber.org/zap"
@@ -22,7 +23,7 @@ type TextProcessor struct {
 }
 
 // NewTextProcessor 创建一个新的文本处理器
-func NewTextProcessor(t translator.Translator, predefinedTranslations *config.PredefinedTranslation) (*TextProcessor, error) {
+func NewTextProcessor(t translator.Translator, predefinedTranslations *config.PredefinedTranslation, progressBar *progress.Writer) (*TextProcessor, error) {
 	// 获取logger，如果无法转换则创建新的
 	zapLogger, _ := zap.NewProduction()
 	if loggerProvider, ok := t.GetLogger().(interface{ GetZapLogger() *zap.Logger }); ok {
@@ -35,6 +36,7 @@ func NewTextProcessor(t translator.Translator, predefinedTranslations *config.Pr
 			Translator:             t,
 			Name:                   "文本",
 			predefinedTranslations: predefinedTranslations,
+			progressBar:            progressBar,
 		},
 		replacements: []ReplacementInfo{},
 		logger:       zapLogger,
@@ -90,11 +92,14 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(translationTimeout)*time.Second)
 	defer cancel()
 
+	p.Translator.GetProgressTracker().SetRealTotalChars(len(content))
+
 	// 保护文本中的预定义翻译
 	protectedText, err := p.ProtectText(string(content))
 	if err != nil {
 		return fmt.Errorf("保护文本失败: %w", err)
 	}
+	p.Translator.GetProgressTracker().SetTotalChars(len(protectedText))
 
 	// 分割文本为块
 	chunks := p.splitTextToChunks(protectedText, minSplitSize, maxSplitSize)
@@ -183,15 +188,24 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 				return fmt.Errorf("翻译文本失败: %w", result.err)
 			}
 
+			translatedText, err := p.RestoreText(result.text)
+			if err != nil {
+				return fmt.Errorf("还原文本失败: %w", err)
+			}
+
 			// 写入输出文件
-			if err := os.WriteFile(outputPath, []byte(result.text), 0644); err != nil {
+			if err := os.WriteFile(outputPath, []byte(translatedText), 0644); err != nil {
 				return fmt.Errorf("写入文件失败 %s: %w", outputPath, err)
 			}
+
+			p.Translator.GetProgressTracker().UpdateRealTranslatedChars(len(translatedText))
+
+			p.Translator.Finish()
 
 			log.Info("翻译完成",
 				zap.String("输出文件", outputPath),
 				zap.Int("原始长度", len(content)),
-				zap.Int("翻译长度", len(result.text)),
+				zap.Int("翻译长度", len(translatedText)),
 			)
 
 			return nil
@@ -215,6 +229,8 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 			}
 		}
 	}
+
+	return nil
 }
 
 // splitTextToChunks 将文本分割为适当大小的块，优先按自然段落分割
@@ -368,7 +384,6 @@ func (p *TextProcessor) TranslateText(text string) (string, error) {
 	for _, idx := range translatableParagraphs {
 		totalChars += len(paragraphs[idx])
 	}
-	progress := NewProgressTracker(totalChars)
 
 	// 如果没有需要翻译的段落，直接返回原文
 	if len(translatableParagraphs) == 0 {
@@ -395,7 +410,7 @@ func (p *TextProcessor) TranslateText(text string) (string, error) {
 			}
 
 			// 更新进度
-			progress.UpdateProgress(len(paragraph))
+			p.Translator.GetProgressTracker().UpdateRealTranslatedChars(len(paragraph))
 
 			// 更新翻译后的段落
 			paragraphs[i] = translated
@@ -427,7 +442,7 @@ func (p *TextProcessor) TranslateText(text string) (string, error) {
 					translated, err := p.Translator.Translate(job.content, retryFailedParts)
 					if err == nil {
 						// 更新进度
-						progress.UpdateProgress(len(job.content))
+						p.Translator.GetProgressTracker().UpdateRealTranslatedChars(len(job.content))
 					}
 					results <- translationResult{
 						index:      job.index,
@@ -472,15 +487,6 @@ func (p *TextProcessor) TranslateText(text string) (string, error) {
 
 	// 组合翻译后的段落，保持原始换行符
 	translatedText := strings.Join(paragraphs, "\n")
-
-	// 获取最终进度信息
-	totalChars, translatedChars, _ := progress.GetProgress()
-
-	log.Info("文本翻译完成",
-		zap.Int("原始总字数", totalChars),
-		zap.Int("已翻译字数", translatedChars),
-		zap.Float64("翻译速度(字/秒)", float64(translatedChars)/time.Since(progress.startTime).Seconds()),
-	)
 
 	return translatedText, nil
 }

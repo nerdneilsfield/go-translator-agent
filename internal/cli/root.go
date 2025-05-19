@@ -3,13 +3,12 @@ package cli
 import (
 	"fmt"
 	"os"
-	"time"
 
+	"github.com/jedib0t/go-pretty/v6/progress"
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/formats"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
-	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -197,6 +196,24 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 				translatorOptions = append(translatorOptions, translator.WithForceCacheRefresh())
 			}
 
+			// 翻译文件
+			pw := progress.NewWriter()
+
+			// 配置进度条样式
+			pw.SetStyle(progress.StyleDefault)
+			pw.Style().Colors = progress.StyleColorsExample
+			pw.Style().Options.PercentFormat = "%4.1f%%"
+
+			// 可配置的可见性
+			pw.Style().Visibility.ETA = true        // 显示预计剩余时间
+			pw.Style().Visibility.Percentage = true // 显示百分比
+			pw.Style().Visibility.Speed = true      // 显示速度
+
+			go pw.Render()
+
+			// 创建一个带有进度条的翻译器选项
+			translatorOptions = append(translatorOptions, translator.WithProgressBar(&pw))
+
 			t, err := translator.New(cfg, translatorOptions...)
 			if err != nil {
 				log.Error("创建翻译器失败", zap.Error(err))
@@ -207,10 +224,10 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			var processor formats.Processor
 			if formatType != "" {
 				// 使用指定格式
-				processor, err = formats.NewProcessor(t, formatType, predefinedTranslations)
+				processor, err = formats.NewProcessor(t, formatType, predefinedTranslations, &pw)
 			} else {
 				// 根据文件扩展名自动检测格式
-				processor, err = formats.ProcessorFromFilePath(t, inputPath, predefinedTranslations)
+				processor, err = formats.ProcessorFromFilePath(t, inputPath, predefinedTranslations, &pw)
 			}
 
 			if err != nil {
@@ -218,38 +235,10 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 				os.Exit(1)
 			}
 
-			// 翻译文件
-			bar := progressbar.NewOptions64(
-				-1,
-				progressbar.OptionSetDescription("正在翻译..."),
-				progressbar.OptionSetWriter(os.Stderr),
-				progressbar.OptionSetWidth(30),
-				progressbar.OptionThrottle(65*time.Millisecond),
-				progressbar.OptionShowCount(),
-				progressbar.OptionShowIts(),
-				progressbar.OptionSetItsString("字"),
-				progressbar.OptionSpinnerType(14),
-				progressbar.OptionFullWidth(),
-				progressbar.OptionSetRenderBlankState(true),
-				progressbar.OptionEnableColorCodes(true),
-				progressbar.OptionSetTheme(progressbar.Theme{
-					Saucer:        "[green]=[reset]",
-					SaucerHead:    "[green]>[reset]",
-					SaucerPadding: " ",
-					BarStart:      "[",
-					BarEnd:        "]",
-				}),
-			)
-
-			// 创建一个带有进度条的翻译器选项
-			translatorOptions = append(translatorOptions, translator.WithProgressBar(bar))
-
 			if err := processor.TranslateFile(inputPath, outputPath); err != nil {
-				_ = bar.Close()
 				log.Error("翻译文件失败", zap.Error(err))
 				os.Exit(1)
 			}
-			_ = bar.Finish()
 
 			log.Info("翻译完成",
 				zap.String("输入文件", inputPath),
