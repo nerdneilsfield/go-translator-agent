@@ -6,6 +6,11 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+
+	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
+	"github.com/nerdneilsfield/go-translator-agent/internal/test"
+	"github.com/nerdneilsfield/go-translator-agent/pkg/formats"
 )
 
 // 测试使用goquery库解析和翻译XML
@@ -68,12 +73,42 @@ func TestGoQueryXMLParsing(t *testing.T) {
 
 // 测试使用goquery库翻译XML
 func TestGoQueryXMLTranslation(t *testing.T) {
-	// 暂时跳过这个测试
-	t.Skip("暂时跳过XML翻译测试，直到修复完成")
+	xmlContent := `<?xml version="1.0" encoding="UTF-8"?>
+<root>
+    <item id="1">
+        <name>Test Name</name>
+        <description>This is a test description.</description>
+    </item>
+</root>`
+
+	cfg := test.CreateTestConfig()
+	newLogger := logger.NewZapLogger(true)
+	mockTrans := NewMockTranslator(cfg, newLogger.GetZapLogger())
+	mockTrans.On("Translate", mock.Anything, mock.Anything).Return("这是翻译后的文本", nil)
+
+	translated, err := formats.TranslateHTMLWithGoQuery(xmlContent, mockTrans, newLogger.GetZapLogger())
+	assert.NoError(t, err)
+	assert.Contains(t, translated, "这是翻译后的文本")
+	assert.NotEmpty(t, translated)
 }
 
 // 测试复杂XML结构的翻译
 func TestComplexXMLTranslation(t *testing.T) {
-	// 暂时跳过这个测试
-	t.Skip("暂时跳过复杂XML翻译测试，直到修复完成")
+	xmlContent := `<?xml version="1.0" encoding="UTF-8"?>
+<root>
+    <group>
+        <item>Item 1</item>
+        <item>Item 2</item>
+    </group>
+</root>`
+
+	cfg := test.CreateTestConfig()
+	newLogger := logger.NewZapLogger(true)
+	mockTrans := NewMockTranslator(cfg, newLogger.GetZapLogger())
+	mockTrans.On("Translate", mock.Anything, mock.Anything).Return("这是翻译后的文本", nil)
+
+	translated, err := formats.TranslateHTMLWithGoQuery(xmlContent, mockTrans, newLogger.GetZapLogger())
+	assert.NoError(t, err)
+	assert.Contains(t, translated, "这是翻译后的文本")
+	assert.NotEmpty(t, translated)
 }

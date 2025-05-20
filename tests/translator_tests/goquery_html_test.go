@@ -6,6 +6,11 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+
+	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
+	"github.com/nerdneilsfield/go-translator-agent/internal/test"
+	"github.com/nerdneilsfield/go-translator-agent/pkg/formats"
 )
 
 // 测试使用goquery库解析和翻译HTML
@@ -97,12 +102,55 @@ func TestGoQueryHTMLParsing(t *testing.T) {
 
 // 测试使用goquery库翻译HTML
 func TestGoQueryHTMLTranslation(t *testing.T) {
-	// 暂时跳过这个测试
-	t.Skip("暂时跳过HTML翻译测试，直到修复完成")
+	htmlContent := `<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Page</title>
+</head>
+<body>
+    <h1>Hello World</h1>
+    <p>This is a test paragraph.</p>
+</body>
+</html>`
+
+	cfg := test.CreateTestConfig()
+	newLogger := logger.NewZapLogger(true)
+	mockTrans := NewMockTranslator(cfg, newLogger.GetZapLogger())
+	mockTrans.On("Translate", mock.Anything, mock.Anything).Return("这是翻译后的文本", nil)
+
+	translated, err := formats.TranslateHTMLWithGoQuery(htmlContent, mockTrans, newLogger.GetZapLogger())
+	assert.NoError(t, err)
+	assert.Contains(t, translated, "这是翻译后的文本")
+	assert.NotEmpty(t, translated)
 }
 
 // 测试复杂HTML结构的翻译
 func TestComplexHTMLTranslation(t *testing.T) {
-	// 暂时跳过这个测试
-	t.Skip("暂时跳过复杂HTML翻译测试，直到修复完成")
+	htmlContent := `<!DOCTYPE html>
+<html>
+<head>
+    <title>Complex</title>
+    <style>body { font-family: Arial; }</style>
+    <script>console.log("Test")</script>
+</head>
+<body>
+    <div>
+        <p>This is a nested paragraph.</p>
+        <ul>
+            <li>Item 1</li>
+            <li>Item 2</li>
+        </ul>
+    </div>
+</body>
+</html>`
+
+	cfg := test.CreateTestConfig()
+	newLogger := logger.NewZapLogger(true)
+	mockTrans := NewMockTranslator(cfg, newLogger.GetZapLogger())
+	mockTrans.On("Translate", mock.Anything, mock.Anything).Return("这是翻译后的文本", nil)
+
+	translated, err := formats.TranslateHTMLWithGoQuery(htmlContent, mockTrans, newLogger.GetZapLogger())
+	assert.NoError(t, err)
+	assert.Contains(t, translated, "这是翻译后的文本")
+	assert.NotEmpty(t, translated)
 }

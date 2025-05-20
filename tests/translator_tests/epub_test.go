@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
+	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
+	"github.com/nerdneilsfield/go-translator-agent/pkg/formats"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -292,4 +294,34 @@ func TestEPUBChapterEndTranslation(t *testing.T) {
 
 	// 验证章节末尾内容已被正确翻译
 	assert.Contains(t, chapter2Content, "这是本书的最后一段")
+}
+
+// 测试在翻译EPUB时缺失部分节点的情况
+func TestEPUBMissingNodeHandling(t *testing.T) {
+	// 创建临时目录并生成测试EPUB
+	tempDir := t.TempDir()
+	epubPath := createTestEPUB(t, tempDir)
+	outputPath := filepath.Join(tempDir, "missing_node.epub")
+
+	// 使用内部测试包的配置和logger
+	cfg := createTestConfig()
+	newLogger := logger.NewZapLogger(true)
+
+	// 创建模拟翻译器，仅返回统一的翻译结果，导致节点匹配不完全
+	mockTrans := NewMockTranslator(cfg, newLogger.GetZapLogger())
+	mockTrans.On("Translate", mock.Anything, mock.Anything).Return("这是翻译后的文本", nil)
+
+	// 使用真实的EPUB处理器执行翻译
+	processor, err := formats.NewEPUBProcessor(mockTrans, &config.PredefinedTranslation{}, nil)
+	assert.NoError(t, err)
+	err = processor.TranslateFile(epubPath, outputPath)
+	assert.NoError(t, err)
+
+	// 验证输出文件存在
+	_, statErr := os.Stat(outputPath)
+	assert.NoError(t, statErr)
+
+	// 读取翻译结果，原文仍然存在，验证未发生崩溃
+	chapter1 := extractFileFromEPUB(t, outputPath, "OEBPS/chapter1.xhtml")
+	assert.Contains(t, chapter1, "Chapter 1: Introduction")
 }
