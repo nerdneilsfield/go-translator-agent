@@ -6,11 +6,13 @@ import (
 	"time"
 
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
+	"go.uber.org/zap"
 )
 
 func main() {
 	// 创建一个新的进度跟踪器
-	tracker := translator.NewNewProgressTracker(1000)
+	logger, _ := zap.NewDevelopment()
+	tracker := translator.NewNewProgressTracker(1000, logger)
 
 	// 设置模型价格
 	tracker.UpdateModelPrice(translator.ModelPrice{

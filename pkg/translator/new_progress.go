@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/nerdneilsfield/go-translator-agent/pkg/progress"
+	"go.uber.org/zap"
 )
 
 // NewProgressTracker 是新的进度跟踪器，用于替代旧的 TranslationProgressTracker
@@ -41,11 +42,11 @@ type NewProgressTracker struct {
 }
 
 // NewNewProgressTracker 创建一个新的进度跟踪器
-func NewNewProgressTracker(totalChars int) *NewProgressTracker {
+func NewNewProgressTracker(totalChars int, logger *zap.Logger) *NewProgressTracker {
 	now := time.Now()
 
 	// 创建进度适配器
-	adapter := progress.NewAdapter(nil)
+	adapter := progress.NewAdapter(logger)
 
 	return &NewProgressTracker{
 		adapter:                     adapter,
