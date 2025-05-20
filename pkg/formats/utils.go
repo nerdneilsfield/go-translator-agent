@@ -2,6 +2,7 @@ package formats
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -95,7 +96,6 @@ func IsFileExists(path string) bool {
 }
 
 // TranslateHTMLDOM 翻译 HTML 字符串中的文本节点，保持原有的 DOM 结构
-// TranslateHTMLDOM 翻译 HTML 字符串中的文本节点，保持原有的 DOM 结构
 func TranslateHTMLDOM(htmlStr string, t translator.Translator, logger *zap.Logger) (string, error) {
 	root, err := html.Parse(strings.NewReader(htmlStr))
 	if err != nil {
@@ -107,19 +107,35 @@ func TranslateHTMLDOM(htmlStr string, t translator.Translator, logger *zap.Logge
 	if cfg != nil {
 		if modelCfg, ok := cfg.ModelConfigs[cfg.DefaultModelName]; ok {
 			if modelCfg.MaxInputTokens > 0 {
+				// 减小缓冲区大小，确保不会超出模型限制
 				chunkSize = modelCfg.MaxInputTokens - 2000
 				if chunkSize <= 0 {
-					chunkSize = modelCfg.MaxInputTokens
+					chunkSize = modelCfg.MaxInputTokens / 2
 				}
 			}
 		}
 	}
 
+	// 收集所有需要翻译的文本节点
 	var textNodes []*html.Node
 	collectTextNodes(root, &textNodes)
-	groups := groupTextNodes(textNodes, chunkSize)
 
-	for _, group := range groups {
+	// 记录总节点数
+	totalNodes := len(textNodes)
+	logger.Info("收集到的文本节点数", zap.Int("节点数", totalNodes))
+
+	// 如果没有文本节点，直接返回原始HTML
+	if totalNodes == 0 {
+		return htmlStr, nil
+	}
+
+	// 将文本节点分组，确保每组不超过模型的输入限制
+	groups := groupTextNodes(textNodes, chunkSize)
+	logger.Info("文本节点分组完成", zap.Int("组数", len(groups)))
+
+	// 逐组翻译文本节点
+	for groupIndex, group := range groups {
+		// 构建当前组的文本
 		var builder strings.Builder
 		for i, n := range group {
 			if i > 0 {
@@ -128,36 +144,87 @@ func TranslateHTMLDOM(htmlStr string, t translator.Translator, logger *zap.Logge
 			builder.WriteString(strings.TrimSpace(n.Data))
 		}
 
-		translated, err := t.Translate(builder.String(), true)
-		if err != nil {
-			logger.Warn("translate html node group failed", zap.Error(err))
+		groupText := builder.String()
+		if groupText == "" {
+			logger.Warn("跳过空组", zap.Int("组索引", groupIndex))
 			continue
 		}
 
-		parts := strings.SplitN(translated, "\n\n", len(group))
+		logger.Debug("翻译文本组",
+			zap.Int("组索引", groupIndex),
+			zap.Int("组大小", len(group)),
+			zap.Int("文本长度", len(groupText)))
+
+		// 翻译当前组的文本
+		translated, err := t.Translate(groupText, true)
+		if err != nil {
+			logger.Warn("翻译HTML节点组失败",
+				zap.Error(err),
+				zap.Int("组索引", groupIndex),
+				zap.Int("组大小", len(group)))
+			continue
+		}
+
+		// 确保翻译结果不为空
+		if translated == "" {
+			logger.Warn("翻译结果为空", zap.Int("组索引", groupIndex))
+			continue
+		}
+
+		// 将翻译结果分配回各个节点
+		parts := strings.Split(translated, "\n\n")
+
+		// 记录分割后的部分数量，用于调试
+		logger.Debug("翻译结果分割",
+			zap.Int("组索引", groupIndex),
+			zap.Int("原始节点数", len(group)),
+			zap.Int("分割部分数", len(parts)))
+
+		// 分配翻译结果到各个节点
 		for i, n := range group {
-			translatedText := strings.TrimSpace(n.Data)
-			if i < len(parts) {
-				translatedText = strings.TrimSpace(parts[i])
-			}
+			// 保留原始的前导和尾随空白
 			leading := leadingWhitespace(n.Data)
 			trailing := trailingWhitespace(n.Data)
+
+			// 默认使用原始文本（如果翻译失败）
+			translatedText := strings.TrimSpace(n.Data)
+
+			// 如果有对应的翻译结果，则使用翻译结果
+			if i < len(parts) {
+				partText := strings.TrimSpace(parts[i])
+				if partText != "" {
+					translatedText = partText
+				}
+			} else {
+				// 如果索引超出范围，记录警告
+				logger.Warn("翻译结果部分不足",
+					zap.Int("组索引", groupIndex),
+					zap.Int("节点索引", i),
+					zap.Int("可用部分数", len(parts)))
+			}
+
+			// 更新节点文本，保留原始空白
 			n.Data = leading + translatedText + trailing
 		}
 	}
 
+	// 将修改后的DOM渲染回HTML
 	var buf bytes.Buffer
 	if err := html.Render(&buf, root); err != nil {
-		return "", err
+		return "", fmt.Errorf("渲染HTML失败: %w", err)
 	}
+
+	// 使用goquery格式化HTML
 	doc, err := goquery.NewDocumentFromReader(&buf)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("解析HTML失败: %w", err)
 	}
+
 	htmlResult, err := doc.Html()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("生成HTML失败: %w", err)
 	}
+
 	return htmlResult, nil
 }
 
@@ -206,7 +273,10 @@ func collectTextNodes(n *html.Node, nodes *[]*html.Node) {
 	}
 
 	if n.Type == html.TextNode {
-		if strings.TrimSpace(n.Data) != "" {
+		// 即使是空白文本也收集，以保持文档结构完整性
+		// 但过滤掉只包含空白的节点，避免无意义的翻译
+		trimmed := strings.TrimSpace(n.Data)
+		if trimmed != "" {
 			*nodes = append(*nodes, n)
 		}
 	}
@@ -220,18 +290,45 @@ func groupTextNodes(nodes []*html.Node, limit int) [][]*html.Node {
 	var groups [][]*html.Node
 	var current []*html.Node
 	currentLen := 0
+
+	// 确保至少有一个节点被处理
+	if len(nodes) == 0 {
+		return groups
+	}
+
 	for _, n := range nodes {
 		text := strings.TrimSpace(n.Data)
-		if currentLen+len(text) > limit && len(current) > 0 {
+		textLen := len(text)
+
+		// 如果单个节点超过限制，单独处理它
+		if textLen > limit {
+			// 如果当前组不为空，先保存
+			if len(current) > 0 {
+				groups = append(groups, current)
+				current = nil
+				currentLen = 0
+			}
+			// 单独将大节点作为一组
+			groups = append(groups, []*html.Node{n})
+			continue
+		}
+
+		// 如果添加当前节点会超出限制，先保存当前组
+		if currentLen+textLen > limit && len(current) > 0 {
 			groups = append(groups, current)
 			current = nil
 			currentLen = 0
 		}
+
+		// 添加当前节点到新组
 		current = append(current, n)
-		currentLen += len(text)
+		currentLen += textLen
 	}
+
+	// 保存最后一个组
 	if len(current) > 0 {
 		groups = append(groups, current)
 	}
+
 	return groups
 }

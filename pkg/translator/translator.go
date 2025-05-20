@@ -234,7 +234,24 @@ func (t *TranslatorImpl) refreshCache() error {
 }
 
 func (t *TranslatorImpl) InitTranslator() {
+	// 确保进度跟踪器已初始化
+	totalChars, _, _, _, _, _ := t.progressTracker.GetProgress()
+	if totalChars <= 0 {
+		// 如果总字符数未设置，设置一个默认值
+		t.progressTracker.SetTotalChars(1000)
+	}
+
+	// 启动进度跟踪
 	go t.startProgress()
+
+	// 记录初始化信息
+	if logger, ok := t.logger.(interface{ Info(string, ...zap.Field) }); ok {
+		logger.Info("翻译器已初始化",
+			zap.Int("总字符数", totalChars),
+			zap.String("源语言", t.config.SourceLang),
+			zap.String("目标语言", t.config.TargetLang),
+			zap.String("活动步骤集", t.config.ActiveStepSet))
+	}
 }
 
 // Translate 将文本从源语言翻译到目标语言
@@ -315,6 +332,13 @@ func (t *TranslatorImpl) Translate(text string, retryFailedParts bool) (string, 
 			cacheKey := t.generateCacheKey(text, "final")
 			t.cache.Set(cacheKey, result)
 		}
+
+		// 记录翻译结果的摘要
+		t.logger.Info("翻译完成（快速模式）",
+			zap.String("原文摘要", snippet(text)),
+			zap.String("译文摘要", snippet(result)),
+			zap.Int("原文长度", len(text)),
+			zap.Int("译文长度", len(result)))
 
 		return result, nil
 	}
@@ -491,6 +515,13 @@ func (t *TranslatorImpl) Translate(text string, retryFailedParts bool) (string, 
 
 	t.updateProgress(improvedTranslation)
 
+	// 记录翻译结果的摘要
+	t.logger.Info("翻译完成（完整流程）",
+		zap.String("原文摘要", snippet(text)),
+		zap.String("译文摘要", snippet(improvedTranslation)),
+		zap.Int("原文长度", len(text)),
+		zap.Int("译文长度", len(improvedTranslation)))
+
 	return improvedTranslation, nil
 }
 
@@ -604,7 +635,7 @@ func (t *TranslatorImpl) reflection(sourceText, translation string) (string, err
 
 	// 构建提示词
 	prompt := fmt.Sprintf(`
-Your task is to review a source text and its translation from %s to %s, and then provide a list of constructive and specific suggestions to improve the translation. 
+Your task is to review a source text and its translation from %s to %s, and then provide a list of constructive and specific suggestions to improve the translation.
 The final style and tone should match the style of %s colloquially spoken in %s.
 
 [INTERNAL INSTRUCTIONS: The following guidelines are for internal use only and must NOT appear in the final output.]
@@ -834,12 +865,45 @@ func (t *TranslatorImpl) updateProgress(text string) {
 	t.progressMu.Lock()
 	defer t.progressMu.Unlock()
 
+	// 更新进度跟踪器
 	t.progressTracker.UpdateProgress(len(text))
 
-	_, translatedChars, _, _, _, estimatedCost := t.progressTracker.GetProgress()
+	// 获取当前进度信息
+	totalChars, translatedChars, _, estimatedTimeRemaining, _, estimatedCost := t.progressTracker.GetProgress()
 
-	t.translated_tracker.SetValue(int64(translatedChars))
-	t.cost_tracker.SetValue(int64(estimatedCost.totalCost * 1000))
+	// 计算完成百分比
+	var percentComplete float64
+	if totalChars > 0 {
+		percentComplete = float64(translatedChars) / float64(totalChars) * 100
+	}
+
+	// 更新翻译字数跟踪器
+	if t.translated_tracker != nil {
+		// 确保总字符数已设置
+		if t.translated_tracker.Total <= 0 && totalChars > 0 {
+			t.translated_tracker.UpdateTotal(int64(totalChars))
+		}
+
+		// 更新当前值
+		t.translated_tracker.SetValue(int64(translatedChars))
+
+		// 设置额外信息
+		t.translated_tracker.UpdateMessage(fmt.Sprintf("翻译字数 (%.1f%%)", percentComplete))
+	}
+
+	// 更新成本跟踪器
+	if t.cost_tracker != nil {
+		costValue := int64(estimatedCost.totalCost * 1000)
+		t.cost_tracker.SetValue(costValue)
+
+		// 设置额外信息
+		remainingTimeStr := "计算中..."
+		if estimatedTimeRemaining > 0 {
+			remainingTimeStr = fmt.Sprintf("%.1f分钟", estimatedTimeRemaining/60)
+		}
+		t.cost_tracker.UpdateMessage(fmt.Sprintf("成本: $%.2f (剩余: %s)",
+			estimatedCost.totalCost, remainingTimeStr))
+	}
 }
 
 // startProgress 开始跟踪翻译进度
@@ -853,22 +917,30 @@ func (t *TranslatorImpl) startProgress() {
 
 	totalChars, _, _, _, _, _ := t.progressTracker.GetProgress()
 
+	// 确保总字符数大于0，避免进度条显示异常
+	if totalChars <= 0 {
+		totalChars = 1 // 设置一个默认值，避免除零错误
+	}
+
+	// 创建翻译字数跟踪器
 	t.translated_tracker = &progress.Tracker{
 		Message: "翻译字数",
 		Total:   int64(totalChars),
 		Units:   progress.UnitsBytes,
 	}
 
+	// 添加到进度条
 	(*t.progressBar).AppendTracker(t.translated_tracker)
 
+	// 创建翻译成本跟踪器
 	t.cost_tracker = &progress.Tracker{
 		Message: "翻译成本",
-		Total:   10,
+		Total:   1000, // 设置一个合理的最大值
 		Units:   progress.UnitsCurrencyDollar,
 	}
 
+	// 添加到进度条
 	(*t.progressBar).AppendTracker(t.cost_tracker)
-
 }
 
 // endProgress 结束翻译进度跟踪

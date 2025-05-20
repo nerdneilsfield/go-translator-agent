@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/jedib0t/go-pretty/v6/progress"
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
@@ -204,11 +205,25 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			pw.Style().Colors = progress.StyleColorsExample
 			pw.Style().Options.PercentFormat = "%4.1f%%"
 
+			// 设置更新频率为1秒
+			pw.SetUpdateFrequency(time.Second)
+
+			// 设置自动停止为false，确保进度条持续显示
+			pw.SetAutoStop(false)
+
+			// 设置追踪器配置
+			pw.SetTrackerLength(50)  // 设置进度条长度
+			pw.SetMessageWidth(20)   // 设置消息宽度
+			pw.SetNumTrackersExpected(2)  // 预期的追踪器数量
+
 			// 可配置的可见性
 			pw.Style().Visibility.ETA = true        // 显示预计剩余时间
 			pw.Style().Visibility.Percentage = true // 显示百分比
 			pw.Style().Visibility.Speed = true      // 显示速度
+			pw.Style().Visibility.Value = true      // 显示当前值
+			pw.Style().Visibility.TrackerOverall = true // 显示总体进度
 
+			// 启动渲染协程
 			go pw.Render()
 
 			// 创建一个带有进度条的翻译器选项

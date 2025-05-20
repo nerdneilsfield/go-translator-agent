@@ -104,6 +104,23 @@ func RegisteredFormats() []string {
 	return formats
 }
 
+// Snippet 返回文本的摘要，用于日志记录
+func Snippet(s string) string {
+	const seg = 20
+	if len(s) <= seg*3 {
+		return s
+	}
+	start := s[:seg]
+	midIdx := len(s) / 2
+	midStart := midIdx - seg/2
+	if midStart < seg {
+		midStart = seg
+	}
+	mid := s[midStart : midStart+seg]
+	end := s[len(s)-seg:]
+	return start + " ... " + mid + " ... " + end
+}
+
 // BaseProcessor 提供所有处理器共享的基本功能
 type BaseProcessor struct {
 	Translator             translator.Translator
@@ -132,7 +149,7 @@ func FormatFile(filePath string) error {
 			return fmt.Errorf("latexindent 未安装，请安装 texlive 或相关 LaTeX 发行版")
 		}
 		return formatLatex(filePath)
-	case ".html", ".htm", ".css", ".js":
+	case ".html", ".htm", ".css", ".js", ".xhtml":
 		if !checkCommand("prettier") {
 			return fmt.Errorf("prettier 未安装，请使用以下命令安装：npm install -g prettier")
 		}

@@ -44,10 +44,10 @@ func NewEPUBProcessor(t translator.Translator, predefinedTranslations *config.Pr
 
 // TranslateFile 翻译EPUB文件
 func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
-
 	var totalChars int
+	var htmlFiles []string
 
-	// 计算总字符数
+	// 计算总字符数并收集HTML文件
 	err := filepath.Walk(inputPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -62,12 +62,17 @@ func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
 				return err
 			}
 			totalChars += len(data)
+			htmlFiles = append(htmlFiles, path)
 		}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
+
+	p.logger.Info("EPUB文件分析完成",
+		zap.Int("HTML文件数", len(htmlFiles)),
+		zap.Int("总字符数", totalChars))
 
 	p.Translator.GetProgressTracker().SetRealTotalChars(totalChars)
 	p.Translator.GetProgressTracker().SetTotalChars(totalChars)
@@ -88,7 +93,10 @@ func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
 		return fmt.Errorf("解压EPUB失败: %w", err)
 	}
 
-	// 遍历 HTML/XHTML 文件并翻译
+	p.logger.Info("EPUB文件已解压到临时目录", zap.String("临时目录", tempDir))
+
+	// 收集所有需要翻译的HTML文件
+	var filesToTranslate []string
 	err = filepath.Walk(tempDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -98,20 +106,7 @@ func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
 		}
 		ext := strings.ToLower(filepath.Ext(path))
 		if ext == ".html" || ext == ".xhtml" || ext == ".htm" {
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			translated, err := p.TranslateText(string(data))
-			if err != nil {
-				return err
-			}
-			if err := os.WriteFile(path, []byte(translated), info.Mode()); err != nil {
-				return err
-			}
-			if err := FormatFile(path); err != nil {
-				p.logger.Warn("格式化HTML失败", zap.String("文件", path), zap.Error(err))
-			}
+			filesToTranslate = append(filesToTranslate, path)
 		}
 		return nil
 	})
@@ -119,10 +114,63 @@ func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
 		return err
 	}
 
+	p.logger.Info("找到需要翻译的HTML文件", zap.Int("文件数", len(filesToTranslate)))
+
+	// 遍历 HTML/XHTML 文件并翻译
+	for i, filePath := range filesToTranslate {
+		p.logger.Info("开始翻译HTML文件",
+			zap.Int("当前文件", i+1),
+			zap.Int("总文件数", len(filesToTranslate)),
+			zap.String("文件路径", filePath))
+
+		// 读取文件内容
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			p.logger.Error("读取HTML文件失败", zap.String("文件", filePath), zap.Error(err))
+			return fmt.Errorf("读取HTML文件失败 %s: %w", filePath, err)
+		}
+
+		// 翻译文件内容
+		originalContent := string(data)
+		translated, err := p.TranslateText(originalContent)
+		if err != nil {
+			p.logger.Error("翻译HTML文件失败", zap.String("文件", filePath), zap.Error(err))
+			return fmt.Errorf("翻译HTML文件失败 %s: %w", filePath, err)
+		}
+
+		// 记录翻译结果摘要
+		p.logger.Info("HTML文件翻译结果",
+			zap.String("文件", filePath),
+			zap.String("原文摘要", Snippet(originalContent)),
+			zap.String("译文摘要", Snippet(translated)),
+			zap.Int("原文长度", len(originalContent)),
+			zap.Int("译文长度", len(translated)))
+
+		// 写入翻译后的内容
+		if err := os.WriteFile(filePath, []byte(translated), 0644); err != nil {
+			p.logger.Error("写入翻译后的HTML文件失败", zap.String("文件", filePath), zap.Error(err))
+			return fmt.Errorf("写入翻译后的HTML文件失败 %s: %w", filePath, err)
+		}
+
+		// 格式化HTML文件
+		if err := FormatFile(filePath); err != nil {
+			p.logger.Warn("格式化HTML文件失败", zap.String("文件", filePath), zap.Error(err))
+		}
+
+		p.logger.Info("HTML文件翻译完成",
+			zap.Int("当前文件", i+1),
+			zap.Int("总文件数", len(filesToTranslate)),
+			zap.String("文件路径", filePath))
+	}
+
+	p.logger.Info("所有HTML文件翻译完成，开始重新打包EPUB")
+
 	// 重新打包为EPUB
 	if err := zipDir(tempDir, outputPath); err != nil {
 		return fmt.Errorf("重新打包EPUB失败: %w", err)
 	}
+
+	p.logger.Info("EPUB文件重新打包完成", zap.String("输出文件", outputPath))
 
 	return nil
 }
