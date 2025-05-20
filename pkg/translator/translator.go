@@ -212,7 +212,7 @@ func New(cfg *config.Config, opts ...Option) (*Impl, error) {
 	}
 
 	if translator.useNewProgressBar {
-		translator.newProgressTracker = NewNewProgressTracker(0) // 初始化时 totalChars 可以为0，后续通过 SetTotalChars 更新
+		translator.newProgressTracker = NewNewProgressTracker(0, zapLogger) // 初始化时 totalChars 可以为0，后续通过 SetTotalChars 更新
 		translator.newProgressTracker.UpdateModelPrice(modelPrice)
 	}
 
@@ -340,7 +340,7 @@ func (t *Impl) InitTranslator() {
 	if t.useNewProgressBar {
 		// 使用新的进度条系统
 		if t.newProgressTracker == nil {
-			t.newProgressTracker = NewNewProgressTracker(1000)
+			t.newProgressTracker = NewNewProgressTracker(1000, t.Logger)
 			t.newProgressTracker.UpdateModelPrice(t.modelPrice)
 		}
 
