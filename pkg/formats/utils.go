@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"unicode"
@@ -97,6 +98,31 @@ func IsFileExists(path string) bool {
 
 // TranslateHTMLDOM 翻译 HTML 字符串中的文本节点，保持原有的 DOM 结构
 func TranslateHTMLDOM(htmlStr string, t translator.Translator, logger *zap.Logger) (string, error) {
+	// 检查是否包含XML声明，如果有，需要特殊处理
+	hasXMLDeclaration := strings.Contains(htmlStr, "<?xml")
+	var xmlDeclaration string
+	if hasXMLDeclaration {
+		// 提取XML声明
+		xmlDeclRegex := regexp.MustCompile(`<\?xml[^>]*\?>`)
+		if match := xmlDeclRegex.FindString(htmlStr); match != "" {
+			xmlDeclaration = match
+			logger.Debug("找到XML声明", zap.String("declaration", xmlDeclaration))
+		}
+	}
+
+	// 检查是否包含DOCTYPE声明
+	hasDOCTYPE := strings.Contains(htmlStr, "<!DOCTYPE")
+	var doctypeDeclaration string
+	if hasDOCTYPE {
+		// 提取DOCTYPE声明
+		doctypeRegex := regexp.MustCompile(`<!DOCTYPE[^>]*>`)
+		if match := doctypeRegex.FindString(htmlStr); match != "" {
+			doctypeDeclaration = match
+			logger.Debug("找到DOCTYPE声明", zap.String("doctype", doctypeDeclaration))
+		}
+	}
+
+	// 解析HTML文档
 	root, err := html.Parse(strings.NewReader(htmlStr))
 	if err != nil {
 		return "", err
@@ -225,9 +251,124 @@ func TranslateHTMLDOM(htmlStr string, t translator.Translator, logger *zap.Logge
 		return "", fmt.Errorf("生成HTML失败: %w", err)
 	}
 
+	// 恢复XML声明和DOCTYPE（如果有）
+	if hasXMLDeclaration && xmlDeclaration != "" {
+		// 确保XML声明在文档最开始
+		if !strings.HasPrefix(htmlResult, xmlDeclaration) {
+			htmlResult = xmlDeclaration + "\n" + htmlResult
+		}
+	}
+
+	if hasDOCTYPE && doctypeDeclaration != "" {
+		// 如果已经有XML声明，则在XML声明之后添加DOCTYPE
+		if hasXMLDeclaration && strings.HasPrefix(htmlResult, xmlDeclaration) {
+			htmlResult = strings.Replace(htmlResult, xmlDeclaration, xmlDeclaration+"\n"+doctypeDeclaration, 1)
+		} else if !strings.Contains(htmlResult, doctypeDeclaration) {
+			// 否则在文档开头添加DOCTYPE
+			htmlResult = doctypeDeclaration + "\n" + htmlResult
+		}
+	}
+
+	// 检查并修复可能的编码问题
+	htmlResult = fixEncodingIssues(htmlResult)
+
 	return htmlResult, nil
 }
 
+// fixEncodingIssues 修复HTML/XML文档中的编码问题
+func fixEncodingIssues(html string) string {
+	// 修复常见的编码问题
+	result := html
+
+	// 修复Unicode替换字符 \ufffd
+	result = strings.ReplaceAll(result, "\ufffd", "")
+
+	// 修复错误翻译的XML标签
+	result = regexp.MustCompile(`<!--\?xml`).ReplaceAllString(result, "<?xml")
+
+	// 修复其他可能的XML标签错误
+	result = regexp.MustCompile(`<\s*!--\s*DOCTYPE`).ReplaceAllString(result, "<!DOCTYPE")
+
+	// 修复可能被错误翻译的闭合标签
+	result = regexp.MustCompile(`--\s*>`).ReplaceAllString(result, ">")
+
+	// 移除翻译过程中可能引入的提示词标记
+	tagsToRemove := []struct {
+		start string
+		end   string
+	}{
+		{start: "<SOURCE_TEXT>", end: "</SOURCE_TEXT>"},
+		{start: "<TRANSLATION>", end: "</TRANSLATION>"},
+		{start: "<TEXT TRANSLATED>", end: "</TEXT TRANSLATED>"},
+		{start: "<翻译后的文本>", end: "</翻译后的文本>"},
+		{start: "<翻译>", end: "</翻译>"},
+	}
+
+	// 移除成对的标记
+	for _, tag := range tagsToRemove {
+		// 先尝试移除完整的标记对
+		for {
+			startIdx := strings.Index(result, tag.start)
+			if startIdx == -1 {
+				break
+			}
+
+			endIdx := strings.Index(result, tag.end)
+			if endIdx == -1 || endIdx < startIdx {
+				break
+			}
+
+			// 保留标记之间的内容，移除标记本身
+			content := result[startIdx+len(tag.start):endIdx]
+			result = result[:startIdx] + content + result[endIdx+len(tag.end):]
+		}
+
+		// 然后移除任何剩余的单独标记
+		result = strings.ReplaceAll(result, tag.start, "")
+		result = strings.ReplaceAll(result, tag.end, "")
+	}
+
+	// 使用正则表达式移除其他可能的提示词标记
+	promptTagsRegex := []*regexp.Regexp{
+		regexp.MustCompile(`</?[A-Z_]+>`),                  // 如 <TRANSLATION> 或 </TRANSLATION>
+		regexp.MustCompile(`</?[a-z_]+>`),                  // 如 <translation> 或 </translation>
+		regexp.MustCompile(`</?[\p{Han}]+>`),               // 中文标记，如 <翻译> 或 </翻译>
+		regexp.MustCompile(`</?[\p{Han}][^>]{0,20}>`),      // 带属性的中文标记
+		regexp.MustCompile(`\[INTERNAL INSTRUCTIONS:.*?\]`), // 内部指令
+	}
+
+	for _, regex := range promptTagsRegex {
+		result = regex.ReplaceAllString(result, "")
+	}
+
+	// 修复可能的格式问题
+	result = fixFormatIssues(result)
+
+	return result
+}
+
+// fixFormatIssues 修复翻译结果中的格式问题
+func fixFormatIssues(text string) string {
+	result := text
+
+	// 修复错误的斜体标记（确保*前后有空格或在行首尾）
+	italicRegex := regexp.MustCompile(`(\S)\*(\S)`)
+	result = italicRegex.ReplaceAllString(result, "$1 * $2")
+
+	// 修复错误的粗体标记
+	boldRegex := regexp.MustCompile(`(\S)\*\*(\S)`)
+	result = boldRegex.ReplaceAllString(result, "$1 ** $2")
+
+	// 移除多余的空行
+	for strings.Contains(result, "\n\n\n") {
+		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
+	}
+
+	return result
+}
+
+// 以下函数已不再使用，保留作为参考
+// translateHTMLNode 已被更高效的批量翻译方法替代
 func translateHTMLNode(n *html.Node, t translator.Translator, logger *zap.Logger) {
 	if n.Type == html.ElementNode {
 		if n.Data == "script" || n.Data == "style" {
@@ -265,10 +406,24 @@ func trailingWhitespace(s string) string {
 }
 
 func collectTextNodes(n *html.Node, nodes *[]*html.Node) {
+	// 检查是否是XML声明或DOCTYPE
+	if n.Type == html.DoctypeNode || (n.Type == html.CommentNode && strings.Contains(n.Data, "?xml")) {
+		return // 不处理XML声明和DOCTYPE
+	}
+
 	if n.Type == html.ElementNode {
+		// 不处理脚本、样式、预格式化文本和代码块
 		switch n.Data {
 		case "script", "style", "pre", "code":
 			return
+		}
+
+		// 检查是否有特殊属性，如xml:lang等，这些元素通常不应被翻译
+		for _, attr := range n.Attr {
+			if strings.HasPrefix(attr.Key, "xml:") || attr.Key == "xmlns" {
+				// 这是一个XML命名空间相关的元素，不应翻译其内容
+				return
+			}
 		}
 	}
 
@@ -277,7 +432,10 @@ func collectTextNodes(n *html.Node, nodes *[]*html.Node) {
 		// 但过滤掉只包含空白的节点，避免无意义的翻译
 		trimmed := strings.TrimSpace(n.Data)
 		if trimmed != "" {
-			*nodes = append(*nodes, n)
+			// 检查是否包含XML标签或声明，如果包含则不翻译
+			if !strings.Contains(trimmed, "<?xml") && !strings.Contains(trimmed, "<!DOCTYPE") {
+				*nodes = append(*nodes, n)
+			}
 		}
 	}
 

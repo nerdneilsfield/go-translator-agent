@@ -41,6 +41,9 @@ func (p *MarkdownPostProcessor) ProcessMarkdown(text string, replacements []Repl
 
 	p.logger.Debug("开始后处理Markdown文本")
 
+	// 0. 清理翻译过程中可能引入的提示词标记
+	text = p.cleanupPromptTags(text)
+
 	// 1. 先处理引用
 	text = p.fixQuotes(text)
 
@@ -58,6 +61,9 @@ func (p *MarkdownPostProcessor) ProcessMarkdown(text string, replacements []Repl
 
 	// 6. 处理未翻译的占位符
 	text = p.fixUntranslatable(text)
+
+	// 7. 修复格式问题
+	text = p.fixFormatIssues(text)
 
 	// 7. 使用 Prettier 格式化
 	tempFile := p.currentInputFile
@@ -169,6 +175,93 @@ func (p *MarkdownPostProcessor) fixLinksAndImages(text string) string {
 	text = imageRegex.ReplaceAllString(text, "![$1]($2)")
 
 	return text
+}
+
+// cleanupPromptTags 清理翻译过程中可能引入的提示词标记
+func (p *MarkdownPostProcessor) cleanupPromptTags(text string) string {
+	// 移除常见的提示词标记
+	tagsToRemove := []struct {
+		start string
+		end   string
+	}{
+		{start: "<SOURCE_TEXT>", end: "</SOURCE_TEXT>"},
+		{start: "<TRANSLATION>", end: "</TRANSLATION>"},
+		{start: "<EXPERT_SUGGESTIONS>", end: "</EXPERT_SUGGESTIONS>"},
+		{start: "<TEXT TO EDIT>", end: "</TEXT TO EDIT>"},
+		{start: "<TEXT TO TRANSLATE>", end: "</TEXT TO TRANSLATE>"},
+		{start: "<TRANSLATE_THIS>", end: "</TRANSLATE_THIS>"},
+		{start: "<翻译>", end: "</翻译>"},
+		{start: "<翻译后的文本>", end: "</翻译后的文本>"},
+		{start: "<TEXT TRANSLATED>", end: "</TEXT TRANSLATED>"},
+	}
+
+	result := text
+
+	// 移除成对的标记
+	for _, tag := range tagsToRemove {
+		// 先尝试移除完整的标记对
+		for {
+			startIdx := strings.Index(result, tag.start)
+			if startIdx == -1 {
+				break
+			}
+
+			endIdx := strings.Index(result, tag.end)
+			if endIdx == -1 || endIdx < startIdx {
+				break
+			}
+
+			// 保留标记之间的内容，移除标记本身
+			content := result[startIdx+len(tag.start):endIdx]
+			result = result[:startIdx] + content + result[endIdx+len(tag.end):]
+		}
+
+		// 然后移除任何剩余的单独标记
+		result = strings.ReplaceAll(result, tag.start, "")
+		result = strings.ReplaceAll(result, tag.end, "")
+	}
+
+	// 使用正则表达式移除其他可能的提示词标记
+	promptTagsRegex := []*regexp.Regexp{
+		regexp.MustCompile(`</?[A-Z_]+>`),                  // 如 <TRANSLATION> 或 </TRANSLATION>
+		regexp.MustCompile(`</?[a-z_]+>`),                  // 如 <translation> 或 </translation>
+		regexp.MustCompile(`</?[\p{Han}]+>`),               // 中文标记，如 <翻译> 或 </翻译>
+		regexp.MustCompile(`</?[\p{Han}][^>]{0,20}>`),      // 带属性的中文标记
+		regexp.MustCompile(`\[INTERNAL INSTRUCTIONS:.*?\]`), // 内部指令
+	}
+
+	for _, regex := range promptTagsRegex {
+		result = regex.ReplaceAllString(result, "")
+	}
+
+	return result
+}
+
+// fixFormatIssues 修复翻译结果中的格式问题
+func (p *MarkdownPostProcessor) fixFormatIssues(text string) string {
+	result := text
+
+	// 修复错误的斜体标记（确保*前后有空格或在行首尾）
+	italicRegex := regexp.MustCompile(`(\S)\*(\S)`)
+	result = italicRegex.ReplaceAllString(result, "$1 * $2")
+
+	// 修复错误的粗体标记
+	boldRegex := regexp.MustCompile(`(\S)\*\*(\S)`)
+	result = boldRegex.ReplaceAllString(result, "$1 ** $2")
+
+	// 移除多余的空行
+	for strings.Contains(result, "\n\n\n") {
+		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
+	}
+
+	// 移除行首行尾多余的空格
+	lines := strings.Split(result, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimSpace(line)
+	}
+	result = strings.Join(lines, "\n")
+
+	return result
 }
 
 // fixUntranslatable 处理未翻译的占位符

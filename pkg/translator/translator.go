@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -201,16 +202,90 @@ func New(cfg *config.Config, options ...Option) (*TranslatorImpl, error) {
 
 func (t *TranslatorImpl) RemoveUsedTags(text string) string {
 	result := text
-	result = strings.ReplaceAll(result, "<SOURCE_TEXT>", "")
-	result = strings.ReplaceAll(result, "</SOURCE_TEXT>", "")
-	result = strings.ReplaceAll(result, "<TRANSLATION>", "")
-	result = strings.ReplaceAll(result, "</TRANSLATION>", "")
-	result = strings.ReplaceAll(result, "<EXPERT_SUGGESTIONS>", "")
-	result = strings.ReplaceAll(result, "</EXPERT_SUGGESTIONS>", "")
-	result = strings.ReplaceAll(result, "<TEXT TO EDIT>", "")
-	result = strings.ReplaceAll(result, "</TEXT TO EDIT>", "")
-	result = strings.ReplaceAll(result, "<TEXT TO TRANSLATE>", "")
-	result = strings.ReplaceAll(result, "</TEXT TO TRANSLATE>", "")
+
+	// 移除常见的提示词标记
+	tagsToRemove := []struct {
+		start string
+		end   string
+	}{
+		{start: "<SOURCE_TEXT>", end: "</SOURCE_TEXT>"},
+		{start: "<TRANSLATION>", end: "</TRANSLATION>"},
+		{start: "<EXPERT_SUGGESTIONS>", end: "</EXPERT_SUGGESTIONS>"},
+		{start: "<TEXT TO EDIT>", end: "</TEXT TO EDIT>"},
+		{start: "<TEXT TO TRANSLATE>", end: "</TEXT TO TRANSLATE>"},
+		{start: "<TRANSLATE_THIS>", end: "</TRANSLATE_THIS>"},
+		{start: "<翻译>", end: "</翻译>"},
+		{start: "<翻译后的文本>", end: "</翻译后的文本>"},
+		{start: "<TEXT TRANSLATED>", end: "</TEXT TRANSLATED>"},
+	}
+
+	// 移除成对的标记
+	for _, tag := range tagsToRemove {
+		// 先尝试移除完整的标记对
+		for {
+			startIdx := strings.Index(result, tag.start)
+			if startIdx == -1 {
+				break
+			}
+
+			endIdx := strings.Index(result, tag.end)
+			if endIdx == -1 || endIdx < startIdx {
+				break
+			}
+
+			// 保留标记之间的内容，移除标记本身
+			content := result[startIdx+len(tag.start):endIdx]
+			result = result[:startIdx] + content + result[endIdx+len(tag.end):]
+		}
+
+		// 然后移除任何剩余的单独标记
+		result = strings.ReplaceAll(result, tag.start, "")
+		result = strings.ReplaceAll(result, tag.end, "")
+	}
+
+	// 使用正则表达式移除其他可能的提示词标记
+	promptTagsRegex := []*regexp.Regexp{
+		regexp.MustCompile(`</?[A-Z_]+>`),                  // 如 <TRANSLATION> 或 </TRANSLATION>
+		regexp.MustCompile(`</?[a-z_]+>`),                  // 如 <translation> 或 </translation>
+		regexp.MustCompile(`</?[\p{Han}]+>`),               // 中文标记，如 <翻译> 或 </翻译>
+		regexp.MustCompile(`</?[\p{Han}][^>]{0,20}>`),      // 带属性的中文标记
+		regexp.MustCompile(`\[INTERNAL INSTRUCTIONS:.*?\]`), // 内部指令
+	}
+
+	for _, regex := range promptTagsRegex {
+		result = regex.ReplaceAllString(result, "")
+	}
+
+	// 修复可能的格式问题
+	result = t.fixFormatIssues(result)
+
+	return strings.TrimSpace(result)
+}
+
+// fixFormatIssues 修复翻译结果中的格式问题
+func (t *TranslatorImpl) fixFormatIssues(text string) string {
+	result := text
+
+	// 修复错误的斜体标记（确保*前后有空格或在行首尾）
+	italicRegex := regexp.MustCompile(`(\S)\*(\S)`)
+	result = italicRegex.ReplaceAllString(result, "$1 * $2")
+
+	// 修复错误的粗体标记
+	boldRegex := regexp.MustCompile(`(\S)\*\*(\S)`)
+	result = boldRegex.ReplaceAllString(result, "$1 ** $2")
+
+	// 移除多余的空行
+	for strings.Contains(result, "\n\n\n") {
+		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
+	}
+
+	// 移除行首行尾多余的空格
+	lines := strings.Split(result, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimSpace(line)
+	}
+	result = strings.Join(lines, "\n")
+
 	return result
 }
 
@@ -877,6 +952,17 @@ func (t *TranslatorImpl) updateProgress(text string) {
 		percentComplete = float64(translatedChars) / float64(totalChars) * 100
 	}
 
+	// 确保进度条存在
+	if t.progressBar == nil {
+		return
+	}
+
+	// 如果跟踪器不存在，重新初始化进度条
+	if t.translated_tracker == nil || t.cost_tracker == nil {
+		t.startProgress()
+		return
+	}
+
 	// 更新翻译字数跟踪器
 	if t.translated_tracker != nil {
 		// 确保总字符数已设置
@@ -904,6 +990,11 @@ func (t *TranslatorImpl) updateProgress(text string) {
 		t.cost_tracker.UpdateMessage(fmt.Sprintf("成本: $%.2f (剩余: %s)",
 			estimatedCost.totalCost, remainingTimeStr))
 	}
+
+	// 确保进度条正在渲染
+	if !(*t.progressBar).IsRenderInProgress() {
+		go (*t.progressBar).Render()
+	}
 }
 
 // startProgress 开始跟踪翻译进度
@@ -920,6 +1011,16 @@ func (t *TranslatorImpl) startProgress() {
 	// 确保总字符数大于0，避免进度条显示异常
 	if totalChars <= 0 {
 		totalChars = 1 // 设置一个默认值，避免除零错误
+	}
+
+	// 如果已经有跟踪器，先停止进度条
+	if t.translated_tracker != nil || t.cost_tracker != nil {
+		// 停止当前进度条
+		(*t.progressBar).Stop()
+
+		// 重置跟踪器
+		t.translated_tracker = nil
+		t.cost_tracker = nil
 	}
 
 	// 创建翻译字数跟踪器
@@ -941,6 +1042,11 @@ func (t *TranslatorImpl) startProgress() {
 
 	// 添加到进度条
 	(*t.progressBar).AppendTracker(t.cost_tracker)
+
+	// 确保进度条正在渲染
+	if !(*t.progressBar).IsRenderInProgress() {
+		go (*t.progressBar).Render()
+	}
 }
 
 // endProgress 结束翻译进度跟踪

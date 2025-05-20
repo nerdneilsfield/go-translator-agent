@@ -222,8 +222,7 @@ func (c *OpenAIClient) Complete(prompt string, maxTokens int, temperature float6
 		if detailedError == "" {
 			content, promptTokens, completionTokens := c.tryExtractContentFromErrorResponse(ctx, req)
 			if content != "" {
-				c.log.Debug("从错误响应中提取到有效内容",
-					// zap.String("内容", content),
+				c.log.Info("API返回非200状态码但成功提取到有效内容",
 					zap.Int("提示词令牌数", promptTokens),
 					zap.Int("完成令牌数", completionTokens),
 				)
@@ -338,6 +337,10 @@ func (c *OpenAIClient) tryExtractContentFromErrorResponse(ctx context.Context, r
 			if content != "" {
 				// 提取令牌使用情况
 				promptTokens, completionTokens := c.extractTokenUsageFromJSON(jsonResponse)
+				c.log.Debug("成功从响应中提取内容和令牌使用情况",
+					zap.Int("提示词令牌数", promptTokens),
+					zap.Int("完成令牌数", completionTokens),
+				)
 				return content, promptTokens, completionTokens
 			}
 		}
@@ -550,10 +553,31 @@ func (c *OpenAIClient) manualStreamRequest(ctx context.Context, req openai.ChatC
 		// 尝试从错误响应中提取内容
 		var jsonResponse map[string]interface{}
 		if err := json.Unmarshal(respBody, &jsonResponse); err == nil {
+			// 检查是否有错误信息
+			if errorInfo, ok := jsonResponse["error"].(map[string]interface{}); ok {
+				errorMessage := ""
+				if msg, ok := errorInfo["message"].(string); ok {
+					errorMessage = msg
+				}
+				errorType := ""
+				if typ, ok := errorInfo["type"].(string); ok {
+					errorType = typ
+				}
+
+				if errorMessage != "" || errorType != "" {
+					c.log.Error("API返回错误信息",
+						zap.String("错误类型", errorType),
+						zap.String("错误消息", errorMessage),
+					)
+					return "", fmt.Errorf("API错误: %s - %s", errorType, errorMessage)
+				}
+			}
+
+			// 尝试提取内容
 			content := c.extractContentFromJSON(jsonResponse)
 			if content != "" {
-				c.log.Debug("从错误响应中提取到有效内容",
-					zap.String("内容", content),
+				c.log.Info("从非200响应中成功提取到有效内容",
+					zap.Int("内容长度", len(content)),
 				)
 				return content, nil
 			}
@@ -763,16 +787,35 @@ func (c *OpenAIClient) sendManualRequest(ctx context.Context, req openai.ChatCom
 	if len(respBody) > 0 {
 		var jsonResponse map[string]interface{}
 		if err := json.Unmarshal(respBody, &jsonResponse); err == nil {
+			// 检查是否有错误信息
+			if errorInfo, ok := jsonResponse["error"].(map[string]interface{}); ok {
+				errorMessage := ""
+				if msg, ok := errorInfo["message"].(string); ok {
+					errorMessage = msg
+				}
+				errorType := ""
+				if typ, ok := errorInfo["type"].(string); ok {
+					errorType = typ
+				}
+
+				if errorMessage != "" || errorType != "" {
+					c.log.Error("API返回错误信息",
+						zap.String("错误类型", errorType),
+						zap.String("错误消息", errorMessage),
+					)
+					return fmt.Sprintf("错误类型: %s, 错误消息: %s", errorType, errorMessage)
+				}
+			}
+
 			// 如果能解析为JSON，检查是否包含有效的翻译结果
 			if choices, ok := jsonResponse["choices"].([]interface{}); ok && len(choices) > 0 {
 				if choice, ok := choices[0].(map[string]interface{}); ok {
 					if message, ok := choice["message"].(map[string]interface{}); ok {
 						if content, ok := message["content"].(string); ok && content != "" {
 							// 发现有效的翻译内容，记录警告但不视为错误
-							c.log.Warn("API返回非200状态码但包含有效内容",
+							c.log.Info("API返回非200状态码但包含有效内容",
 								zap.Int("状态码", resp.StatusCode),
 								zap.Int("内容长度", len(content)),
-								// zap.String("内容", content),
 							)
 							// 返回空字符串，表示不视为错误
 							return ""
