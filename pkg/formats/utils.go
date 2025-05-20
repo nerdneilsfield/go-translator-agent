@@ -320,12 +320,11 @@ func fixEncodingIssues(html string) string {
 	}
 
 	// 使用正则表达式移除其他可能的提示词标记
+	// 仅移除可能由翻译模型生成的提示词标记，避免误删正常HTML标签
 	promptTagsRegex := []*regexp.Regexp{
-		regexp.MustCompile(`</?[A-Z_]+>`),                   // 如 <TRANSLATION> 或 </TRANSLATION>
-		regexp.MustCompile(`</?[a-z_]+>`),                   // 如 <translation> 或 </translation>
-		regexp.MustCompile(`</?[\p{Han}]+>`),                // 中文标记，如 <翻译> 或 </翻译>
-		regexp.MustCompile(`</?[\p{Han}][^>]{0,20}>`),       // 带属性的中文标记
-		regexp.MustCompile(`\[INTERNAL INSTRUCTIONS:.*?\]`), // 内部指令
+		regexp.MustCompile(`</?(TRANSLATION|SOURCE_TEXT|TEXT TRANSLATED)[^>]*>`),
+		regexp.MustCompile(`</?[\p{Han}]{2,10}>`), // 中文标记，如 <翻译>
+		regexp.MustCompile(`\[INTERNAL INSTRUCTIONS:.*?\]`),
 	}
 
 	for _, regex := range promptTagsRegex {

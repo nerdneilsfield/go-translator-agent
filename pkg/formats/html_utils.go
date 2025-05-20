@@ -267,11 +267,7 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 			}
 		})
 
-		// 递归处理子节点
-		s.Children().Each(func(_ int, child *goquery.Selection) {
-			childPath := fmt.Sprintf("%s>%s", path, goquery.NodeName(child))
-			processNode(child, childPath)
-		})
+		// s.Contents 已经递归处理了子节点，无需再次遍历
 	}
 
 	// 从body开始处理
