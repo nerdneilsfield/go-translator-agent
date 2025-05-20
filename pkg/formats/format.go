@@ -90,6 +90,8 @@ func ProcessorFromFilePath(t translator.Translator, filePath string, predefinedT
 		return NewProcessor(t, "epub", predefinedTranslations, progressBar)
 	case "tex":
 		return NewProcessor(t, "latex", predefinedTranslations, progressBar)
+	case "html", "htm", "xhtml", "xml":
+		return NewProcessor(t, "html", predefinedTranslations, progressBar)
 	default:
 		return nil, fmt.Errorf("不支持的文件扩展名: %s", ext)
 	}
@@ -241,5 +243,10 @@ func init() {
 	// 注册LaTeX处理器
 	RegisterProcessor("latex", func(t translator.Translator, predefinedTranslations *config.PredefinedTranslation, progressBar *progress.Writer) (Processor, error) {
 		return NewLaTeXProcessor(t, predefinedTranslations, progressBar)
+	})
+
+	// 注册HTML处理器
+	RegisterProcessor("html", func(t translator.Translator, predefinedTranslations *config.PredefinedTranslation, progressBar *progress.Writer) (Processor, error) {
+		return NewHTMLProcessor(t, predefinedTranslations, progressBar)
 	})
 }

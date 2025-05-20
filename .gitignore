@@ -38,3 +38,7 @@ test/*.exe
 grok.yaml
 formats.md
 formats.xml
+.cache/
+*translated.html
+*_translated
+config.yaml

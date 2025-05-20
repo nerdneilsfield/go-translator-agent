@@ -9,7 +9,6 @@ import (
 	"sync"
 	"unicode"
 
-	"github.com/PuerkitoBio/goquery"
 	"go.uber.org/zap"
 	"golang.org/x/net/html"
 
@@ -240,16 +239,9 @@ func TranslateHTMLDOM(htmlStr string, t translator.Translator, logger *zap.Logge
 		return "", fmt.Errorf("渲染HTML失败: %w", err)
 	}
 
-	// 使用goquery格式化HTML
-	doc, err := goquery.NewDocumentFromReader(&buf)
-	if err != nil {
-		return "", fmt.Errorf("解析HTML失败: %w", err)
-	}
-
-	htmlResult, err := doc.Html()
-	if err != nil {
-		return "", fmt.Errorf("生成HTML失败: %w", err)
-	}
+	// 直接使用渲染后的HTML，而不是通过goquery再次解析
+	// 这样可以避免goquery对HTML结构的修改
+	htmlResult := buf.String()
 
 	// 恢复XML声明和DOCTYPE（如果有）
 	if hasXMLDeclaration && xmlDeclaration != "" {
@@ -439,6 +431,7 @@ func collectTextNodes(n *html.Node, nodes *[]*html.Node) {
 		}
 	}
 
+	// 递归处理所有子节点
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
 		collectTextNodes(c, nodes)
 	}
