@@ -228,7 +228,7 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 						},
 					})
 				}
-			} else if child.Is("a, p, h1, h2, h3, h4, h5, h6, li, td, th, caption, figcaption, label, button, span, div") {
+			} else if child.Is("a, p, h1, h2, h3, h4, h5, h6, li, td, th, caption, figcaption, label, button, span, div, title") {
 				// 对于这些常见的包含文本的元素，检查是否有直接文本内容
 				hasDirectText := false
 				child.Contents().Each(func(j int, grandchild *goquery.Selection) {
@@ -439,6 +439,11 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 					break
 				}
 			}
+		}
+
+		// 如果没有找到任何翻译结果，尝试直接使用整个翻译文本
+		if len(translationMap) == 0 && len(group) > 0 {
+			translationMap[0] = translatedText
 		}
 
 		// 如果某些节点没有对应的翻译结果，使用原始文本

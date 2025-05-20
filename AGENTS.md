@@ -36,7 +36,8 @@ go build ./cmd/... # build commands directly
 ```sh
 make test          # run all test suites
 # or
-go test ./...      # run all unit tests
+go test -v -race -coverprofile=coverage.out -covermode=atomic ./tests/...     # run all unit tests
+go tool cover -func=coverage.out  # view coverage report
 ```
 
 ## Linting

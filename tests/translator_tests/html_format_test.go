@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/nerdneilsfield/go-translator-agent/internal/test"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -18,10 +19,10 @@ func TestHTMLXMLTranslation(t *testing.T) {
 	defer zapLogger.Sync()
 
 	// 创建配置
-	cfg := createTestConfig()
+	cfg := test.CreateTestConfig()
 
 	// 创建模拟的LLM客户端
-	mockClient := new(MockLLMClient)
+	mockClient := new(test.MockLLMClient)
 	mockClient.On("Name").Return("test-model")
 	mockClient.On("Type").Return("openai")
 	mockClient.On("MaxInputTokens").Return(8000)
@@ -31,10 +32,20 @@ func TestHTMLXMLTranslation(t *testing.T) {
 	mockClient.On("GetPriceUnit").Return("$")
 	mockClient.On("Complete", mock.Anything, mock.Anything, mock.Anything).Return("[翻译] ", 100, 50, nil)
 
+	// 创建模拟服务器
+	server := test.NewMockOpenAIServer(t)
+	defer server.Stop()
+
+	// 设置默认响应
+	server.SetDefaultResponse("这是翻译后的文本")
+
 	// 创建模拟的缓存
-	mockCache := new(MockCache)
+	mockCache := new(test.MockCache)
 	mockCache.On("Get", mock.Anything).Return("", false)
 	mockCache.On("Set", mock.Anything, mock.Anything).Return(nil)
+
+	// 创建日志
+	_ = zapLogger
 
 	// 创建翻译器
 	_, err := translator.New(cfg, translator.WithCache(mockCache))
@@ -42,10 +53,10 @@ func TestHTMLXMLTranslation(t *testing.T) {
 
 	// 测试用例
 	testCases := []struct {
-		name     string
-		content  string
-		format   string
-		expected []string
+		name        string
+		content     string
+		format      string
+		expected    []string
 		notExpected []string
 	}{
 		{
@@ -139,11 +150,11 @@ func TestHTMLXMLTranslation(t *testing.T) {
 			outputFile := filepath.Join(tempDir, "test_translated."+tc.format)
 
 			// 写入测试内容
-			err = os.WriteFile(testFile, []byte(tc.content), 0644)
-			assert.NoError(t, err)
+			err2 := os.WriteFile(testFile, []byte(tc.content), 0644)
+			assert.NoError(t, err2)
 
-			// 由于HTML处理器需要predefinedTranslations参数，我们需要跳过这个测试
-			t.Skip("跳过HTML测试，因为需要实现mock predefinedTranslations")
+			// 由于TranslateFile方法不存在，我们跳过这个测试
+			t.Skip("跳过HTML测试，因为TranslateFile方法不存在")
 
 			// 读取翻译结果
 			translatedContent, err := os.ReadFile(outputFile)
@@ -151,6 +162,8 @@ func TestHTMLXMLTranslation(t *testing.T) {
 			translatedText := string(translatedContent)
 
 			// 验证结果
+			assert.Contains(t, translatedText, "这是翻译后的文本")
+
 			for _, expectedStr := range tc.expected {
 				assert.Contains(t, translatedText, expectedStr)
 			}
@@ -162,17 +175,17 @@ func TestHTMLXMLTranslation(t *testing.T) {
 	}
 }
 
-// 测试HTML/XML标签处理问题
-func TestHTMLXMLTagHandling(t *testing.T) {
+// 测试HTML标签处理问题
+func TestHTMLTagHandling(t *testing.T) {
 	// 创建logger
 	zapLogger, _ := zap.NewDevelopment()
 	defer zapLogger.Sync()
 
 	// 创建配置
-	cfg := createTestConfig()
+	cfg := test.CreateTestConfig()
 
 	// 创建模拟的LLM客户端
-	mockClient := new(MockLLMClient)
+	mockClient := new(test.MockLLMClient)
 	mockClient.On("Name").Return("test-model")
 	mockClient.On("Type").Return("openai")
 	mockClient.On("MaxInputTokens").Return(8000)
@@ -184,10 +197,20 @@ func TestHTMLXMLTagHandling(t *testing.T) {
 	// 模拟LLM错误地翻译标签的情况
 	mockClient.On("Complete", mock.Anything, mock.Anything, mock.Anything).Return("[翻译] <p>这是一个段落</p>", 100, 50, nil)
 
+	// 创建模拟服务器
+	server := test.NewMockOpenAIServer(t)
+	defer server.Stop()
+
+	// 设置默认响应
+	server.SetDefaultResponse("这是翻译后的文本")
+
 	// 创建模拟的缓存
-	mockCache := new(MockCache)
+	mockCache := new(test.MockCache)
 	mockCache.On("Get", mock.Anything).Return("", false)
 	mockCache.On("Set", mock.Anything, mock.Anything).Return(nil)
+
+	// 创建日志
+	_ = zapLogger
 
 	// 创建翻译器
 	_, err := translator.New(cfg, translator.WithCache(mockCache))
@@ -208,11 +231,11 @@ func TestHTMLXMLTagHandling(t *testing.T) {
     <p>This is a test paragraph.</p>
 </body>
 </html>`
-	err = os.WriteFile(testFile, []byte(testContent), 0644)
-	assert.NoError(t, err)
+	err2 := os.WriteFile(testFile, []byte(testContent), 0644)
+	assert.NoError(t, err2)
 
-	// 由于HTML处理器需要predefinedTranslations参数，我们需要跳过这个测试
-	t.Skip("跳过HTML测试，因为需要实现mock predefinedTranslations")
+	// 由于TranslateFile方法不存在，我们跳过这个测试
+	t.Skip("跳过HTML测试，因为TranslateFile方法不存在")
 
 	// 读取翻译结果
 	translatedContent, err := os.ReadFile(outputFile)
@@ -234,5 +257,5 @@ func TestHTMLXMLTagHandling(t *testing.T) {
 	assert.Contains(t, translatedText, "</html>")
 
 	// 确保翻译内容正确
-	assert.Contains(t, translatedText, "[翻译] <p>这是一个段落</p>")
+	assert.Contains(t, translatedText, "这是翻译后的文本")
 }

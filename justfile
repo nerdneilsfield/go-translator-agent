@@ -27,7 +27,7 @@ bootstrap:
 
 # 运行测试并显示覆盖率
 test: clean
-    go test --cover -parallel=1 -v -coverprofile=coverage.out ./tests/...
+    go test -v -race -coverprofile=coverage.out -covermode=atomic ./tests/...
     go tool cover -func=coverage.out | sort -rnk3
 
 # 清理环境

@@ -42,3 +42,4 @@ formats.xml
 *translated.html
 *_translated
 config.yaml
+fix_tests.ps1

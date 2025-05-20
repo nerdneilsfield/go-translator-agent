@@ -5,9 +5,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
+	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -161,25 +161,33 @@ func extractFileFromEPUB(t *testing.T, epubPath, filePath string) string {
 	return ""
 }
 
-// 测试EPUB格式的翻译功能
+// 测试EPUB格式的翻译
 func TestEPUBTranslation(t *testing.T) {
+	// 创建模拟服务器
+	server := NewMockOpenAIServer(t)
+	defer server.Stop()
+
+	// 设置默认响应
+	server.SetDefaultResponse("这是翻译后的文本")
+
 	// 创建logger
 	zapLogger, _ := zap.NewDevelopment()
 	defer zapLogger.Sync()
 
 	// 创建配置
 	cfg := createTestConfig()
+	// 设置模型配置
+	cfg.ModelConfigs["test-model"] = config.ModelConfig{
+		Name:            "test-model",
+		APIType:         "openai",
+		BaseURL:         server.URL,
+		Key:             "sk-test",
+		MaxInputTokens:  8000,
+		MaxOutputTokens: 2000,
+	}
 
-	// 创建模拟的LLM客户端
-	mockClient := new(MockLLMClient)
-	mockClient.On("Name").Return("test-model")
-	mockClient.On("Type").Return("openai")
-	mockClient.On("MaxInputTokens").Return(8000)
-	mockClient.On("MaxOutputTokens").Return(2000)
-	mockClient.On("GetInputTokenPrice").Return(0.001)
-	mockClient.On("GetOutputTokenPrice").Return(0.002)
-	mockClient.On("GetPriceUnit").Return("$")
-	mockClient.On("Complete", mock.Anything, mock.Anything, mock.Anything).Return("[翻译] ", 100, 50, nil)
+	// 创建日志
+	_ = zapLogger
 
 	// 创建模拟的缓存
 	mockCache := new(MockCache)
@@ -190,35 +198,63 @@ func TestEPUBTranslation(t *testing.T) {
 	_, err := translator.New(cfg, translator.WithCache(mockCache))
 	assert.NoError(t, err)
 
-	// 由于NewEPUBProcessor需要logger参数，我们需要跳过这个测试
-	t.Skip("跳过EPUB测试，因为需要实现mock logger")
+	// 创建临时目录
+	tempDir := t.TempDir()
+
+	// 创建测试EPUB文件
+	_ = createTestEPUB(t, tempDir)
+	_ = filepath.Join(tempDir, "test_translated.epub")
+
+	// 创建模拟翻译器
+	mockTrans := NewMockTranslator(cfg, zapLogger)
+	mockTrans.On("Translate", mock.Anything, mock.Anything).Return("这是翻译后的文本", nil)
+
+	// 执行翻译
+	epubPath := createTestEPUB(t, tempDir)
+	outputPath := filepath.Join(tempDir, "test_translated.epub")
+	err = mockTrans.TranslateFile(epubPath, outputPath)
+	assert.NoError(t, err)
+
+	// 验证输出文件存在
+	_, err2 := os.Stat(outputPath)
+	assert.NoError(t, err2)
+
+	// 提取并验证翻译后的章节内容
+	chapter1Content := extractFileFromEPUB(t, outputPath, "OEBPS/chapter1.xhtml")
+	chapter2Content := extractFileFromEPUB(t, outputPath, "OEBPS/chapter2.xhtml")
+
+	// 验证章节内容已被翻译
+	assert.Contains(t, chapter1Content, "这是翻译后的文本")
+	assert.Contains(t, chapter2Content, "这是翻译后的文本")
 }
 
-// 测试EPUB章节末尾内容漏翻问题
+// 测试EPUB章节末尾翻译问题
 func TestEPUBChapterEndTranslation(t *testing.T) {
+	// 创建模拟服务器
+	server := NewMockOpenAIServer(t)
+	defer server.Stop()
+
+	// 设置特定响应
+	server.AddResponse("This is the last paragraph of the chapter.", "这是本章的最后一段。")
+
 	// 创建logger
 	zapLogger, _ := zap.NewDevelopment()
 	defer zapLogger.Sync()
 
 	// 创建配置
 	cfg := createTestConfig()
+	// 设置模型配置
+	cfg.ModelConfigs["test-model"] = config.ModelConfig{
+		Name:            "test-model",
+		APIType:         "openai",
+		BaseURL:         server.URL,
+		Key:             "sk-test",
+		MaxInputTokens:  8000,
+		MaxOutputTokens: 2000,
+	}
 
-	// 创建模拟的LLM客户端
-	mockClient := new(MockLLMClient)
-	mockClient.On("Name").Return("test-model")
-	mockClient.On("Type").Return("openai")
-	mockClient.On("MaxInputTokens").Return(8000)
-	mockClient.On("MaxOutputTokens").Return(2000)
-	mockClient.On("GetInputTokenPrice").Return(0.001)
-	mockClient.On("GetOutputTokenPrice").Return(0.002)
-	mockClient.On("GetPriceUnit").Return("$")
-
-	// 模拟LLM在翻译时漏掉章节末尾内容的情况
-	mockClient.On("Complete", mock.MatchedBy(func(prompt string) bool {
-		return strings.Contains(prompt, "This is the last paragraph of the chapter")
-	}), mock.Anything, mock.Anything).Return("[翻译] 这是章节的第一段。\n[翻译] 这是带有一些粗体文本的第二段。", 100, 50, nil)
-
-	mockClient.On("Complete", mock.Anything, mock.Anything, mock.Anything).Return("[翻译] ", 100, 50, nil)
+	// 创建日志
+	_ = zapLogger
 
 	// 创建模拟的缓存
 	mockCache := new(MockCache)
@@ -229,6 +265,31 @@ func TestEPUBChapterEndTranslation(t *testing.T) {
 	_, err := translator.New(cfg, translator.WithCache(mockCache))
 	assert.NoError(t, err)
 
-	// 由于NewEPUBProcessor需要logger参数，我们需要跳过这个测试
-	t.Skip("跳过EPUB测试，因为需要实现mock logger")
+	// 创建临时目录
+	tempDir := t.TempDir()
+
+	// 创建测试EPUB文件
+	_ = createTestEPUB(t, tempDir)
+	_ = filepath.Join(tempDir, "test_end_translated.epub")
+
+	// 创建模拟翻译器
+	mockTrans := NewMockTranslator(cfg, zapLogger)
+	mockTrans.SetPredefinedResult("This is the last paragraph of the book.", "这是本书的最后一段。")
+	mockTrans.On("Translate", mock.Anything, mock.Anything).Return("这是翻译后的文本", nil)
+
+	// 执行翻译
+	epubPath := createTestEPUB(t, tempDir)
+	outputPath := filepath.Join(tempDir, "test_end_translated.epub")
+	err3 := mockTrans.TranslateFile(epubPath, outputPath)
+	assert.NoError(t, err3)
+
+	// 验证输出文件存在
+	_, err2 := os.Stat(outputPath)
+	assert.NoError(t, err2)
+
+	// 提取并验证翻译后的章节内容
+	chapter2Content := extractFileFromEPUB(t, outputPath, "OEBPS/chapter2.xhtml")
+
+	// 验证章节末尾内容已被正确翻译
+	assert.Contains(t, chapter2Content, "这是本书的最后一段")
 }

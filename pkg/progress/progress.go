@@ -507,7 +507,7 @@ func (pt *ProgressTracker) render() {
 		// 添加未完成部分
 		remainingWidth := pt.barWidth - completedWidth
 		if remainingWidth > 0 {
-			builder.WriteString(pt.barColor.Sprint(strings.Repeat(pt.remainingChar, remainingWidth)))
+			builder.WriteString(strings.Repeat(pt.remainingChar, remainingWidth))
 		}
 
 		builder.WriteString(pt.rightBracket)
