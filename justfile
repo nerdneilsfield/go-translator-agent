@@ -27,7 +27,7 @@ bootstrap:
 
 # 运行测试并显示覆盖率
 test: clean
-    go test --cover -parallel=1 -v -coverprofile=coverage.out ./...
+    go test --cover -parallel=1 -v -coverprofile=coverage.out ./tests/...
     go tool cover -func=coverage.out | sort -rnk3
 
 # 清理环境
@@ -47,6 +47,7 @@ fmt:
 # 运行 linter
 lint:
     golangci-lint run -c .golangci.yml
+
 
 # 测试发布
 release-test:
