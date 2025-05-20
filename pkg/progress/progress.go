@@ -11,8 +11,9 @@ import (
 	"github.com/jedib0t/go-pretty/v6/text"
 )
 
-// ProgressTracker 是进度条系统的核心组件，负责跟踪和计算进度数据
-type ProgressTracker struct {
+// Tracker is responsible for tracking the progress of a task.
+// It can be used to display a progress bar or provide progress updates.
+type Tracker struct {
 	mu sync.Mutex
 
 	// 基本进度信息
@@ -38,40 +39,40 @@ type ProgressTracker struct {
 	percentFormat string // 百分比格式（如"%.1f%%"）
 
 	// 渲染相关
-	barWidth       int    // 进度条宽度
-	completedChar  string // 已完成部分的字符
-	remainingChar  string // 未完成部分的字符
-	leftBracket    string // 左括号
-	rightBracket   string // 右括号
+	barWidth      int    // 进度条宽度
+	completedChar string // 已完成部分的字符
+	remainingChar string // 未完成部分的字符
+	leftBracket   string // 左括号
+	rightBracket  string // 右括号
 
 	// 颜色设置
-	percentColor     text.Colors // 百分比颜色
-	barColor         text.Colors // 进度条颜色
-	statsColor       text.Colors // 统计信息颜色
-	timeColor        text.Colors // 时间信息颜色
-	unitColor        text.Colors // 单位信息颜色
-	costColor        text.Colors // 成本信息颜色
-	messageColor     text.Colors // 消息颜色
+	percentColor text.Colors // 百分比颜色
+	barColor     text.Colors // 进度条颜色
+	statsColor   text.Colors // 统计信息颜色
+	timeColor    text.Colors // 时间信息颜色
+	unitColor    text.Colors // 单位信息颜色
+	costColor    text.Colors // 成本信息颜色
+	messageColor text.Colors // 消息颜色
 
 	// 显示选项
-	showPercent   bool // 是否显示百分比
-	showBar       bool // 是否显示进度条
-	showStats     bool // 是否显示统计信息
-	showTime      bool // 是否显示时间信息
-	showETA       bool // 是否显示预计剩余时间
-	showCost      bool // 是否显示成本信息
-	showSpeed     bool // 是否显示速度信息
+	showPercent bool // 是否显示百分比
+	showBar     bool // 是否显示进度条
+	showStats   bool // 是否显示统计信息
+	showTime    bool // 是否显示时间信息
+	showETA     bool // 是否显示预计剩余时间
+	showCost    bool // 是否显示成本信息
+	showSpeed   bool // 是否显示速度信息
 
 	// 消息
 	message string // 进度条消息
 }
 
-// NewProgressTracker 创建一个新的进度跟踪器
-func NewProgressTracker(totalUnits int64, options ...Option) *ProgressTracker {
+// NewTracker creates a new progress tracker.
+func NewTracker(totalUnits int64, options ...Option) *Tracker {
 	now := time.Now()
 
 	// 创建默认进度跟踪器
-	pt := &ProgressTracker{
+	pt := &Tracker{
 		totalUnits:      totalUnits,
 		completedUnits:  0,
 		startTime:       now,
@@ -119,11 +120,11 @@ func NewProgressTracker(totalUnits int64, options ...Option) *ProgressTracker {
 }
 
 // Option 定义进度跟踪器的选项
-type Option func(*ProgressTracker)
+type Option func(*Tracker)
 
 // WithUnit 设置单位名称和符号
 func WithUnit(name, symbol string) Option {
-	return func(pt *ProgressTracker) {
+	return func(pt *Tracker) {
 		pt.unit = name
 		pt.unitSymbol = symbol
 	}
@@ -131,21 +132,21 @@ func WithUnit(name, symbol string) Option {
 
 // WithWriter 设置输出写入器
 func WithWriter(writer io.Writer) Option {
-	return func(pt *ProgressTracker) {
+	return func(pt *Tracker) {
 		pt.writer = writer
 	}
 }
 
 // WithRefreshInterval 设置刷新间隔
 func WithRefreshInterval(interval time.Duration) Option {
-	return func(pt *ProgressTracker) {
+	return func(pt *Tracker) {
 		pt.refreshInterval = interval
 	}
 }
 
 // WithCost 设置成本相关信息
 func WithCost(costPerUnit float64, currency string) Option {
-	return func(pt *ProgressTracker) {
+	return func(pt *Tracker) {
 		pt.costPerUnit = costPerUnit
 		pt.costCurrency = currency
 		pt.showCost = true
@@ -154,7 +155,7 @@ func WithCost(costPerUnit float64, currency string) Option {
 
 // WithBarStyle 设置进度条样式
 func WithBarStyle(width int, completedChar, remainingChar, leftBracket, rightBracket string) Option {
-	return func(pt *ProgressTracker) {
+	return func(pt *Tracker) {
 		pt.barWidth = width
 		pt.completedChar = completedChar
 		pt.remainingChar = remainingChar
@@ -165,13 +166,13 @@ func WithBarStyle(width int, completedChar, remainingChar, leftBracket, rightBra
 
 // WithMessage 设置进度条消息
 func WithMessage(message string) Option {
-	return func(pt *ProgressTracker) {
+	return func(pt *Tracker) {
 		pt.message = message
 	}
 }
 
 // Start 开始进度跟踪
-func (pt *ProgressTracker) Start() {
+func (pt *Tracker) Start() {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
@@ -187,7 +188,7 @@ func (pt *ProgressTracker) Start() {
 }
 
 // refreshLoop 定时刷新进度条
-func (pt *ProgressTracker) refreshLoop() {
+func (pt *Tracker) refreshLoop() {
 	ticker := time.NewTicker(pt.refreshInterval)
 	defer ticker.Stop()
 
@@ -212,7 +213,7 @@ func (pt *ProgressTracker) refreshLoop() {
 }
 
 // Update 更新已完成的单位数
-func (pt *ProgressTracker) Update(completedUnits int64) {
+func (pt *Tracker) Update(completedUnits int64) {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
@@ -255,12 +256,12 @@ func (pt *ProgressTracker) Update(completedUnits int64) {
 }
 
 // Increment 增加已完成的单位数
-func (pt *ProgressTracker) Increment(delta int64) {
+func (pt *Tracker) Increment(delta int64) {
 	pt.Update(pt.completedUnits + delta)
 }
 
 // SetTotal 设置总单位数
-func (pt *ProgressTracker) SetTotal(totalUnits int64) {
+func (pt *Tracker) SetTotal(totalUnits int64) {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
@@ -273,7 +274,7 @@ func (pt *ProgressTracker) SetTotal(totalUnits int64) {
 }
 
 // SetMessage 设置进度条消息
-func (pt *ProgressTracker) SetMessage(message string) {
+func (pt *Tracker) SetMessage(message string) {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
@@ -281,7 +282,7 @@ func (pt *ProgressTracker) SetMessage(message string) {
 }
 
 // Stop 停止进度跟踪
-func (pt *ProgressTracker) Stop() {
+func (pt *Tracker) Stop() {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
@@ -293,7 +294,7 @@ func (pt *ProgressTracker) Stop() {
 }
 
 // Done 标记为已完成
-func (pt *ProgressTracker) Done() {
+func (pt *Tracker) Done() {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
@@ -306,7 +307,7 @@ func (pt *ProgressTracker) Done() {
 }
 
 // GetPercentage 获取完成百分比
-func (pt *ProgressTracker) GetPercentage() float64 {
+func (pt *Tracker) GetPercentage() float64 {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
@@ -318,7 +319,7 @@ func (pt *ProgressTracker) GetPercentage() float64 {
 }
 
 // GetSpeed 获取当前速度（单位/秒）
-func (pt *ProgressTracker) GetSpeed() float64 {
+func (pt *Tracker) GetSpeed() float64 {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
@@ -336,7 +337,7 @@ func (pt *ProgressTracker) GetSpeed() float64 {
 }
 
 // GetETA 获取预计剩余时间
-func (pt *ProgressTracker) GetETA() time.Duration {
+func (pt *Tracker) GetETA() time.Duration {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
@@ -381,7 +382,7 @@ func (pt *ProgressTracker) GetETA() time.Duration {
 }
 
 // getSpeedLocked 获取当前速度（内部使用，已加锁）
-func (pt *ProgressTracker) getSpeedLocked() float64 {
+func (pt *Tracker) getSpeedLocked() float64 {
 	if len(pt.speedSamples) == 0 {
 		// 如果没有速度样本，尝试使用总体平均速度
 		elapsedTotal := time.Since(pt.startTime).Seconds()
@@ -410,7 +411,7 @@ func (pt *ProgressTracker) getSpeedLocked() float64 {
 }
 
 // GetElapsedTime 获取已经过的时间
-func (pt *ProgressTracker) GetElapsedTime() time.Duration {
+func (pt *Tracker) GetElapsedTime() time.Duration {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
@@ -418,7 +419,7 @@ func (pt *ProgressTracker) GetElapsedTime() time.Duration {
 }
 
 // GetCost 获取累计成本
-func (pt *ProgressTracker) GetCost() float64 {
+func (pt *Tracker) GetCost() float64 {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
@@ -426,7 +427,7 @@ func (pt *ProgressTracker) GetCost() float64 {
 }
 
 // IsDone 检查是否已完成
-func (pt *ProgressTracker) IsDone() bool {
+func (pt *Tracker) IsDone() bool {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
@@ -434,7 +435,7 @@ func (pt *ProgressTracker) IsDone() bool {
 }
 
 // IsActive 检查是否处于活动状态
-func (pt *ProgressTracker) IsActive() bool {
+func (pt *Tracker) IsActive() bool {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
@@ -442,7 +443,7 @@ func (pt *ProgressTracker) IsActive() bool {
 }
 
 // render 渲染进度条
-func (pt *ProgressTracker) render() {
+func (pt *Tracker) render() {
 	if pt.writer == nil {
 		return
 	}
@@ -580,7 +581,7 @@ func formatDuration(d time.Duration) string {
 
 // WithColors 设置颜色
 func WithColors(percent, bar, stats, timeColor, unit, cost, message text.Colors) Option {
-	return func(pt *ProgressTracker) {
+	return func(pt *Tracker) {
 		pt.percentColor = percent
 		pt.barColor = bar
 		pt.statsColor = stats
@@ -593,7 +594,7 @@ func WithColors(percent, bar, stats, timeColor, unit, cost, message text.Colors)
 
 // WithVisibility 设置显示选项
 func WithVisibility(showPercent, showBar, showStats, showTime, showETA, showCost, showSpeed bool) Option {
-	return func(pt *ProgressTracker) {
+	return func(pt *Tracker) {
 		pt.showPercent = showPercent
 		pt.showBar = showBar
 		pt.showStats = showStats

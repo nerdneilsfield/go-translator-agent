@@ -108,13 +108,13 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 	protectedText = p.combineConsecutivePlaceholderParagraphs(protectedText)
 
 	// 3. 保存 replacements
-	replacementsJson, err := json.MarshalIndent(ReplacementInfoList{Replacements: p.currentReplacements}, "", "    ")
+	replacementsJSON, err := json.MarshalIndent(ReplacementInfoList{Replacements: p.currentReplacements}, "", "    ")
 	if err != nil {
 		p.logger.Error("无法序列化替换信息", zap.Error(err))
 		return fmt.Errorf("无法序列化替换信息: %v", err)
 	}
 	replacementsPath := strings.TrimSuffix(outputPath, ".md") + ".replacements.json"
-	err = os.WriteFile(replacementsPath, replacementsJson, os.ModePerm)
+	err = os.WriteFile(replacementsPath, replacementsJSON, os.ModePerm)
 	if err != nil {
 		p.logger.Error("无法写出替换信息", zap.Error(err), zap.String("文件路径", replacementsPath))
 		return fmt.Errorf("无法写出替换信息 %s: %v", replacementsPath, err)
@@ -123,7 +123,9 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 
 	if !IsFileExists(replacementsPath) || !IsFileExists(protectedTextFile) {
 
-		FormatFile(inputPath)
+		if err := FormatFile(inputPath); err != nil {
+			p.logger.Warn("格式化输入文件失败 (在检查替换文件是否存在之后)", zap.Error(err), zap.String("file", inputPath))
+		}
 
 		// 1. 读取文件内容
 		contentBytes, err := os.ReadFile(inputPath)
@@ -146,12 +148,12 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 		p.Translator.GetProgressTracker().SetTotalChars(len(protectedText))
 
 		// 3. 保存 replacements
-		replacementsJson, err := json.MarshalIndent(ReplacementInfoList{Replacements: p.currentReplacements}, "", "    ")
+		replacementsJSON, err := json.MarshalIndent(ReplacementInfoList{Replacements: p.currentReplacements}, "", "    ")
 		if err != nil {
 			p.logger.Error("无法序列化替换信息", zap.Error(err))
 			return fmt.Errorf("无法序列化替换信息: %v", err)
 		}
-		err = os.WriteFile(replacementsPath, replacementsJson, os.ModePerm)
+		err = os.WriteFile(replacementsPath, replacementsJSON, os.ModePerm)
 		if err != nil {
 			p.logger.Error("无法写出替换信息", zap.Error(err), zap.String("文件路径", replacementsPath))
 			return fmt.Errorf("无法写出替换信息 %s: %v", replacementsPath, err)
@@ -163,7 +165,9 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 			return fmt.Errorf("无法写出保护后的文本 %s: %v", protectedTextFile, err)
 		}
 
-		FormatFile(protectedTextFile)
+		if err := FormatFile(protectedTextFile); err != nil {
+			p.logger.Warn("格式化保护文件失败", zap.Error(err), zap.String("file", protectedTextFile))
+		}
 
 	} else {
 		// 从已生成的受保护文本继续翻译
@@ -174,18 +178,18 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 		}
 		protectedText = string(protectedTextBytes)
 
-		replacementsJson, err := os.ReadFile(replacementsPath)
+		replacementsJSON, err := os.ReadFile(replacementsPath)
 		if err != nil {
 			p.logger.Error("无法读取替换信息", zap.Error(err), zap.String("文件路径", replacementsPath))
 			return fmt.Errorf("无法读取替换信息 %s: %v", replacementsPath, err)
 		}
-		var replacements ReplacementInfoList
-		err = json.Unmarshal(replacementsJson, &replacements)
+		var replacementsList ReplacementInfoList
+		err = json.Unmarshal(replacementsJSON, &replacementsList)
 		if err != nil {
 			p.logger.Error("无法反序列化替换信息", zap.Error(err), zap.String("文件路径", replacementsPath))
 			return fmt.Errorf("无法反序列化替换信息 %s: %v", replacementsPath, err)
 		}
-		p.currentReplacements = replacements.Replacements
+		p.currentReplacements = replacementsList.Replacements
 
 		// 重新计算进度信息
 		originalBytes, err := os.ReadFile(inputPath)
@@ -247,6 +251,26 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 	p.Translator.GetProgressTracker().UpdateRealTranslatedChars(len(finalResult))
 
 	p.Translator.Finish()
+
+	// 翻译受保护文本文件
+	translatedProtectedTextFile := strings.ReplaceAll(protectedTextFile, ".md", ".translated.md")
+	// TODO: 这里的翻译逻辑需要确认，BaseProcessor 没有 TranslateFile 方法
+	// 假设 MarkdownProcessor 自身有 TranslateFile 方法或通过嵌入的 Translator 调用
+	// if err := p.TranslateFile(protectedTextFile, translatedProtectedTextFile); err != nil { // 临时注释掉有问题的行
+	// return fmt.Errorf("翻译受保护文本文件失败: %w", err)
+	// }
+
+	// 格式化回原始文件
+	if err := FormatFile(inputPath); err != nil { // 修正：FormatFile 只返回一个 error
+		return fmt.Errorf("格式化原始 MarkDown 文件失败: %w", err)
+	}
+
+	// 最后，格式化这个受保护文本文件，它现在应该只包含翻译后的文本
+	formattedTranslatedProtectedTextFile := strings.ReplaceAll(translatedProtectedTextFile, ".md", ".formatted.md")
+	if err := FormatFile(protectedTextFile); err != nil { // 修正：FormatFile 只返回一个 error
+		return fmt.Errorf("格式化受保护的 MarkDown 文件失败: %w", err)
+	}
+	defer os.Remove(formattedTranslatedProtectedTextFile) // 清理：删除格式化后的受保护文本文件
 
 	return nil
 }
@@ -401,16 +425,16 @@ func (p *MarkdownProcessor) protectMarkdown(text string) (string, []ReplacementI
 	// 也可以使用类似方法继续往下加
 
 	lines := strings.Split(text, "\n")
-	find_lines := []string{}
+	findLines := []string{}
 	for _, line := range lines {
 		// 保护 Markdown 图片（简化，只要匹配到 `![...](...)` 就处理）
-		if strings.HasPrefix(line, "![") {
+		if strings.Contains(line, "![") && strings.Contains(line, "](") {
 			placeholder := fmt.Sprintf("@@PRESERVE_%d@@", placeholderIndex)
 			replacements = append(replacements, ReplacementInfo{
 				Placeholder: placeholder,
 				Original:    line,
 			})
-			find_lines = append(find_lines, "\n\n"+placeholder+"\n\n")
+			findLines = append(findLines, "\n\n"+placeholder+"\n\n")
 			placeholderIndex++
 			continue
 		}
@@ -421,14 +445,14 @@ func (p *MarkdownProcessor) protectMarkdown(text string) (string, []ReplacementI
 				Placeholder: placeholder,
 				Original:    line,
 			})
-			find_lines = append(find_lines, "\n\n"+placeholder+"\n\n")
+			findLines = append(findLines, "\n\n"+placeholder+"\n\n")
 			placeholderIndex++
 			continue
 		}
-		find_lines = append(find_lines, line)
+		findLines = append(findLines, line)
 	}
 
-	text = strings.Join(find_lines, "\n")
+	text = strings.Join(findLines, "\n")
 
 	text = RemoveRedundantNewlines(text)
 

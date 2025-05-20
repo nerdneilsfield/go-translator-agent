@@ -7,8 +7,8 @@ import (
 // CreateTestConfig 创建用于测试的配置
 func CreateTestConfig() *config.Config {
 	return &config.Config{
-		SourceLang:      "English",
-		TargetLang:      "Chinese",
+		SourceLang:       "English",
+		TargetLang:       "Chinese",
 		DefaultModelName: "test-model",
 		ActiveStepSet:    "test-step-set",
 		ModelConfigs: map[string]config.ModelConfig{

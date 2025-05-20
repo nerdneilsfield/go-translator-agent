@@ -1,5 +1,7 @@
-version: 1
+version: "2"
+
 linters:
+  default: none
   enable:
     - gofmt
     - goimports
@@ -7,11 +9,15 @@ linters:
     - revive
     - errcheck
     - staticcheck
-    - gosimple
     - ineffassign
+  settings:
+    gofmt:
+      simplify: true
 
 run:
   timeout: 5m
+  # 可选：路径模式，推荐使用 cfg 保持一致性
+  relative-path-mode: cfg
 
 issues:
   exclude-rules:
@@ -19,8 +25,4 @@ issues:
       linters:
         - errcheck
 
-linters-settings:
-  gofmt:
-    simplify: true
-  govet:
-    shadow: true
+# 如需自定义输出格式或路径，可参考官方 changelog

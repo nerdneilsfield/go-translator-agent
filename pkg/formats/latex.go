@@ -27,17 +27,17 @@ func NewLaTeXProcessor(t translator.Translator, predefinedTranslations *config.P
 }
 
 // TranslateFile 翻译LaTeX文件
-func (p *LaTeXProcessor) TranslateFile(inputPath, outputPath string) error {
+func (p *LaTeXProcessor) TranslateFile(_ string, _ string) error {
 	return fmt.Errorf("LaTeX格式暂不支持翻译")
 }
 
 // TranslateText 翻译LaTeX内容
-func (p *LaTeXProcessor) TranslateText(text string) (string, error) {
+func (p *LaTeXProcessor) TranslateText(_ string) (string, error) {
 	return "", fmt.Errorf("LaTeX格式暂不支持翻译")
 }
 
 // FormatFile 格式化LaTeX文件
-func (p *LaTeXProcessor) FormatFile(inputPath, outputPath string) error {
+func (p *LaTeXProcessor) FormatFile(_ string, _ string) error {
 	return fmt.Errorf("LaTeX格式暂不支持格式化功能")
 }
 
@@ -55,6 +55,6 @@ func NewLaTeXFormattingProcessor() (*LaTeXFormattingProcessor, error) {
 }
 
 // FormatFile 格式化 LaTeX 文件
-func (p *LaTeXFormattingProcessor) FormatFile(inputPath, outputPath string) error {
+func (p *LaTeXFormattingProcessor) FormatFile(_ string, _ string) error {
 	return fmt.Errorf("LaTeX格式暂不支持格式化功能")
 }

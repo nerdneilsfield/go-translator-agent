@@ -7,18 +7,22 @@ import (
 
 	"github.com/jedib0t/go-pretty/v6/progress"
 	"github.com/jedib0t/go-pretty/v6/text"
+	"go.uber.org/zap"
 )
 
-// ProgressAdapter 是一个适配器，将我们的进度条系统与现有的翻译器集成
-type ProgressAdapter struct {
-	tracker        *ProgressTracker
+// Adapter wraps a progress.Writer to provide a more specific interface if needed.
+// In this specific case, it doesn't add much functionality over progress.Writer itself,
+// but serves as an example or a point for future extension.
+type Adapter struct {
+	tracker        *Tracker
 	translationBar *progress.Tracker
 	costBar        *progress.Tracker
-	writer         *progress.Writer
+	writer         progress.Writer
+	logger         *zap.Logger
 }
 
-// NewProgressAdapter 创建一个新的进度条适配器
-func NewProgressAdapter(totalUnits int64) *ProgressAdapter {
+// NewAdapter creates a new progress adapter.
+func NewAdapter(logger *zap.Logger) *Adapter {
 	// 创建进度条写入器
 	pw := progress.NewWriter()
 
@@ -34,21 +38,21 @@ func NewProgressAdapter(totalUnits int64) *ProgressAdapter {
 	pw.SetAutoStop(false)
 
 	// 设置追踪器配置
-	pw.SetTrackerLength(50)  // 设置进度条长度
-	pw.SetMessageLength(20)  // 设置消息宽度
-	pw.SetNumTrackersExpected(2)  // 预期的追踪器数量
+	pw.SetTrackerLength(50)      // 设置进度条长度
+	pw.SetMessageLength(20)      // 设置消息宽度
+	pw.SetNumTrackersExpected(2) // 预期的追踪器数量
 
 	// 可配置的可见性
-	pw.Style().Visibility.ETA = true        // 显示预计剩余时间
-	pw.Style().Visibility.Percentage = true // 显示百分比
-	pw.Style().Visibility.Speed = true      // 显示速度
-	pw.Style().Visibility.Value = true      // 显示当前值
+	pw.Style().Visibility.ETA = true            // 显示预计剩余时间
+	pw.Style().Visibility.Percentage = true     // 显示百分比
+	pw.Style().Visibility.Speed = true          // 显示速度
+	pw.Style().Visibility.Value = true          // 显示当前值
 	pw.Style().Visibility.TrackerOverall = true // 显示总体进度
 
 	// 创建翻译字数跟踪器
 	translationBar := &progress.Tracker{
 		Message: "翻译字数",
-		Total:   totalUnits,
+		Total:   0,
 		Units:   progress.UnitsBytes,
 	}
 
@@ -73,49 +77,50 @@ func NewProgressAdapter(totalUnits int64) *ProgressAdapter {
 	go pw.Render()
 
 	// 创建我们自己的进度跟踪器
-	tracker := NewProgressTracker(
-		totalUnits,
+	tracker := NewTracker(
+		0,
 		WithUnit("字符", "chars"),
 		WithMessage("翻译进度"),
 		WithBarStyle(50, "█", "░", "[", "]"),
 		WithCost(0.00002, "$"),
 		WithColors(
-			text.Colors{text.FgHiWhite, text.Bold},  // 百分比颜色
-			text.Colors{text.FgCyan},                // 进度条颜色
-			text.Colors{text.FgHiBlack},             // 统计信息颜色
-			text.Colors{text.FgGreen},               // 时间信息颜色
-			text.Colors{text.FgYellow},              // 单位信息颜色
-			text.Colors{text.FgMagenta},             // 成本信息颜色
-			text.Colors{text.FgWhite},               // 消息颜色
+			text.Colors{text.FgHiWhite, text.Bold}, // 百分比颜色
+			text.Colors{text.FgCyan},               // 进度条颜色
+			text.Colors{text.FgHiBlack},            // 统计信息颜色
+			text.Colors{text.FgGreen},              // 时间信息颜色
+			text.Colors{text.FgYellow},             // 单位信息颜色
+			text.Colors{text.FgMagenta},            // 成本信息颜色
+			text.Colors{text.FgWhite},              // 消息颜色
 		),
 		WithVisibility(
-			true,  // 显示百分比
-			true,  // 显示进度条
-			true,  // 显示统计信息
-			true,  // 显示时间信息
-			true,  // 显示ETA
-			true,  // 显示成本信息
-			true,  // 显示速度信息
+			true, // 显示百分比
+			true, // 显示进度条
+			true, // 显示统计信息
+			true, // 显示时间信息
+			true, // 显示ETA
+			true, // 显示成本信息
+			true, // 显示速度信息
 		),
 		WithWriter(os.Stdout),
 		WithRefreshInterval(time.Second),
 	)
 
-	return &ProgressAdapter{
+	return &Adapter{
 		tracker:        tracker,
 		translationBar: translationBar,
 		costBar:        costBar,
-		writer:         &pw,
+		writer:         pw,
+		logger:         logger,
 	}
 }
 
 // Start 开始进度跟踪
-func (pa *ProgressAdapter) Start() {
+func (pa *Adapter) Start() {
 	pa.tracker.Start()
 }
 
 // Update 更新进度
-func (pa *ProgressAdapter) Update(completedUnits int64) {
+func (pa *Adapter) Update(completedUnits int64) {
 	// 更新我们自己的进度跟踪器
 	pa.tracker.Update(completedUnits)
 
@@ -158,13 +163,13 @@ func (pa *ProgressAdapter) Update(completedUnits int64) {
 }
 
 // Stop 停止进度跟踪
-func (pa *ProgressAdapter) Stop() {
+func (pa *Adapter) Stop() {
 	pa.tracker.Stop()
-	(*pa.writer).Stop()
+	pa.writer.Stop()
 }
 
 // Done 标记为已完成
-func (pa *ProgressAdapter) Done() {
+func (pa *Adapter) Done() {
 	// 先更新进度为100%
 	if pa.tracker.totalUnits > 0 {
 		pa.tracker.Update(pa.tracker.totalUnits)
@@ -183,15 +188,15 @@ func (pa *ProgressAdapter) Done() {
 	pa.costBar.MarkAsDone()
 
 	// 停止渲染
-	(*pa.writer).Stop()
+	pa.writer.Stop()
 }
 
 // GetWriter 获取 go-pretty 进度条写入器
-func (pa *ProgressAdapter) GetWriter() *progress.Writer {
+func (pa *Adapter) GetWriter() progress.Writer {
 	return pa.writer
 }
 
 // GetTracker 获取进度跟踪器
-func (pa *ProgressAdapter) GetTracker() *ProgressTracker {
+func (pa *Adapter) GetTracker() *Tracker {
 	return pa.tracker
 }

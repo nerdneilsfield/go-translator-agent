@@ -105,7 +105,7 @@ func TestPresetConfigurationFailure(t *testing.T) {
 
 	// 创建一个简单的预设配置
 	predefined := map[string]string{
-		"Test": "测试",
+		"Test":  "测试",
 		"Hello": "你好",
 		"World": "世界",
 	}

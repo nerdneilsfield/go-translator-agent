@@ -214,7 +214,7 @@ func NewEPUBFormattingProcessor() (*EPUBFormattingProcessor, error) {
 }
 
 // FormatFile 格式化 EPUB 文件
-func (p *EPUBFormattingProcessor) FormatFile(inputPath, outputPath string) error {
+func (p *EPUBFormattingProcessor) FormatFile(_ string, _ string) error {
 	return fmt.Errorf("EPUB格式暂不支持格式化功能")
 }
 

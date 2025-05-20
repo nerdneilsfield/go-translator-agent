@@ -34,7 +34,7 @@ func main() {
 		tracker.UpdateProgress(10)
 
 		// 模拟 token 使用
-		if i % 100 == 0 {
+		if i%100 == 0 {
 			tracker.UpdateInitialTokenUsage(50, 100)
 			tracker.UpdateReflectionTokenUsage(30, 60)
 			tracker.UpdateImprovementTokenUsage(20, 40)

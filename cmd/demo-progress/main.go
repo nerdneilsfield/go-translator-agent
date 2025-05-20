@@ -11,31 +11,31 @@ import (
 
 func main() {
 	// 创建一个进度跟踪器
-	tracker := progress.NewProgressTracker(
+	tracker := progress.NewTracker(
 		1000, // 总单位数
 		progress.WithUnit("字符", "chars"),
 		progress.WithMessage("翻译进度"),
 		progress.WithBarStyle(50, "█", "░", "[", "]"),
 		progress.WithCost(0.00002, "$"),
 		progress.WithColors(
-			text.Colors{text.FgHiWhite, text.Bold},      // 百分比颜色
-			text.Colors{text.FgCyan},                    // 进度条颜色
-			text.Colors{text.FgHiBlack},                 // 统计信息颜色
-			text.Colors{text.FgGreen},                   // 时间信息颜色
-			text.Colors{text.FgYellow},                  // 单位信息颜色
-			text.Colors{text.FgMagenta},                 // 成本信息颜色
-			text.Colors{text.FgWhite},                   // 消息颜色
+			text.Colors{text.FgHiWhite, text.Bold}, // 百分比颜色
+			text.Colors{text.FgCyan},               // 进度条颜色
+			text.Colors{text.FgHiBlack},            // 统计信息颜色
+			text.Colors{text.FgGreen},              // 时间信息颜色
+			text.Colors{text.FgYellow},             // 单位信息颜色
+			text.Colors{text.FgMagenta},            // 成本信息颜色
+			text.Colors{text.FgWhite},              // 消息颜色
 		),
 		progress.WithVisibility(
-			true,  // 显示百分比
-			true,  // 显示进度条
-			true,  // 显示统计信息
-			true,  // 显示时间信息
-			true,  // 显示ETA
-			true,  // 显示成本信息
-			true,  // 显示速度信息
+			true, // 显示百分比
+			true, // 显示进度条
+			true, // 显示统计信息
+			true, // 显示时间信息
+			true, // 显示ETA
+			true, // 显示成本信息
+			true, // 显示速度信息
 		),
-		progress.WithRefreshInterval(100 * time.Millisecond),
+		progress.WithRefreshInterval(100*time.Millisecond),
 	)
 
 	// 开始进度跟踪

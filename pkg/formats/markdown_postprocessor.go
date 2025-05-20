@@ -212,7 +212,7 @@ func (p *MarkdownPostProcessor) cleanupPromptTags(text string) string {
 			}
 
 			// 保留标记之间的内容，移除标记本身
-			content := result[startIdx+len(tag.start):endIdx]
+			content := result[startIdx+len(tag.start) : endIdx]
 			result = result[:startIdx] + content + result[endIdx+len(tag.end):]
 		}
 
@@ -223,10 +223,10 @@ func (p *MarkdownPostProcessor) cleanupPromptTags(text string) string {
 
 	// 使用正则表达式移除其他可能的提示词标记
 	promptTagsRegex := []*regexp.Regexp{
-		regexp.MustCompile(`</?[A-Z_]+>`),                  // 如 <TRANSLATION> 或 </TRANSLATION>
-		regexp.MustCompile(`</?[a-z_]+>`),                  // 如 <translation> 或 </translation>
-		regexp.MustCompile(`</?[\p{Han}]+>`),               // 中文标记，如 <翻译> 或 </翻译>
-		regexp.MustCompile(`</?[\p{Han}][^>]{0,20}>`),      // 带属性的中文标记
+		regexp.MustCompile(`</?[A-Z_]+>`),                   // 如 <TRANSLATION> 或 </TRANSLATION>
+		regexp.MustCompile(`</?[a-z_]+>`),                   // 如 <translation> 或 </translation>
+		regexp.MustCompile(`</?[\p{Han}]+>`),                // 中文标记，如 <翻译> 或 </翻译>
+		regexp.MustCompile(`</?[\p{Han}][^>]{0,20}>`),       // 带属性的中文标记
 		regexp.MustCompile(`\[INTERNAL INSTRUCTIONS:.*?\]`), // 内部指令
 	}
 

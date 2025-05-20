@@ -162,7 +162,7 @@ func (s *MockOpenAIServer) handleChatCompletions(w http.ResponseWriter, r *http.
 	// 随机模拟错误
 	if rand.Float64() < s.ErrorRate {
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"error": map[string]interface{}{
 				"message": "模拟的API错误",
 				"type":    "api_error",
@@ -259,6 +259,6 @@ func (s *MockOpenAIServer) handleChatCompletions(w http.ResponseWriter, r *http.
 			},
 		}
 
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}
 }

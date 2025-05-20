@@ -49,7 +49,7 @@ func (t *RawTranslator) InitTranslator() {
 }
 
 // Translate 实现 Translator 接口，直接返回输入的文本
-func (t *RawTranslator) Translate(text string, retryFailedParts bool) (string, error) {
+func (t *RawTranslator) Translate(text string, _ bool) (string, error) {
 	return text, nil
 }
 
@@ -87,9 +87,10 @@ func NewRawClient() *RawClient {
 }
 
 // Complete 直接返回输入的提示词
-func (c *RawClient) Complete(prompt string, maxTokens int, temperature float64) (string, int, int, error) {
+func (c *RawClient) Complete(prompt string, _ int, _ float64) (string, int, int, error) {
 	// 直接返回输入文本，令牌数设为文本长度
 	tokenCount := len(prompt)
+	// For RawClient, input and output tokens can be considered the same as prompt length or 0.
 	return prompt, tokenCount, tokenCount, nil
 }
 

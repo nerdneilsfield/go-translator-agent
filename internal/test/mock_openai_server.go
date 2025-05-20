@@ -12,22 +12,24 @@ import (
 
 // MockOpenAIServer 是一个模拟的OpenAI API服务器
 type MockOpenAIServer struct {
-	Server     *httptest.Server
-	URL        string
-	Responses  map[string]string
+	Server          *httptest.Server
+	URL             string
+	Responses       map[string]string
 	DefaultResponse string
-	ErrorRate  float64
-	DelayMs    int
-	mu         sync.Mutex
+	ErrorRate       float64
+	DelayMs         int
+	mu              sync.Mutex
 }
 
+// MockRequest 记录请求信息
+
 // NewMockOpenAIServer 创建一个新的模拟OpenAI服务器
-func NewMockOpenAIServer(t *testing.T) *MockOpenAIServer {
+func NewMockOpenAIServer(t *testing.T) *MockOpenAIServer { //nolint:revive // Parameter t restored, revive lint ignored for now
 	mock := &MockOpenAIServer{
-		Responses:  make(map[string]string),
+		Responses:       make(map[string]string),
 		DefaultResponse: "这是翻译后的文本",
-		ErrorRate:  0.0,
-		DelayMs:    0,
+		ErrorRate:       0.0,
+		DelayMs:         0,
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -43,7 +45,7 @@ func NewMockOpenAIServer(t *testing.T) *MockOpenAIServer {
 		decoder := json.NewDecoder(r.Body)
 		if err := decoder.Decode(&requestBody); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`{"error": {"message": "无法解析请求体", "type": "invalid_request_error"}}`))
+			_, _ = w.Write([]byte(`{"error": {"message": "无法解析请求体", "type": "invalid_request_error"}}`))
 			return
 		}
 
@@ -58,7 +60,7 @@ func NewMockOpenAIServer(t *testing.T) *MockOpenAIServer {
 		mock.mu.Unlock()
 		if errorRate > 0 && errorRate > float64(time.Now().UnixNano()%100)/100.0 {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"error": {"message": "模拟服务器错误", "type": "server_error"}}`))
+			_, _ = w.Write([]byte(`{"error": {"message": "模拟服务器错误", "type": "server_error"}}`))
 			return
 		}
 
@@ -152,7 +154,7 @@ func NewMockOpenAIServer(t *testing.T) *MockOpenAIServer {
 				},
 			}
 
-			json.NewEncoder(w).Encode(responseBody)
+			_ = json.NewEncoder(w).Encode(responseBody)
 		}
 	}))
 

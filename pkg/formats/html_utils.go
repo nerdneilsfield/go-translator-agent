@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
-	"go.uber.org/zap"
-
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
+	"go.uber.org/zap"
+	"golang.org/x/net/html"
 )
 
 // NodeFormatInfo 保存节点的原始格式信息
@@ -23,7 +23,7 @@ type NodeFormatInfo struct {
 func replaceTextPreservingStructure(selection *goquery.Selection, translatedText string) {
 	// 收集所有文本节点
 	var textNodes []*goquery.Selection
-	selection.Contents().Each(func(i int, s *goquery.Selection) {
+	selection.Contents().Each(func(_ int, s *goquery.Selection) {
 		if goquery.NodeName(s) == "#text" {
 			if strings.TrimSpace(s.Text()) != "" {
 				textNodes = append(textNodes, s)
@@ -83,7 +83,7 @@ func replaceTextPreservingStructure(selection *goquery.Selection, translatedText
 // containsOnlyHTMLElements 检查一个节点是否只包含HTML元素，没有文本内容
 func containsOnlyHTMLElements(s *goquery.Selection) bool {
 	hasText := false
-	s.Contents().Each(func(i int, child *goquery.Selection) {
+	s.Contents().Each(func(_ int, child *goquery.Selection) {
 		if goquery.NodeName(child) == "#text" {
 			text := strings.TrimSpace(child.Text())
 			if text != "" {
@@ -157,8 +157,6 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 	}
 
 	// 记录找到的脚本和样式标签
-	var scriptTags []string
-	var styleTags []string
 
 	for _, re := range protectRegexes {
 		matches := re.FindAllString(htmlStr, -1)
@@ -168,10 +166,8 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 
 			// 记录脚本和样式标签
 			if strings.HasPrefix(match, "<script") {
-				scriptTags = append(scriptTags, match)
 				logger.Debug("保护脚本标签", zap.String("script", match[:30]+"..."))
 			} else if strings.HasPrefix(match, "<style") {
-				styleTags = append(styleTags, match)
 				logger.Debug("保护样式标签", zap.String("style", match[:30]+"..."))
 			}
 
@@ -231,7 +227,7 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 			} else if child.Is("a, p, h1, h2, h3, h4, h5, h6, li, td, th, caption, figcaption, label, button, span, div, title") {
 				// 对于这些常见的包含文本的元素，检查是否有直接文本内容
 				hasDirectText := false
-				child.Contents().Each(func(j int, grandchild *goquery.Selection) {
+				child.Contents().Each(func(_ int, grandchild *goquery.Selection) {
 					if goquery.NodeName(grandchild) == "#text" {
 						if strings.TrimSpace(grandchild.Text()) != "" {
 							hasDirectText = true
@@ -270,10 +266,22 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 				processNode(child, childPath)
 			}
 		})
+
+		// 递归处理子节点
+		s.Children().Each(func(_ int, child *goquery.Selection) {
+			childPath := fmt.Sprintf("%s>%s", path, goquery.NodeName(child))
+			processNode(child, childPath)
+		})
 	}
 
-	// 从根节点开始处理
-	processNode(doc.Selection, "html")
+	// 从body开始处理
+	body := doc.Find("body")
+	if body.Length() > 0 {
+		processNode(body, "body")
+	} else {
+		// 如果没有body标签，从根节点开始处理
+		processNode(doc.Selection, "root")
+	}
 
 	// 记录收集到的文本节点数
 	logger.Info("收集到的文本节点数", zap.Int("节点数", len(textNodes)))
@@ -533,3 +541,72 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 
 	return htmlResult, nil
 }
+
+func GetTextNodesWithExclusions(selection *goquery.Selection, exclusions []string) []*html.Node {
+	var textNodes []*html.Node
+	selection.Contents().Each(func(_ int, s *goquery.Selection) {
+		node := s.Get(0)
+		if node.Type == html.TextNode {
+			textNodes = append(textNodes, node)
+		} else if node.Type == html.ElementNode {
+			// 检查是否在排除列表中
+			isExcluded := false
+			for _, ex := range exclusions {
+				if node.Data == ex {
+					isExcluded = true
+					break
+				}
+			}
+			if !isExcluded {
+				textNodes = append(textNodes, GetTextNodesWithExclusions(s, exclusions)...)
+			}
+		}
+	})
+	return textNodes
+}
+
+// getChildTextNodes 收集子节点的文本节点
+// func getChildTextNodes(s *goquery.Selection, exclusions []string, includeStyleAndScript bool) []*html.Node { // UNUSED FUNCTION
+// 	var nodes []*html.Node
+// 	s.Contents().Each(func(k int, child *goquery.Selection) {
+// 		node := child.Get(0)
+// 		if node.Type == html.TextNode {
+// 			// 过滤掉只包含空白字符的文本节点
+// 			if strings.TrimSpace(node.Data) != "" {
+// 				nodes = append(nodes, node)
+// 			}
+// 		} else if node.Type == html.ElementNode {
+// 			// 恢复内层循环来定义 grandchild 和 k
+// 			child.Contents().Each(func(k int, grandchild *goquery.Selection) {
+// 				// 检查是否是需要排除的元素类型 (例如 <script>, <style>)
+// 				isExcluded := false
+// 				for _, ex := range exclusions {
+// 					if grandchild.Is(ex) {
+// 						isExcluded = true
+// 						break
+// 					}
+// 				}
+// 				if includeStyleAndScript && (grandchild.Is("style") || grandchild.Is("script")) {
+// 					isExcluded = false // 如果明确要求包含，则不排除
+// 				}
+//
+// 				if !isExcluded {
+// 					if grandchild.Get(0).Type == html.TextNode {
+// 						if strings.TrimSpace(grandchild.Text()) != "" {
+// 							nodes = append(nodes, grandchild.Get(0))
+// 						}
+// 					} else {
+// 						// 递归处理更深层级的节点
+// 						// 注意：这里的 depth 应该来自外层函数的参数或迭代变量，此处假设为 k 或其他合适的值
+// 						grandchildTextNodes := collectTextNodesRecursive(grandchild, exclusions, false, false, k+1)
+// 						nodes = append(nodes, grandchildTextNodes...)
+// 					}
+// 				}
+// 			})
+// 		}
+// 	})
+// 	return nodes
+// }
+
+// collectTextNodesRecursive 递归收集文本节点，处理嵌套情况
+// ... (collectTextNodesRecursive function)

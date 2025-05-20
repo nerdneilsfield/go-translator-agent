@@ -56,3 +56,7 @@ release-test:
 # 正式发布
 release:
     goreleaser release --clean
+
+format:
+    gofmt -w .
+    gci write .

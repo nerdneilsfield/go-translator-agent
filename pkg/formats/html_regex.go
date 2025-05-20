@@ -5,9 +5,8 @@ import (
 	"regexp"
 	"strings"
 
-	"go.uber.org/zap"
-
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
+	"go.uber.org/zap"
 )
 
 // TranslateHTMLWithRegex 使用正则表达式翻译HTML文档，保留HTML结构

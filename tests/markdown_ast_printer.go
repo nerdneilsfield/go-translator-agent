@@ -104,7 +104,13 @@ func printAST(n ast.Node, reader text.Reader, source []byte, level int) {
 	case *ast.CodeBlock:
 		fmt.Printf("%s└─ 普通代码块\n", indent)
 	case *ast.CodeSpan:
-		content := string(node.Text(source))
+		var contentBuilder strings.Builder
+		for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+			if textNode, ok := child.(*ast.Text); ok {
+				contentBuilder.Write(textNode.Segment.Value(source))
+			}
+		}
+		content := contentBuilder.String()
 		fmt.Printf("%s└─ 行内代码: %q\n", indent, content)
 	case *ast.List:
 		if node.IsOrdered() {
@@ -122,7 +128,7 @@ func printAST(n ast.Node, reader text.Reader, source []byte, level int) {
 	case *ast.Blockquote:
 		fmt.Printf("%s└─ 引用块\n", indent)
 	case *ast.HTMLBlock:
-		content := string(node.Text(source))
+		content := string(node.Lines().Value(source))
 		fmt.Printf("%s└─ HTML块: %q\n", indent, content)
 	case *ast.RawHTML:
 		content := string(node.Segments.Value(source))

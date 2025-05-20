@@ -12,7 +12,7 @@ type NewProgressTracker struct {
 	mu sync.Mutex
 
 	// 进度适配器
-	adapter *progress.ProgressAdapter
+	adapter *progress.Adapter
 
 	// 总字数
 	totalChars int
@@ -45,20 +45,20 @@ func NewNewProgressTracker(totalChars int) *NewProgressTracker {
 	now := time.Now()
 
 	// 创建进度适配器
-	adapter := progress.NewProgressAdapter(int64(totalChars))
+	adapter := progress.NewAdapter(nil)
 
 	return &NewProgressTracker{
-		adapter:                      adapter,
-		totalChars:                   totalChars,
-		startTime:                    now,
-		lastUpdateTime:               now,
-		usedInitialInputTokens:       0,
-		usedInitialOutputTokens:      0,
-		usedReflectionInputTokens:    0,
-		usedReflectionOutputTokens:   0,
-		usedImprovementInputTokens:   0,
-		usedImprovementOutputTokens:  0,
-		realTranslatedChars:          0,
+		adapter:                     adapter,
+		totalChars:                  totalChars,
+		startTime:                   now,
+		lastUpdateTime:              now,
+		usedInitialInputTokens:      0,
+		usedInitialOutputTokens:     0,
+		usedReflectionInputTokens:   0,
+		usedReflectionOutputTokens:  0,
+		usedImprovementInputTokens:  0,
+		usedImprovementOutputTokens: 0,
+		realTranslatedChars:         0,
 	}
 }
 
@@ -182,32 +182,32 @@ func (tp *NewProgressTracker) GetProgress() (totalChars int, translatedChars int
 	}
 
 	return total, translated, realTotal, timeRemaining, TokenUsage{
-		InitialInputTokens:      usedInitialInput,
-		InitialOutputTokens:     usedInitialOutput,
-		ReflectionInputTokens:   usedReflectionInput,
-		ReflectionOutputTokens:  usedReflectionOutput,
-		ImprovementInputTokens:  usedImprovementInput,
-		ImprovementOutputTokens: usedImprovementOutput,
-		InitialTokenSpeed:       0, // 不再使用
-		ReflectionTokenSpeed:    0, // 不再使用
-		ImprovementTokenSpeed:   0, // 不再使用
-		ElapsedTime:             time.Since(startTime),
-	}, EstimatedCost{
-		InitialInputCost:      initialInputCost,
-		InitialOutputCost:     initialOutputCost,
-		InitialTotalCost:      initialTotalCost,
-		InitialCostUnit:       modelPrice.InitialModelPriceUnit,
-		ReflectionInputCost:   reflectionInputCost,
-		ReflectionOutputCost:  reflectionOutputCost,
-		ReflectionTotalCost:   reflectionTotalCost,
-		ReflectionCostUnit:    modelPrice.ReflectionModelPriceUnit,
-		ImprovementInputCost:  improvementInputCost,
-		ImprovementOutputCost: improvementOutputCost,
-		ImprovementTotalCost:  improvementTotalCost,
-		ImprovementCostUnit:   modelPrice.ImprovementModelPriceUnit,
-		TotalCost:             totalCost,
-		TotalCostUnit:         totalCostUnit,
-	}
+			InitialInputTokens:      usedInitialInput,
+			InitialOutputTokens:     usedInitialOutput,
+			ReflectionInputTokens:   usedReflectionInput,
+			ReflectionOutputTokens:  usedReflectionOutput,
+			ImprovementInputTokens:  usedImprovementInput,
+			ImprovementOutputTokens: usedImprovementOutput,
+			InitialTokenSpeed:       0, // 不再使用
+			ReflectionTokenSpeed:    0, // 不再使用
+			ImprovementTokenSpeed:   0, // 不再使用
+			ElapsedTime:             time.Since(startTime),
+		}, EstimatedCost{
+			InitialInputCost:      initialInputCost,
+			InitialOutputCost:     initialOutputCost,
+			InitialTotalCost:      initialTotalCost,
+			InitialCostUnit:       modelPrice.InitialModelPriceUnit,
+			ReflectionInputCost:   reflectionInputCost,
+			ReflectionOutputCost:  reflectionOutputCost,
+			ReflectionTotalCost:   reflectionTotalCost,
+			ReflectionCostUnit:    modelPrice.ReflectionModelPriceUnit,
+			ImprovementInputCost:  improvementInputCost,
+			ImprovementOutputCost: improvementOutputCost,
+			ImprovementTotalCost:  improvementTotalCost,
+			ImprovementCostUnit:   modelPrice.ImprovementModelPriceUnit,
+			TotalCost:             totalCost,
+			TotalCostUnit:         totalCostUnit,
+		}
 }
 
 // GetCompletionPercentage 获取完成百分比
@@ -253,11 +253,11 @@ func (tp *NewProgressTracker) Reset() {
 	tp.realTranslatedChars = 0
 
 	// 创建新的进度适配器
-	tp.adapter = progress.NewProgressAdapter(int64(tp.totalChars))
+	tp.adapter = progress.NewAdapter(nil)
 }
 
 // GetAdapter 获取进度适配器
-func (tp *NewProgressTracker) GetAdapter() *progress.ProgressAdapter {
+func (tp *NewProgressTracker) GetAdapter() *progress.Adapter {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
 

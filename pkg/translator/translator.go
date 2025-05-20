@@ -13,7 +13,6 @@ import (
 	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
-
 	"go.uber.org/zap"
 )
 
@@ -48,25 +47,28 @@ type ModelPrice struct {
 	ImprovementModelPriceUnit   string
 }
 
-// TranslatorImpl 是 Translator 接口的实现
-type TranslatorImpl struct {
-	config            *config.Config
-	models            map[string]LLMClient
-	logger            logger.Logger
-	activeSteps       *StepSetConfig
-	cache             Cache
-	forceCacheRefresh bool // 强制刷新缓存
-	progressBar       *progress.Writer
-	progressTracker   *TranslationProgressTracker
+// Impl is the default implementation of the Translator interface.
+type Impl struct {
+	config             *config.Config
+	models             map[string]LLMClient
+	logger             logger.Logger
+	activeSteps        *StepSetConfig
+	cache              Cache
+	forceCacheRefresh  bool // 强制刷新缓存
+	progressBar        *progress.Writer
+	progressTracker    *TranslationProgressTracker
 	newProgressTracker *NewProgressTracker
-	useNewProgressBar bool // 使用新的进度条系统
-	modelPrice        ModelPrice
+	useNewProgressBar  bool // 使用新的进度条系统
+	modelPrice         ModelPrice
 
-	translated_tracker *progress.Tracker
-	cost_tracker       *progress.Tracker
+	translatedTracker *progress.Tracker
+	costTracker       *progress.Tracker
 
 	// 进度跟踪
 	progressMu sync.RWMutex
+
+	client RawClient
+	Logger *zap.Logger
 }
 
 // StepSetConfig 包含三步翻译流程的配置
@@ -110,108 +112,123 @@ func NewModelPrice(initialModel LLMClient, reflectionModel LLMClient, improvemen
 	}
 }
 
-// New 创建一个新的翻译器实例
-func New(cfg *config.Config, options ...Option) (*TranslatorImpl, error) {
-	// 创建日志记录器
-	log := logger.NewZapLogger(cfg.Debug)
-
-	// 应用选项
-	opts := &translatorOptions{
-		cache:             newFileCache(cfg.CacheDir),
-		forceCacheRefresh: false,
+// New creates a new Impl.
+func New(cfg *config.Config, opts ...Option) (*Impl, error) {
+	// Default options
+	options := translatorOptions{
+		// Initialize with default cache if necessary, or handle nil case
+		// cache: newMemoryCache(), // Example: Default to memory cache
+	}
+	for _, opt := range opts {
+		opt(&options)
 	}
 
-	for _, option := range options {
-		option(opts)
+	// 使用配置中的 Debug 标志来创建 zapLogger
+	var zapLogger *zap.Logger // 声明 zapLogger
+	var err error             // 声明 err
+	if cfg.Debug {
+		zapLogger, err = zap.NewDevelopment() // 更正： लाभ -> zap
+	} else {
+		zapLogger, err = zap.NewProduction() // 更正： लाभ -> zap
+	}
+	if err != nil {
+		return nil, fmt.Errorf("创建 zapLogger 失败: %w", err)
 	}
 
-	// 记录配置信息
-	log.Info("初始化翻译器",
-		zap.String("源语言", cfg.SourceLang),
-		zap.String("目标语言", cfg.TargetLang),
-		zap.String("国家/地区", cfg.Country),
-		zap.String("默认模型", cfg.DefaultModelName),
-		zap.String("活动步骤集", cfg.ActiveStepSet),
-	)
+	// 使用 zapLogger 创建 logger.Logger 实例
+	log := logger.NewZapLogger(cfg.Debug) // 这个函数接收 bool，与上面 zap.NewXXX 不完全一致，需要确认 logger.NewZapLogger 的实现
 
-	// 初始化所有模型
 	models, err := initModels(cfg, log)
 	if err != nil {
 		return nil, fmt.Errorf("初始化模型失败: %w", err)
 	}
 
-	// 获取步骤集配置
-	stepSet, ok := cfg.StepSets[cfg.ActiveStepSet]
+	stepSetConf, ok := cfg.StepSets[cfg.ActiveStepSet]
 	if !ok {
-		return nil, fmt.Errorf("未找到步骤集: %s", cfg.ActiveStepSet)
+		return nil, fmt.Errorf("未找到活动的步骤集配置: %s", cfg.ActiveStepSet)
 	}
 
-	// 获取步骤模型
-	initialModel, ok := models[stepSet.InitialTranslation.ModelName]
-	if !ok && stepSet.InitialTranslation.ModelName != "none" && stepSet.InitialTranslation.ModelName != "raw" {
-		return nil, fmt.Errorf("未找到模型: %s", stepSet.InitialTranslation.ModelName)
-	}
+	initialModel := models[stepSetConf.InitialTranslation.ModelName]
+	reflectionModel := models[stepSetConf.Reflection.ModelName]
+	improvementModel := models[stepSetConf.Improvement.ModelName]
 
-	// 处理反思模型
-	var reflectionModel LLMClient
-	if stepSet.Reflection.ModelName != "none" && stepSet.Reflection.ModelName != "raw" {
-		var ok bool
-		reflectionModel, ok = models[stepSet.Reflection.ModelName]
-		if !ok {
-			return nil, fmt.Errorf("未找到模型: %s", stepSet.Reflection.ModelName)
-		}
-	} else {
-		log.Info("反思步骤的模型设置为none或raw，将跳过此步骤")
-	}
-
-	// 处理改进模型
-	var improvementModel LLMClient
-	if stepSet.Improvement.ModelName != "none" && stepSet.Improvement.ModelName != "raw" {
-		var ok bool
-		improvementModel, ok = models[stepSet.Improvement.ModelName]
-		if !ok {
-			return nil, fmt.Errorf("未找到模型: %s", stepSet.Improvement.ModelName)
-		}
-	} else {
-		log.Info("改进步骤的模型设置为none或raw，将跳过此步骤")
-	}
-
-	// 创建步骤集配置
 	activeSteps := &StepSetConfig{
-		ID:                stepSet.ID,
-		Name:              stepSet.Name,
-		Description:       stepSet.Description,
+		ID:                stepSetConf.ID,
+		Name:              stepSetConf.Name,
+		Description:       stepSetConf.Description,
 		InitialModel:      initialModel,
 		ReflectionModel:   reflectionModel,
 		ImprovementModel:  improvementModel,
-		FastModeThreshold: stepSet.FastModeThreshold,
+		FastModeThreshold: stepSetConf.FastModeThreshold,
 	}
 
 	modelPrice := NewModelPrice(initialModel, reflectionModel, improvementModel)
 
-	translator := &TranslatorImpl{
-		config:            cfg,
-		models:            models,
-		logger:            log,
-		activeSteps:       activeSteps,
-		cache:             opts.cache,
-		forceCacheRefresh: opts.forceCacheRefresh,
-		progressBar:       opts.progressBar,
-		progressTracker:   NewTranslationProgressTracker(0),
-		useNewProgressBar: opts.useNewProgressBar,
-		modelPrice:        modelPrice,
+	var llmClient RawClient
+	if rawModel, exists := models["raw"]; exists {
+		if rc, ok := rawModel.(*RawClient); ok {
+			llmClient = *rc
+		} else {
+			llmClient = *NewRawClient()
+		}
+	} else {
+		llmClient = *NewRawClient()
 	}
 
-	// 如果使用新的进度条系统，初始化新的进度跟踪器
-	if opts.useNewProgressBar {
-		translator.newProgressTracker = NewNewProgressTracker(0)
+	// 创建 cacher
+	var cacher Cache
+	if cfg.UseCache {
+		if options.cache != nil { // 如果通过 Option 提供了 cache
+			cacher = options.cache
+		} else { // 否则，根据配置创建默认的 cache
+			// 默认为文件缓存，如果 CacheDir 为空，则使用内存缓存
+			if cfg.CacheDir != "" {
+				fileCache := newFileCache(cfg.CacheDir)
+				cacher = fileCache
+			} else {
+				cacher = NewMemoryCache()
+				log.Info("缓存目录未配置或为空，使用内存缓存")
+			}
+		}
+	} else {
+		log.Info("缓存已禁用")
+		// 可以选择创建一个空的或无操作的缓存实现
+		cacher = NewMemoryCache()
+	}
+
+	translator := &Impl{
+		config:            cfg,
+		models:            models,
+		logger:            log, // logger.Logger 类型
+		activeSteps:       activeSteps,
+		cache:             cacher,                           // 使用从选项或默认创建的 cacher
+		forceCacheRefresh: options.forceCacheRefresh,        // 来自选项
+		progressBar:       options.progressBar,              // 来自选项
+		progressTracker:   NewTranslationProgressTracker(0), // 旧进度条，后续看是否移除或整合
+		useNewProgressBar: options.useNewProgressBar,        // 来自选项
+		modelPrice:        modelPrice,
+		client:            llmClient,
+		Logger:            zapLogger, // *zap.Logger 类型
+	}
+
+	if translator.useNewProgressBar {
+		translator.newProgressTracker = NewNewProgressTracker(0) // 初始化时 totalChars 可以为0，后续通过 SetTotalChars 更新
 		translator.newProgressTracker.UpdateModelPrice(modelPrice)
+	}
+
+	// 如果强制刷新缓存，在初始化翻译器之前执行
+	if translator.forceCacheRefresh && translator.cache != nil {
+		translator.logger.Info("正在强制刷新缓存...")
+		if err := translator.cache.Clear(); err != nil {
+			translator.logger.Warn("强制刷新缓存失败", zap.Error(err))
+			// 根据需求决定是否在此处返回错误
+		}
 	}
 
 	return translator, nil
 }
 
-func (t *TranslatorImpl) RemoveUsedTags(text string) string {
+func (t *Impl) RemoveUsedTags(text string) string {
 	result := text
 
 	// 移除常见的提示词标记
@@ -245,7 +262,7 @@ func (t *TranslatorImpl) RemoveUsedTags(text string) string {
 			}
 
 			// 保留标记之间的内容，移除标记本身
-			content := result[startIdx+len(tag.start):endIdx]
+			content := result[startIdx+len(tag.start) : endIdx]
 			result = result[:startIdx] + content + result[endIdx+len(tag.end):]
 		}
 
@@ -256,10 +273,10 @@ func (t *TranslatorImpl) RemoveUsedTags(text string) string {
 
 	// 使用正则表达式移除其他可能的提示词标记
 	promptTagsRegex := []*regexp.Regexp{
-		regexp.MustCompile(`</?[A-Z_]+>`),                  // 如 <TRANSLATION> 或 </TRANSLATION>
-		regexp.MustCompile(`</?[a-z_]+>`),                  // 如 <translation> 或 </translation>
-		regexp.MustCompile(`</?[\p{Han}]+>`),               // 中文标记，如 <翻译> 或 </翻译>
-		regexp.MustCompile(`</?[\p{Han}][^>]{0,20}>`),      // 带属性的中文标记
+		regexp.MustCompile(`</?[A-Z_]+>`),                   // 如 <TRANSLATION> 或 </TRANSLATION>
+		regexp.MustCompile(`</?[a-z_]+>`),                   // 如 <translation> 或 </translation>
+		regexp.MustCompile(`</?[\p{Han}]+>`),                // 中文标记，如 <翻译> 或 </翻译>
+		regexp.MustCompile(`</?[\p{Han}][^>]{0,20}>`),       // 带属性的中文标记
 		regexp.MustCompile(`\[INTERNAL INSTRUCTIONS:.*?\]`), // 内部指令
 	}
 
@@ -274,7 +291,7 @@ func (t *TranslatorImpl) RemoveUsedTags(text string) string {
 }
 
 // fixFormatIssues 修复翻译结果中的格式问题
-func (t *TranslatorImpl) fixFormatIssues(text string) string {
+func (t *Impl) fixFormatIssues(text string) string {
 	result := text
 
 	// 修复错误的斜体标记（确保*前后有空格或在行首尾）
@@ -301,17 +318,17 @@ func (t *TranslatorImpl) fixFormatIssues(text string) string {
 }
 
 // GetLogger 返回日志记录器
-func (t *TranslatorImpl) GetLogger() logger.Logger {
+func (t *Impl) GetLogger() logger.Logger {
 	return t.logger
 }
 
 // shouldUseCache 判断是否应该使用缓存
-func (t *TranslatorImpl) shouldUseCache() bool {
+func (t *Impl) shouldUseCache() bool {
 	return t.config.UseCache
 }
 
 // refreshCache 刷新缓存
-func (t *TranslatorImpl) refreshCache() error {
+func (t *Impl) refreshCache() error {
 	if t.forceCacheRefresh {
 		t.logger.Info("正在刷新缓存")
 		return t.cache.Clear()
@@ -319,7 +336,7 @@ func (t *TranslatorImpl) refreshCache() error {
 	return nil
 }
 
-func (t *TranslatorImpl) InitTranslator() {
+func (t *Impl) InitTranslator() {
 	if t.useNewProgressBar {
 		// 使用新的进度条系统
 		if t.newProgressTracker == nil {
@@ -361,7 +378,7 @@ func (t *TranslatorImpl) InitTranslator() {
 }
 
 // Translate 将文本从源语言翻译到目标语言
-func (t *TranslatorImpl) Translate(text string, retryFailedParts bool) (string, error) {
+func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 	t.logger.Debug("待翻译文本片段", zap.String("snippet", snippet(text)), zap.Int("长度", len(text)))
 	// 如果启用了强制刷新缓存，先清除缓存
 	if t.forceCacheRefresh {
@@ -436,7 +453,7 @@ func (t *TranslatorImpl) Translate(text string, retryFailedParts bool) (string, 
 		// 缓存结果
 		if t.shouldUseCache() {
 			cacheKey := t.generateCacheKey(text, "final")
-			t.cache.Set(cacheKey, result)
+			_ = t.cache.Set(cacheKey, result)
 		}
 
 		// 记录翻译结果的摘要
@@ -506,7 +523,8 @@ func (t *TranslatorImpl) Translate(text string, retryFailedParts bool) (string, 
 
 		// 缓存初始翻译结果
 		if t.shouldUseCache() {
-			t.cache.Set(initialCacheKey, initialTranslation)
+			_ = t.cache.Set(initialCacheKey, initialTranslation)
+			_ = t.cache.Set(t.generateCacheKey(text, "final"), initialTranslation)
 		}
 	}
 
@@ -516,7 +534,7 @@ func (t *TranslatorImpl) Translate(text string, retryFailedParts bool) (string, 
 
 		// 将初始翻译结果作为最终结果缓存
 		if t.shouldUseCache() {
-			t.cache.Set(t.generateCacheKey(text, "final"), initialTranslation)
+			_ = t.cache.Set(t.generateCacheKey(text, "final"), initialTranslation)
 		}
 
 		return initialTranslation, nil
@@ -566,7 +584,7 @@ func (t *TranslatorImpl) Translate(text string, retryFailedParts bool) (string, 
 
 		// 缓存反思结果
 		if t.shouldUseCache() {
-			t.cache.Set(reflectionCacheKey, reflection)
+			_ = t.cache.Set(reflectionCacheKey, reflection)
 		}
 	}
 
@@ -614,8 +632,8 @@ func (t *TranslatorImpl) Translate(text string, retryFailedParts bool) (string, 
 
 		// 缓存改进结果
 		if t.shouldUseCache() {
-			t.cache.Set(improvementCacheKey, improvedTranslation)
-			t.cache.Set(t.generateCacheKey(text, "final"), improvedTranslation)
+			_ = t.cache.Set(improvementCacheKey, improvedTranslation)
+			_ = t.cache.Set(t.generateCacheKey(text, "final"), improvedTranslation)
 		}
 	}
 
@@ -632,7 +650,7 @@ func (t *TranslatorImpl) Translate(text string, retryFailedParts bool) (string, 
 }
 
 // initialTranslation 执行初始翻译
-func (t *TranslatorImpl) initialTranslation(text string) (string, error) {
+func (t *Impl) initialTranslation(text string) (string, error) {
 	// 检查缓存
 	if t.shouldUseCache() {
 		cacheKey := t.generateCacheKey(text, "initial")
@@ -712,16 +730,14 @@ Please provide only the translation of the text below, strictly adhering to the 
 	// 缓存结果
 	if t.shouldUseCache() {
 		cacheKey := t.generateCacheKey(text, "initial")
-		if err := t.cache.Set(cacheKey, result); err != nil {
-			t.logger.Warn("缓存初始翻译结果失败", zap.Error(err))
-		}
+		_ = t.cache.Set(cacheKey, result)
 	}
 
 	return result, nil
 }
 
 // reflection 执行反思
-func (t *TranslatorImpl) reflection(sourceText, translation string) (string, error) {
+func (t *Impl) reflection(sourceText, translation string) (string, error) {
 	// 如果反思模型为nil（设置为"none"），则跳过反思步骤
 	if t.activeSteps.ReflectionModel == nil {
 		t.logger.Info("反思模型设置为none，跳过反思步骤")
@@ -823,16 +839,14 @@ Output only a list of constructive suggestions, each addressing a specific aspec
 	// 缓存结果
 	if t.shouldUseCache() {
 		cacheKey := t.generateCacheKey(sourceText+translation, "reflection")
-		if err := t.cache.Set(cacheKey, result); err != nil {
-			t.logger.Warn("缓存反思结果失败", zap.Error(err))
-		}
+		_ = t.cache.Set(cacheKey, result)
 	}
 
 	return result, nil
 }
 
 // improvement 执行改进
-func (t *TranslatorImpl) improvement(sourceText, translation, reflection string) (string, error) {
+func (t *Impl) improvement(sourceText, translation, reflection string) (string, error) {
 	// 如果改进模型为nil（设置为"none"），则跳过改进步骤
 	if t.activeSteps.ImprovementModel == nil {
 		t.logger.Info("改进模型设置为none，跳过改进步骤")
@@ -944,16 +958,14 @@ Output only the new, edited translation and nothing else.`,
 	// 缓存结果
 	if t.shouldUseCache() {
 		cacheKey := t.generateCacheKey(sourceText+translation+reflection, "improvement")
-		if err := t.cache.Set(cacheKey, result); err != nil {
-			t.logger.Warn("缓存改进结果失败", zap.Error(err))
-		}
+		_ = t.cache.Set(cacheKey, result)
 	}
 
 	return result, nil
 }
 
 // generateCacheKey 生成缓存键
-func (t *TranslatorImpl) generateCacheKey(text, step string) string {
+func (t *Impl) generateCacheKey(text, step string) string {
 	key := fmt.Sprintf("%s:%s:%s:%s:%s",
 		t.config.SourceLang,
 		t.config.TargetLang,
@@ -966,12 +978,12 @@ func (t *TranslatorImpl) generateCacheKey(text, step string) string {
 }
 
 // GetConfig 返回翻译器配置
-func (t *TranslatorImpl) GetConfig() *config.Config {
+func (t *Impl) GetConfig() *config.Config {
 	return t.config
 }
 
 // GetProgress 返回当前翻译进度
-func (t *TranslatorImpl) GetProgress() string {
+func (t *Impl) GetProgress() string {
 	t.progressMu.RLock()
 	defer t.progressMu.RUnlock()
 
@@ -979,7 +991,7 @@ func (t *TranslatorImpl) GetProgress() string {
 }
 
 // updateProgress 更新翻译进度
-func (t *TranslatorImpl) updateProgress(text string) {
+func (t *Impl) updateProgress(text string) {
 	t.progressMu.Lock()
 	defer t.progressMu.Unlock()
 
@@ -992,9 +1004,6 @@ func (t *TranslatorImpl) updateProgress(text string) {
 	}
 
 	// 使用旧的进度条系统
-	// 更新进度跟踪器
-	t.progressTracker.UpdateProgress(len(text))
-
 	// 获取当前进度信息
 	totalChars, translatedChars, _, estimatedTimeRemaining, _, estimatedCost := t.progressTracker.GetProgress()
 
@@ -1010,36 +1019,36 @@ func (t *TranslatorImpl) updateProgress(text string) {
 	}
 
 	// 如果跟踪器不存在，重新初始化进度条
-	if t.translated_tracker == nil || t.cost_tracker == nil {
+	if t.translatedTracker == nil || t.costTracker == nil {
 		t.startProgress()
 		return
 	}
 
 	// 更新翻译字数跟踪器
-	if t.translated_tracker != nil {
+	if t.translatedTracker != nil {
 		// 确保总字符数已设置
-		if t.translated_tracker.Total <= 0 && totalChars > 0 {
-			t.translated_tracker.UpdateTotal(int64(totalChars))
+		if t.translatedTracker.Total <= 0 && totalChars > 0 {
+			t.translatedTracker.UpdateTotal(int64(totalChars))
 		}
 
 		// 更新当前值
-		t.translated_tracker.SetValue(int64(translatedChars))
+		t.translatedTracker.SetValue(int64(translatedChars))
 
 		// 设置额外信息
-		t.translated_tracker.UpdateMessage(fmt.Sprintf("翻译字数 (%.1f%%)", percentComplete))
+		t.translatedTracker.UpdateMessage(fmt.Sprintf("翻译字数 (%.1f%%)", percentComplete))
 	}
 
 	// 更新成本跟踪器
-	if t.cost_tracker != nil {
+	if t.costTracker != nil {
 		costValue := int64(estimatedCost.TotalCost * 1000)
-		t.cost_tracker.SetValue(costValue)
+		t.costTracker.SetValue(costValue)
 
 		// 设置额外信息
 		remainingTimeStr := "计算中..."
 		if estimatedTimeRemaining > 0 {
 			remainingTimeStr = fmt.Sprintf("%.1f分钟", estimatedTimeRemaining/60)
 		}
-		t.cost_tracker.UpdateMessage(fmt.Sprintf("成本: $%.2f (剩余: %s)",
+		t.costTracker.UpdateMessage(fmt.Sprintf("成本: $%.2f (剩余: %s)",
 			estimatedCost.TotalCost, remainingTimeStr))
 	}
 
@@ -1050,7 +1059,7 @@ func (t *TranslatorImpl) updateProgress(text string) {
 }
 
 // startProgress 开始跟踪翻译进度
-func (t *TranslatorImpl) startProgress() {
+func (t *Impl) startProgress() {
 	if t.progressBar == nil {
 		return
 	}
@@ -1066,34 +1075,34 @@ func (t *TranslatorImpl) startProgress() {
 	}
 
 	// 如果已经有跟踪器，先停止进度条
-	if t.translated_tracker != nil || t.cost_tracker != nil {
+	if t.translatedTracker != nil || t.costTracker != nil {
 		// 停止当前进度条
 		(*t.progressBar).Stop()
 
 		// 重置跟踪器
-		t.translated_tracker = nil
-		t.cost_tracker = nil
+		t.translatedTracker = nil
+		t.costTracker = nil
 	}
 
 	// 创建翻译字数跟踪器
-	t.translated_tracker = &progress.Tracker{
+	t.translatedTracker = &progress.Tracker{
 		Message: "翻译字数",
 		Total:   int64(totalChars),
 		Units:   progress.UnitsBytes,
 	}
 
 	// 添加到进度条
-	(*t.progressBar).AppendTracker(t.translated_tracker)
+	(*t.progressBar).AppendTracker(t.translatedTracker)
 
 	// 创建翻译成本跟踪器
-	t.cost_tracker = &progress.Tracker{
+	t.costTracker = &progress.Tracker{
 		Message: "翻译成本",
 		Total:   1000, // 设置一个合理的最大值
 		Units:   progress.UnitsCurrencyDollar,
 	}
 
 	// 添加到进度条
-	(*t.progressBar).AppendTracker(t.cost_tracker)
+	(*t.progressBar).AppendTracker(t.costTracker)
 
 	// 确保进度条正在渲染
 	if !(*t.progressBar).IsRenderInProgress() {
@@ -1102,21 +1111,21 @@ func (t *TranslatorImpl) startProgress() {
 }
 
 // endProgress 结束翻译进度跟踪
-func (t *TranslatorImpl) endProgress() {
-	t.progressMu.Lock()
-	defer t.progressMu.Unlock()
+// func (t *Impl) endProgress() { // UNUSED FUNCTION
+// 	t.progressMu.Lock()
+// 	defer t.progressMu.Unlock()
+//
+// 	_, translatedChars, _, _, _, estimatedCost := t.progressTracker.GetProgress()
+//
+// 	t.translatedTracker.SetValue(int64(translatedChars))
+// 	t.costTracker.SetValue(int64(estimatedCost.TotalCost * 1000))
+// }
 
-	_, translatedChars, _, _, _, estimatedCost := t.progressTracker.GetProgress()
-
-	t.translated_tracker.SetValue(int64(translatedChars))
-	t.cost_tracker.SetValue(int64(estimatedCost.TotalCost * 1000))
-}
-
-func (t *TranslatorImpl) GetProgressTracker() *TranslationProgressTracker {
+func (t *Impl) GetProgressTracker() *TranslationProgressTracker {
 	return t.progressTracker
 }
 
-func (t *TranslatorImpl) SetTotalChars(realTotalChars int, totalChars int) {
+func (t *Impl) SetTotalChars(realTotalChars int, totalChars int) {
 	if t.useNewProgressBar && t.newProgressTracker != nil {
 		// 使用新的进度条系统
 		t.newProgressTracker.SetRealTotalChars(realTotalChars)
@@ -1127,13 +1136,13 @@ func (t *TranslatorImpl) SetTotalChars(realTotalChars int, totalChars int) {
 		t.progressTracker.SetTotalChars(totalChars)
 
 		// 如果进度条已创建，更新其总值
-		if t.translated_tracker != nil {
-			t.translated_tracker.UpdateTotal(int64(totalChars))
+		if t.translatedTracker != nil {
+			t.translatedTracker.UpdateTotal(int64(totalChars))
 		}
 	}
 }
 
-func (t *TranslatorImpl) Finish() {
+func (t *Impl) Finish() {
 	go func() {
 		fmt.Println(text.FgGreen.Sprint("============Finished============"))
 		fmt.Println("")

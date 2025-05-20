@@ -121,8 +121,8 @@ func TestHTMLNodeReplacement(t *testing.T) {
 
 	// 翻译映射
 	translations := map[string]string{
-		"Test Page":              "测试页面",
-		"Hello World":            "你好世界",
+		"Test Page":                 "测试页面",
+		"Hello World":               "你好世界",
 		"This is a test paragraph.": "这是一个测试段落。",
 	}
 

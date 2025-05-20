@@ -52,11 +52,11 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 	}
 
 	// 获取配置
-	var autoSaveInterval int = 300    // 默认5分钟
-	var translationTimeout int = 1800 // 默认30分钟
-	var minSplitSize int = 100        // 默认最小分割大小
-	var maxSplitSize int = 1000       // 默认最大分割大小
-	var concurrency int = 4           // 默认并行度
+	var autoSaveInterval = 300    // 默认5分钟
+	var translationTimeout = 1800 // 默认30分钟
+	var minSplitSize = 100        // 默认最小分割大小
+	var maxSplitSize = 1000       // 默认最大分割大小
+	var concurrency = 4           // 默认并行度
 
 	if cfg, ok := p.Translator.(interface{ GetConfig() *config.Config }); ok {
 		config := cfg.GetConfig()
@@ -156,7 +156,7 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 
 	// 创建临时结果变量
 	var partialResult string
-	var lastSaveTime time.Time = time.Now()
+	var lastSaveTime = time.Now()
 
 	// 等待翻译完成或超时
 	for {
@@ -233,7 +233,8 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 		}
 	}
 
-	return nil
+	// TODO: Investigate govet unreachable code warning
+	// return nil
 }
 
 // splitTextToChunks 将文本分割为适当大小的块，优先按自然段落分割

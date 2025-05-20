@@ -5,12 +5,11 @@ import (
 	"testing"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-
 	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
 	"github.com/nerdneilsfield/go-translator-agent/internal/test"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/formats"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 // 测试使用goquery库解析和翻译XML

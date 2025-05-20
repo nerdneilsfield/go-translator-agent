@@ -49,7 +49,7 @@ func TestNewProgressBar(t *testing.T) {
 	processedChars := 0
 	inputTokens := 0
 	outputTokens := 0
-	inputTokenPrice := 0.001 // 每1000个token的价格
+	inputTokenPrice := 0.001  // 每1000个token的价格
 	outputTokenPrice := 0.002 // 每1000个token的价格
 
 	// 更新进度条
@@ -73,7 +73,7 @@ func TestNewProgressBar(t *testing.T) {
 		remainingTimeStr := formatDuration(time.Duration(remainingTime) * time.Second)
 
 		// 计算成本
-		cost := float64(inputTokens) * inputTokenPrice / 1000.0 + float64(outputTokens) * outputTokenPrice / 1000.0
+		cost := float64(inputTokens)*inputTokenPrice/1000.0 + float64(outputTokens)*outputTokenPrice/1000.0
 		costStr := pterm.Sprintf("$%.4f", cost)
 
 		// 更新进度条标题

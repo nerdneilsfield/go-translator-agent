@@ -9,14 +9,13 @@ import (
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
 	"github.com/stretchr/testify/mock"
-	"go.uber.org/zap"
 )
 
 // MockTranslator 是一个模拟的翻译器实现
 type MockTranslator struct {
 	mock.Mock
-	cfg              *config.Config
-	logger           logger.Logger
+	cfg               *config.Config
+	logger            logger.Logger
 	predefinedResults map[string]string
 }
 
@@ -52,8 +51,8 @@ func (m *MockCache) Clear() error {
 // NewMockTranslator 创建一个新的模拟翻译器
 func NewMockTranslator(cfg *config.Config, logger logger.Logger) *MockTranslator {
 	return &MockTranslator{
-		cfg:              cfg,
-		logger:           logger,
+		cfg:               cfg,
+		logger:            logger,
 		predefinedResults: make(map[string]string),
 	}
 }
@@ -191,34 +190,30 @@ func (m *MockTranslator) TranslateFile(inputPath, outputPath string) error {
 	return nil
 }
 
-// CustomZapLogger 是一个自定义的Zap日志记录器
-type CustomZapLogger struct {
-	logger *zap.Logger
+// CustomZapLogger is a mock logger that implements a subset of zap.Logger methods.
+type CustomZapLogger struct{}
+
+// Debug logs a debug message.
+func (c *CustomZapLogger) Debug(msg string, _ ...interface{}) {
+	fmt.Printf("DEBUG: %s\n", msg)
 }
 
-// Debug 实现Debug日志方法
-func (c *CustomZapLogger) Debug(msg string, fields ...interface{}) {
-	c.logger.Debug(msg)
+// Info logs an info message.
+func (c *CustomZapLogger) Info(msg string, _ ...interface{}) {
+	fmt.Printf("INFO: %s\n", msg)
 }
 
-// Info 实现Info日志方法
-func (c *CustomZapLogger) Info(msg string, fields ...interface{}) {
-	c.logger.Info(msg)
+// Warn logs a warning message.
+func (c *CustomZapLogger) Warn(msg string, _ ...interface{}) {
+	fmt.Printf("WARN: %s\n", msg)
 }
 
-// Warn 实现Warn日志方法
-func (c *CustomZapLogger) Warn(msg string, fields ...interface{}) {
-	c.logger.Warn(msg)
+// Error logs an error message.
+func (c *CustomZapLogger) Error(msg string, _ ...interface{}) {
+	fmt.Printf("ERROR: %s\n", msg)
 }
 
-// Error 实现Error日志方法
-func (c *CustomZapLogger) Error(msg string, fields ...interface{}) {
-	c.logger.Error(msg)
+// Fatal logs a fatal message.
+func (c *CustomZapLogger) Fatal(msg string, _ ...interface{}) {
+	fmt.Printf("FATAL: %s\n", msg)
 }
-
-// Fatal 实现Fatal日志方法
-func (c *CustomZapLogger) Fatal(msg string, fields ...interface{}) {
-	c.logger.Fatal(msg)
-}
-
-

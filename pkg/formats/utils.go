@@ -9,10 +9,9 @@ import (
 	"sync"
 	"unicode"
 
+	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 	"go.uber.org/zap"
 	"golang.org/x/net/html"
-
-	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 )
 
 type Chunk struct {
@@ -311,7 +310,7 @@ func fixEncodingIssues(html string) string {
 			}
 
 			// 保留标记之间的内容，移除标记本身
-			content := result[startIdx+len(tag.start):endIdx]
+			content := result[startIdx+len(tag.start) : endIdx]
 			result = result[:startIdx] + content + result[endIdx+len(tag.end):]
 		}
 
@@ -322,10 +321,10 @@ func fixEncodingIssues(html string) string {
 
 	// 使用正则表达式移除其他可能的提示词标记
 	promptTagsRegex := []*regexp.Regexp{
-		regexp.MustCompile(`</?[A-Z_]+>`),                  // 如 <TRANSLATION> 或 </TRANSLATION>
-		regexp.MustCompile(`</?[a-z_]+>`),                  // 如 <translation> 或 </translation>
-		regexp.MustCompile(`</?[\p{Han}]+>`),               // 中文标记，如 <翻译> 或 </翻译>
-		regexp.MustCompile(`</?[\p{Han}][^>]{0,20}>`),      // 带属性的中文标记
+		regexp.MustCompile(`</?[A-Z_]+>`),                   // 如 <TRANSLATION> 或 </TRANSLATION>
+		regexp.MustCompile(`</?[a-z_]+>`),                   // 如 <translation> 或 </translation>
+		regexp.MustCompile(`</?[\p{Han}]+>`),                // 中文标记，如 <翻译> 或 </翻译>
+		regexp.MustCompile(`</?[\p{Han}][^>]{0,20}>`),       // 带属性的中文标记
 		regexp.MustCompile(`\[INTERNAL INSTRUCTIONS:.*?\]`), // 内部指令
 	}
 
@@ -359,34 +358,21 @@ func fixFormatIssues(text string) string {
 	return result
 }
 
-// 以下函数已不再使用，保留作为参考
-// translateHTMLNode 已被更高效的批量翻译方法替代
-func translateHTMLNode(n *html.Node, t translator.Translator, logger *zap.Logger) {
-	if n.Type == html.ElementNode {
-		if n.Data == "script" || n.Data == "style" {
-			return
-		}
-	}
+// translateHTMLNode 递归遍历HTML节点并翻译文本内容
+// func translateHTMLNode(n *html.Node, t translator.Translator, logger *zap.Logger) { // UNUSED FUNCTION
+// 	if n.Type == html.TextNode {
+// 		originalText := strings.TrimSpace(n.Data)
+// 		if originalText != "" {
+// 			// ... (translation logic)
+// 		}
+// 	}
+//
+// 	for c := n.FirstChild; c != nil; c = c.NextSibling {
+// 		translateHTMLNode(c, t, logger)
+// 	}
+// }
 
-	if n.Type == html.TextNode {
-		if strings.TrimSpace(n.Data) != "" {
-			leading := leadingWhitespace(n.Data)
-			trailing := trailingWhitespace(n.Data)
-			core := strings.TrimSpace(n.Data)
-			translated, err := t.Translate(core, true)
-			if err != nil {
-				logger.Warn("translate html node failed", zap.Error(err))
-			} else {
-				n.Data = leading + translated + trailing
-			}
-		}
-	}
-
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		translateHTMLNode(c, t, logger)
-	}
-}
-
+// leadingWhitespace 返回字符串前导的空白字符
 func leadingWhitespace(s string) string {
 	trimmed := strings.TrimLeftFunc(s, unicode.IsSpace)
 	return s[:len(s)-len(trimmed)]

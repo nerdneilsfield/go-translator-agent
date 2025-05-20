@@ -56,7 +56,7 @@ func CreateMockOpenAIServer(responseText string, errorRate float64, delayMs int)
 		// 模拟错误
 		if errorRate > 0 && errorRate > float64(time.Now().UnixNano()%100)/100.0 {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"error": {"message": "模拟服务器错误", "type": "server_error"}}`))
+			_, _ = w.Write([]byte(`{"error": {"message": "模拟服务器错误", "type": "server_error"}}`))
 			return
 		}
 
@@ -222,7 +222,7 @@ func CreateMockOpenAIServer(responseText string, errorRate float64, delayMs int)
 				},
 			}
 
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}
 	}))
 

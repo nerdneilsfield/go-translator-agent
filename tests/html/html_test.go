@@ -119,17 +119,17 @@ func containsDOCTYPE(text string) bool {
 func containsScriptContent(text string) bool {
 	// 检查是否包含JavaScript代码的特征
 	return containsPattern(text, `function`) ||
-	       containsPattern(text, `console\.log`) ||
-	       containsPattern(text, `alert\(`) ||
-	       containsPattern(text, `// This is a JavaScript`)
+		containsPattern(text, `console\.log`) ||
+		containsPattern(text, `alert\(`) ||
+		containsPattern(text, `// This is a JavaScript`)
 }
 
 func containsStyleContent(text string) bool {
 	// 检查是否包含CSS样式的特征
 	return containsPattern(text, `body \{`) ||
-	       containsPattern(text, `font-family:`) ||
-	       containsPattern(text, `margin:`) ||
-	       containsPattern(text, `padding:`)
+		containsPattern(text, `font-family:`) ||
+		containsPattern(text, `margin:`) ||
+		containsPattern(text, `padding:`)
 }
 
 func TestHTMLTranslation(t *testing.T) {
