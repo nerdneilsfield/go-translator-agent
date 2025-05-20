@@ -1,7 +1,9 @@
 package translator_tests
 
 import (
+	"archive/zip"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,6 +56,45 @@ func (m *MockTranslator) Translate(text string, retryFailedParts bool) (string, 
 	// 如果是错误测试文本，返回错误
 	if text == "Error test paragraph." {
 		return "", fmt.Errorf("模拟翻译错误")
+	}
+
+	// 处理包含节点标记的输入，保持标记并返回固定的翻译内容
+	if strings.Contains(text, "@@NODE_") {
+		parts := strings.Split(text, "\n\n")
+		var results []string
+		for _, p := range parts {
+			marker := ""
+			body := p
+			if idx := strings.Index(p, "@@NODE_"); idx != -1 {
+				lines := strings.SplitN(p, "\n", 2)
+				marker = lines[0]
+				if len(lines) > 1 {
+					body = lines[1]
+				} else {
+					body = ""
+				}
+			}
+
+			translated := "这是翻译后的文本"
+			if result, ok := m.predefinedResults[body]; ok {
+				translated = result
+			} else {
+				// 尝试按子串替换预定义结果
+				for k, v := range m.predefinedResults {
+					if strings.Contains(body, k) {
+						translated = strings.ReplaceAll(body, k, v)
+						break
+					}
+				}
+			}
+
+			if marker != "" {
+				results = append(results, marker+"\n"+translated)
+			} else {
+				results = append(results, translated)
+			}
+		}
+		return strings.Join(results, "\n\n"), nil
 	}
 
 	// 检查是否包含多个段落
@@ -176,9 +217,52 @@ func (m *MockTranslator) TranslateFile(inputPath, outputPath string) error {
 			return fmt.Errorf("翻译HTML/XML文件失败: %w", err)
 		}
 	case ".epub":
-		// 对于EPUB文件，模拟翻译
-		translatedContent = string(content)
-		// 在实际测试中，我们只需要确保输出文件被创建
+		// 简单处理EPUB文件：复制所有文件，若为HTML/XHTML文件则附加翻译内容
+		reader, err := zip.OpenReader(inputPath)
+		if err != nil {
+			return fmt.Errorf("打开EPUB失败: %w", err)
+		}
+		defer reader.Close()
+
+		outFile, err := os.Create(outputPath)
+		if err != nil {
+			return fmt.Errorf("创建输出文件失败: %w", err)
+		}
+		defer outFile.Close()
+
+		writer := zip.NewWriter(outFile)
+		defer writer.Close()
+
+		for _, f := range reader.File {
+			rc, err := f.Open()
+			if err != nil {
+				return err
+			}
+			data, err := io.ReadAll(rc)
+			rc.Close()
+			if err != nil {
+				return err
+			}
+			header := f.FileHeader
+			w, err := writer.CreateHeader(&header)
+			if err != nil {
+				return err
+			}
+			ext := strings.ToLower(filepath.Ext(f.Name))
+			if ext == ".xhtml" || ext == ".html" || ext == ".htm" {
+				str := string(data)
+				if strings.Contains(str, "This is the last paragraph of the chapter.") {
+					str = strings.ReplaceAll(str, "This is the last paragraph of the chapter.", "这是本书的最后一段")
+				}
+				str += "这是翻译后的文本"
+				data = []byte(str)
+			}
+			if _, err := w.Write(data); err != nil {
+				return err
+			}
+		}
+
+		return nil
 	default:
 		return fmt.Errorf("不支持的文件类型: %s", ext)
 	}
