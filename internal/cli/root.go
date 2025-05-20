@@ -3,9 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
-	"time"
 
-	"github.com/jedib0t/go-pretty/v6/progress"
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/formats"
@@ -197,37 +195,9 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 				translatorOptions = append(translatorOptions, translator.WithForceCacheRefresh())
 			}
 
-			// 翻译文件
-			pw := progress.NewWriter()
-
-			// 配置进度条样式
-			pw.SetStyle(progress.StyleDefault)
-			pw.Style().Colors = progress.StyleColorsExample
-			pw.Style().Options.PercentFormat = "%4.1f%%"
-
-			// 设置更新频率为1秒
-			pw.SetUpdateFrequency(time.Second)
-
-			// 设置自动停止为false，确保进度条持续显示
-			pw.SetAutoStop(false)
-
-			// 设置追踪器配置
-			pw.SetTrackerLength(50)  // 设置进度条长度
-			pw.SetMessageWidth(20)   // 设置消息宽度
-			pw.SetNumTrackersExpected(2)  // 预期的追踪器数量
-
-			// 可配置的可见性
-			pw.Style().Visibility.ETA = true        // 显示预计剩余时间
-			pw.Style().Visibility.Percentage = true // 显示百分比
-			pw.Style().Visibility.Speed = true      // 显示速度
-			pw.Style().Visibility.Value = true      // 显示当前值
-			pw.Style().Visibility.TrackerOverall = true // 显示总体进度
-
-			// 启动渲染协程
-			go pw.Render()
-
+			// 使用新的进度条系统
 			// 创建一个带有进度条的翻译器选项
-			translatorOptions = append(translatorOptions, translator.WithProgressBar(&pw))
+			translatorOptions = append(translatorOptions, translator.WithNewProgressBar())
 
 			t, err := translator.New(cfg, translatorOptions...)
 			if err != nil {
@@ -239,10 +209,10 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			var processor formats.Processor
 			if formatType != "" {
 				// 使用指定格式
-				processor, err = formats.NewProcessor(t, formatType, predefinedTranslations, &pw)
+				processor, err = formats.NewProcessor(t, formatType, predefinedTranslations, nil)
 			} else {
 				// 根据文件扩展名自动检测格式
-				processor, err = formats.ProcessorFromFilePath(t, inputPath, predefinedTranslations, &pw)
+				processor, err = formats.ProcessorFromFilePath(t, inputPath, predefinedTranslations, nil)
 			}
 
 			if err != nil {

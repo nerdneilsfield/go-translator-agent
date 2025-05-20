@@ -24,6 +24,12 @@ type TranslationProgressTracker struct {
 	estimatedTimeRemaining float64
 	// 翻译速度（字/秒）
 	translationSpeed float64
+	// 速度样本
+	recentSpeedSamples []float64
+	// 最大速度样本数
+	maxSpeedSamples int
+	// 上次更新的字符数
+	lastProgressUpdateChars int
 	// 使用的 initial input token 数量
 	usedInitialInputTokens int
 	// 使用的 initial output token 数量
@@ -47,37 +53,37 @@ type TranslationProgressTracker struct {
 }
 
 type TokenUsage struct {
-	initialInputTokens      int
-	initialOutputTokens     int
-	reflectionInputTokens   int
-	reflectionOutputTokens  int
-	improvementInputTokens  int
-	improvementOutputTokens int
-	initialTokenSpeed       float64
-	reflectionTokenSpeed    float64
-	improvementTokenSpeed   float64
-	elapsedTime             time.Duration
+	InitialInputTokens      int
+	InitialOutputTokens     int
+	ReflectionInputTokens   int
+	ReflectionOutputTokens  int
+	ImprovementInputTokens  int
+	ImprovementOutputTokens int
+	InitialTokenSpeed       float64
+	ReflectionTokenSpeed    float64
+	ImprovementTokenSpeed   float64
+	ElapsedTime             time.Duration
 }
 
 type EstimatedCost struct {
-	initialInputCost      float64
-	initialOutputCost     float64
-	initialTotalCost      float64
-	initialCostUnit       string
-	reflectionInputCost   float64
-	reflectionOutputCost  float64
-	reflectionTotalCost   float64
-	reflectionCostUnit    string
-	improvementInputCost  float64
-	improvementOutputCost float64
-	improvementTotalCost  float64
-	improvementCostUnit   string
-	totalCost             float64
-	totalCostUnit         string
+	InitialInputCost      float64
+	InitialOutputCost     float64
+	InitialTotalCost      float64
+	InitialCostUnit       string
+	ReflectionInputCost   float64
+	ReflectionOutputCost  float64
+	ReflectionTotalCost   float64
+	ReflectionCostUnit    string
+	ImprovementInputCost  float64
+	ImprovementOutputCost float64
+	ImprovementTotalCost  float64
+	ImprovementCostUnit   string
+	TotalCost             float64
+	TotalCostUnit         string
 }
 
-// NewProgressTracker 创建一个新的进度跟踪器
-func NewProgressTracker(totalChars int) *TranslationProgressTracker {
+// NewTranslationProgressTracker 创建一个新的进度跟踪器
+func NewTranslationProgressTracker(totalChars int) *TranslationProgressTracker {
 	now := time.Now()
 	return &TranslationProgressTracker{
 		totalChars:                     totalChars,
@@ -95,6 +101,9 @@ func NewProgressTracker(totalChars int) *TranslationProgressTracker {
 		estimatedTimeRemaining:         0,
 		translationSpeed:               0,
 		realTranslatedChars:            0,
+		recentSpeedSamples:             make([]float64, 0, 10),
+		maxSpeedSamples:                10,
+		lastProgressUpdateChars:        0,
 	}
 }
 
@@ -227,9 +236,9 @@ func (tp *TranslationProgressTracker) GetProgress() (totalChars int, translatedC
 	timeRemaining := tp.estimatedTimeRemaining
 	startTime := tp.startTime
 	speeds := TokenUsage{
-		initialTokenSpeed:     tp.generatedInitialTokenSpeed,
-		reflectionTokenSpeed:  tp.generatedReflectionTokenSpeed,
-		improvementTokenSpeed: tp.generatedImprovementTokenSpeed,
+		InitialTokenSpeed:     tp.generatedInitialTokenSpeed,
+		ReflectionTokenSpeed:  tp.generatedReflectionTokenSpeed,
+		ImprovementTokenSpeed: tp.generatedImprovementTokenSpeed,
 	}
 	tp.mu.Unlock()
 
@@ -256,31 +265,31 @@ func (tp *TranslationProgressTracker) GetProgress() (totalChars int, translatedC
 	}
 
 	return total, translated, realTotal, timeRemaining, TokenUsage{
-			initialInputTokens:      usedInitialInput,
-			initialOutputTokens:     usedInitialOutput,
-			reflectionInputTokens:   usedReflectionInput,
-			reflectionOutputTokens:  usedReflectionOutput,
-			improvementInputTokens:  usedImprovementInput,
-			improvementOutputTokens: usedImprovementOutput,
-			initialTokenSpeed:       speeds.initialTokenSpeed,
-			reflectionTokenSpeed:    speeds.reflectionTokenSpeed,
-			improvementTokenSpeed:   speeds.improvementTokenSpeed,
-			elapsedTime:             time.Since(startTime),
+			InitialInputTokens:      usedInitialInput,
+			InitialOutputTokens:     usedInitialOutput,
+			ReflectionInputTokens:   usedReflectionInput,
+			ReflectionOutputTokens:  usedReflectionOutput,
+			ImprovementInputTokens:  usedImprovementInput,
+			ImprovementOutputTokens: usedImprovementOutput,
+			InitialTokenSpeed:       speeds.InitialTokenSpeed,
+			ReflectionTokenSpeed:    speeds.ReflectionTokenSpeed,
+			ImprovementTokenSpeed:   speeds.ImprovementTokenSpeed,
+			ElapsedTime:             time.Since(startTime),
 		}, EstimatedCost{
-			initialInputCost:      initialInputCost,
-			initialOutputCost:     initialOutputCost,
-			initialTotalCost:      initialTotalCost,
-			initialCostUnit:       modelPrice.InitialModelPriceUnit,
-			reflectionInputCost:   reflectionInputCost,
-			reflectionOutputCost:  reflectionOutputCost,
-			reflectionTotalCost:   reflectionTotalCost,
-			reflectionCostUnit:    modelPrice.ReflectionModelPriceUnit,
-			improvementInputCost:  improvementInputCost,
-			improvementOutputCost: improvementOutputCost,
-			improvementTotalCost:  improvementTotalCost,
-			improvementCostUnit:   modelPrice.ImprovementModelPriceUnit,
-			totalCost:             totalCost,
-			totalCostUnit:         totalCostUnit,
+			InitialInputCost:      initialInputCost,
+			InitialOutputCost:     initialOutputCost,
+			InitialTotalCost:      initialTotalCost,
+			InitialCostUnit:       modelPrice.InitialModelPriceUnit,
+			ReflectionInputCost:   reflectionInputCost,
+			ReflectionOutputCost:  reflectionOutputCost,
+			ReflectionTotalCost:   reflectionTotalCost,
+			ReflectionCostUnit:    modelPrice.ReflectionModelPriceUnit,
+			ImprovementInputCost:  improvementInputCost,
+			ImprovementOutputCost: improvementOutputCost,
+			ImprovementTotalCost:  improvementTotalCost,
+			ImprovementCostUnit:   modelPrice.ImprovementModelPriceUnit,
+			TotalCost:             totalCost,
+			TotalCostUnit:         totalCostUnit,
 		}
 }
 
@@ -344,6 +353,7 @@ func (tp *TranslationProgressTracker) Reset() {
 	tp.lastUpdateTime = now
 	tp.estimatedTimeRemaining = 0
 	tp.translationSpeed = 0
+	tp.recentSpeedSamples = make([]float64, 0, tp.maxSpeedSamples)
 	tp.generatedInitialTokenSpeed = 0
 	tp.generatedReflectionTokenSpeed = 0
 	tp.generatedImprovementTokenSpeed = 0
@@ -354,4 +364,5 @@ func (tp *TranslationProgressTracker) Reset() {
 	tp.usedImprovementInputTokens = 0
 	tp.usedImprovementOutputTokens = 0
 	tp.realTranslatedChars = 0
+	tp.lastProgressUpdateChars = 0
 }
