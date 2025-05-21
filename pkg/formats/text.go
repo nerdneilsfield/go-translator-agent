@@ -203,6 +203,9 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 			p.Translator.GetProgressTracker().UpdateRealTranslatedChars(len(translatedText))
 
 			p.Translator.Finish()
+			if impl, ok := p.Translator.(interface{ SaveDebugInfo(string) error }); ok {
+				_ = impl.SaveDebugInfo(outputPath)
+			}
 
 			p.logger.Info("翻译完成",
 				zap.String("输出文件", outputPath),

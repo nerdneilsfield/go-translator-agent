@@ -276,6 +276,9 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 	p.Translator.GetProgressTracker().UpdateRealTranslatedChars(len(finalResult))
 
 	p.Translator.Finish()
+	if impl, ok := p.Translator.(interface{ SaveDebugInfo(string) error }); ok {
+		_ = impl.SaveDebugInfo(outputPath)
+	}
 
 	// 翻译受保护文本文件
 	translatedProtectedTextFile := strings.ReplaceAll(protectedTextFile, ".md", ".translated.md")

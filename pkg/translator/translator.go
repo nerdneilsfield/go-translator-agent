@@ -3,7 +3,10 @@ package translator
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -45,6 +48,18 @@ type ModelPrice struct {
 	ImprovementModelPriceUnit   string
 }
 
+type TranslationRecord struct {
+	Source string `json:"source"`
+	Result string `json:"result"`
+}
+
+// StepModelInfo 描述翻译流程各阶段所使用的模型名称
+type StepModelInfo struct {
+	Initial     string `json:"initial"`
+	Reflection  string `json:"reflection"`
+	Improvement string `json:"improvement"`
+}
+
 // Impl is the default implementation of the Translator interface.
 type Impl struct {
 	config             *config.Config
@@ -58,6 +73,8 @@ type Impl struct {
 	newProgressTracker *NewProgressTracker
 	useNewProgressBar  bool // 使用新的进度条系统
 	modelPrice         ModelPrice
+
+	debugRecords []TranslationRecord
 
 	client RawClient
 	Logger *zap.Logger
@@ -203,6 +220,10 @@ func New(cfg *config.Config, opts ...Option) (*Impl, error) {
 		modelPrice:        modelPrice,
 		client:            llmClient,
 		Logger:            zapLogger,
+	}
+
+	if cfg.SaveDebugInfo {
+		translator.debugRecords = []TranslationRecord{}
 	}
 
 	if translator.useNewProgressBar {
@@ -489,6 +510,8 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 			zap.Int("原文长度", len(text)),
 			zap.Int("译文长度", len(result)))
 
+		t.addDebugRecord(text, result)
+
 		return result, nil
 	}
 
@@ -703,6 +726,8 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 		zap.String("译文摘要", snippet(improvedTranslation)),
 		zap.Int("原文长度", len(text)),
 		zap.Int("译文长度", len(improvedTranslation)))
+
+	t.addDebugRecord(text, improvedTranslation)
 
 	return improvedTranslation, nil
 }
@@ -1195,10 +1220,89 @@ func (t *Impl) Finish() {
 				HasData:      true,
 			})
 		}
+
 	}
 
+	t.finalize(summaryData)
+}
+
+func maskKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	if len(key) <= 4 {
+		return "****"
+	}
+	return key[:2] + "****" + key[len(key)-2:]
+}
+
+func (t *Impl) addDebugRecord(src, res string) {
+	if !t.config.SaveDebugInfo {
+		return
+	}
+	t.debugRecords = append(t.debugRecords, TranslationRecord{Source: src, Result: res})
+}
+
+// SaveDebugInfo 将调试信息保存到输出文件对应的 JSON 中
+func (t *Impl) SaveDebugInfo(outputPath string) error {
+	if !t.config.SaveDebugInfo {
+		return nil
+	}
+
+	stepCfg := t.config.StepSets[t.config.ActiveStepSet]
+	stepModels := StepModelInfo{
+		Initial:     stepCfg.InitialTranslation.ModelName,
+		Reflection:  stepCfg.Reflection.ModelName,
+		Improvement: stepCfg.Improvement.ModelName,
+	}
+
+	cfg := struct {
+		SourceLang      string `json:"source_lang"`
+		TargetLang      string `json:"target_lang"`
+		ActiveStepSet   string `json:"active_step_set"`
+		Concurrency     int    `json:"concurrency"`
+		HTMLConcurrency int    `json:"html_concurrency"`
+		EPUBConcurrency int    `json:"epub_concurrency"`
+		RequestTimeout  int    `json:"request_timeout"`
+	}{
+		SourceLang:      t.config.SourceLang,
+		TargetLang:      t.config.TargetLang,
+		ActiveStepSet:   t.config.ActiveStepSet,
+		Concurrency:     t.config.Concurrency,
+		HTMLConcurrency: t.config.HtmlConcurrency,
+		EPUBConcurrency: t.config.EpubConcurrency,
+		RequestTimeout:  t.config.RequestTimeout,
+	}
+
+	// 遍历模型配置并屏蔽 key
+	models := make(map[string]config.ModelConfig)
+	for name, mc := range t.config.ModelConfigs {
+		mc.Key = maskKey(mc.Key)
+		models[name] = mc
+	}
+
+	info := struct {
+		Config       interface{}                   `json:"config"`
+		StepModels   StepModelInfo                 `json:"step_models"`
+		Models       map[string]config.ModelConfig `json:"models"`
+		Translations []TranslationRecord           `json:"translations"`
+	}{
+		Config:       cfg,
+		StepModels:   stepModels,
+		Models:       models,
+		Translations: t.debugRecords,
+	}
+
+	data, err := json.MarshalIndent(info, "", "  ")
+	if err != nil {
+		return err
+	}
+	debugPath := strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + ".json"
+	return os.WriteFile(debugPath, data, 0644)
+}
+
+func (t *Impl) finalize(summaryData *customprogress.SummaryStats) {
 	if t.useNewProgressBar && t.newProgressTracker != nil {
-		// 调用 NewProgressTracker.Done()，它需要被修改以传递 summaryData
 		t.newProgressTracker.Done(summaryData)
 	} else if !t.useNewProgressBar && t.progressBar != nil {
 		t.progressBar.Done(summaryData)

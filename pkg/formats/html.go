@@ -80,6 +80,10 @@ func (p *HTMLProcessor) TranslateFile(inputPath, outputPath string) error {
 		p.logger.Warn("格式化HTML文件失败", zap.Error(err))
 	}
 
+	if impl, ok := p.Translator.(interface{ SaveDebugInfo(string) error }); ok {
+		_ = impl.SaveDebugInfo(outputPath)
+	}
+
 	p.logger.Debug("HTML文件翻译完成",
 		zap.String("输出文件", outputPath),
 		zap.Int("原始长度", len(content)),

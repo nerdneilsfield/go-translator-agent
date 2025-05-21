@@ -10,6 +10,7 @@ require (
 	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/jedib0t/go-pretty/v6 v6.6.7
 	github.com/litao91/goldmark-mathjax v0.0.0-20210217064022-a43cf739a50f
+	github.com/mattn/go-runewidth v0.0.16
 	github.com/pterm/pterm v0.12.80
 	github.com/sashabaranov/go-openai v1.20.2
 	github.com/spf13/cobra v1.9.1
@@ -34,7 +35,6 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/lithammer/fuzzysearch v1.1.8 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
-	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
