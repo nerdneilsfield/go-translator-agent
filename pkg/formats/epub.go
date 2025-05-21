@@ -114,11 +114,11 @@ func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
 		return err
 	}
 
-	p.logger.Info("找到需要翻译的HTML文件", zap.Int("文件数", len(filesToTranslate)))
+	p.logger.Debug("找到需要翻译的HTML文件", zap.Int("文件数", len(filesToTranslate)))
 
 	// 遍历 HTML/XHTML 文件并翻译
 	for i, filePath := range filesToTranslate {
-		p.logger.Info("开始翻译HTML文件",
+		p.logger.Debug("开始翻译HTML文件",
 			zap.Int("当前文件", i+1),
 			zap.Int("总文件数", len(filesToTranslate)),
 			zap.String("文件路径", filePath))
@@ -139,7 +139,7 @@ func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
 		}
 
 		// 记录翻译结果摘要
-		p.logger.Info("HTML文件翻译结果",
+		p.logger.Debug("HTML文件翻译结果",
 			zap.String("文件", filePath),
 			zap.String("原文摘要", Snippet(originalContent)),
 			zap.String("译文摘要", Snippet(translated)),

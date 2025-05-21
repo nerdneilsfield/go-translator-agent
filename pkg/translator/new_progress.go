@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nerdneilsfield/go-translator-agent/pkg/progress"
+	customprogress "github.com/nerdneilsfield/go-translator-agent/pkg/progress"
 	"go.uber.org/zap"
 )
 
@@ -13,7 +13,7 @@ type NewProgressTracker struct {
 	mu sync.Mutex
 
 	// 进度适配器
-	adapter *progress.Adapter
+	adapter *customprogress.Adapter
 
 	// 总字数
 	totalChars int
@@ -46,7 +46,7 @@ func NewNewProgressTracker(totalChars int, logger *zap.Logger) *NewProgressTrack
 	now := time.Now()
 
 	// 创建进度适配器
-	adapter := progress.NewAdapter(logger)
+	adapter := customprogress.NewAdapter(logger)
 
 	return &NewProgressTracker{
 		adapter:                     adapter,
@@ -254,11 +254,11 @@ func (tp *NewProgressTracker) Reset() {
 	tp.realTranslatedChars = 0
 
 	// 创建新的进度适配器
-	tp.adapter = progress.NewAdapter(nil)
+	tp.adapter = customprogress.NewAdapter(nil)
 }
 
 // GetAdapter 获取进度适配器
-func (tp *NewProgressTracker) GetAdapter() *progress.Adapter {
+func (tp *NewProgressTracker) GetAdapter() *customprogress.Adapter {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
 
@@ -282,9 +282,11 @@ func (tp *NewProgressTracker) Stop() {
 }
 
 // Done 标记为已完成
-func (tp *NewProgressTracker) Done() {
+func (tp *NewProgressTracker) Done(summary *customprogress.SummaryStats) {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
 
-	tp.adapter.Done()
+	if tp.adapter != nil {
+		tp.adapter.Done(summary)
+	}
 }

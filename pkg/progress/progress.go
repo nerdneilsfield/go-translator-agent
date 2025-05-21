@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
 )
 
@@ -81,7 +82,7 @@ func NewTracker(totalUnits int64, options ...Option) *Tracker {
 		maxSpeedSamples: 10,
 		unit:            "字符",
 		unitSymbol:      "chars",
-		writer:          os.Stdout,
+		writer:          os.Stderr,
 		refreshInterval: time.Second,
 		isActive:        false,
 		isDone:          false,
@@ -294,16 +295,32 @@ func (pt *Tracker) Stop() {
 }
 
 // Done 标记为已完成
-func (pt *Tracker) Done() {
+func (pt *Tracker) Done(summary *SummaryStats) {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
 	pt.isDone = true
-	pt.completedUnits = pt.totalUnits
-	pt.render() // 最后一次渲染，显示100%完成
+	if pt.totalUnits > 0 && pt.completedUnits < pt.totalUnits {
+		pt.completedUnits = pt.totalUnits
+	}
+	pt.render() // 最后一次渲染进度条本身
 
-	// 添加一个换行，确保后续输出在新行开始
-	fmt.Fprintln(pt.writer)
+	// fmt.Fprintln(pt.writer) // 在 renderSummaryTable 之前或之后添加换行，根据需要调整
+
+	// Unlock before calling renderSummaryTable, as renderSummaryTable might also use locks
+	// or we simply don't need to hold the lock during table rendering.
+	// However, pt.writer is accessed, so lock should be held or writer passed.
+	// For simplicity, let's keep the lock for now and ensure renderSummaryTable doesn't re-lock.
+	// Decision: renderSummaryTable will directly use pt.writer, so lock needs to be held.
+
+	if summary != nil {
+		// Add a newline before the summary table to separate it from the progress bar's last line
+		fmt.Fprintln(pt.writer)
+		pt.renderSummaryTable(summary)
+	} else {
+		// If no summary, still ensure a final newline after the progress bar.
+		fmt.Fprintln(pt.writer)
+	}
 }
 
 // GetPercentage 获取完成百分比
@@ -471,8 +488,9 @@ func (pt *Tracker) render() {
 	// 构建进度条
 	var builder strings.Builder
 
-	// 清除当前行并移动到行首
-	builder.WriteString("\r")
+	// 清除到行尾，然后回车
+	builder.WriteString("\x1b[K") // ANSI escape code to clear from cursor to end of line
+	builder.WriteString("\r")     // Carriage return
 
 	// 添加消息
 	if pt.message != "" {
@@ -603,4 +621,65 @@ func WithVisibility(showPercent, showBar, showStats, showTime, showETA, showCost
 		pt.showCost = showCost
 		pt.showSpeed = showSpeed
 	}
+}
+
+// StepStats 包含单个步骤的统计信息
+type StepStats struct {
+	StepName     string // 例如 "Initial Translation", "Reflection", "Improvement"
+	InputTokens  int
+	OutputTokens int
+	TokenSpeed   float64 // tokens/sec
+	Cost         float64
+	CostUnit     string
+	HasData      bool // 标记此步骤是否有数据，用于决定是否在表格中显示
+}
+
+// SummaryStats 包含用于生成最终总结表格的统计信息
+type SummaryStats struct {
+	InputTextLength int // 原始文本总长度
+	TextTranslated  int // 实际翻译的字符/单位数
+	TotalTime       time.Duration
+	Steps           []StepStats // 各个步骤的统计信息
+	TotalCost       float64
+	TotalCostUnit   string
+}
+
+// renderSummaryTable 渲染最终的总结表格
+func (pt *Tracker) renderSummaryTable(stats *SummaryStats) {
+	if pt.writer == nil || stats == nil {
+		return
+	}
+
+	tw := table.NewWriter()
+	tw.SetOutputMirror(pt.writer) // 直接写入 pt.writer
+
+	tw.AppendRow(table.Row{"项", "值"})
+	tw.AppendSeparator()
+	tw.AppendRow(table.Row{"原始文本长度 (单位)", fmt.Sprintf("%d %s", stats.InputTextLength, pt.unitSymbol)}) // 使用 pt 的单位
+	tw.AppendRow(table.Row{"已翻译 (单位)", fmt.Sprintf("%d %s", stats.TextTranslated, pt.unitSymbol)})     // 使用 pt 的单位
+	tw.AppendRow(table.Row{"总耗时", formatDuration(stats.TotalTime)})                                    // 使用现有的 formatDuration
+
+	for _, step := range stats.Steps {
+		if step.HasData {
+			tw.AppendSeparator()
+			tw.AppendRow(table.Row{fmt.Sprintf("%s - 输入 Tokens", step.StepName), step.InputTokens})
+			tw.AppendRow(table.Row{fmt.Sprintf("%s - 输出 Tokens", step.StepName), step.OutputTokens})
+			if step.TokenSpeed > 0 {
+				tw.AppendRow(table.Row{fmt.Sprintf("%s - Token 速度", step.StepName), fmt.Sprintf("%.2f t/s", step.TokenSpeed)})
+			}
+			if step.Cost > 0 || step.InputTokens > 0 || step.OutputTokens > 0 { // Show cost if there are tokens or explicit cost
+				tw.AppendRow(table.Row{fmt.Sprintf("%s - 成本", step.StepName), fmt.Sprintf("%s%.4f", step.CostUnit, step.Cost)})
+			}
+		}
+	}
+
+	if len(stats.Steps) > 0 { // Only show total cost if there were steps with cost info
+		tw.AppendSeparator()
+		tw.AppendRow(table.Row{"总成本", fmt.Sprintf("%s%.4f", stats.TotalCostUnit, stats.TotalCost)})
+	}
+
+	tw.SetStyle(table.StyleLight) // 或者其他样式 table.StyleRounded, table.StyleBold
+	// fmt.Fprintln(pt.writer) // 移除在 tw.Render() 之前的额外换行，Done() 中已添加
+	tw.Render()
+	fmt.Fprintln(pt.writer) // Add a newline after the table
 }

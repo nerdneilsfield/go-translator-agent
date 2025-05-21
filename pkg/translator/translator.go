@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"sync"
+	"time"
 
-	"github.com/jedib0t/go-pretty/v6/progress"
-	"github.com/jedib0t/go-pretty/v6/table"
-	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
+	customprogress "github.com/nerdneilsfield/go-translator-agent/pkg/progress"
 	"go.uber.org/zap"
 )
 
@@ -55,17 +53,11 @@ type Impl struct {
 	activeSteps        *StepSetConfig
 	cache              Cache
 	forceCacheRefresh  bool // 强制刷新缓存
-	progressBar        *progress.Writer
+	progressBar        *customprogress.Tracker
 	progressTracker    *TranslationProgressTracker
 	newProgressTracker *NewProgressTracker
 	useNewProgressBar  bool // 使用新的进度条系统
 	modelPrice         ModelPrice
-
-	translatedTracker *progress.Tracker
-	costTracker       *progress.Tracker
-
-	// 进度跟踪
-	progressMu sync.RWMutex
 
 	client RawClient
 	Logger *zap.Logger
@@ -112,31 +104,36 @@ func NewModelPrice(initialModel LLMClient, reflectionModel LLMClient, improvemen
 	}
 }
 
+// translatorOptions 结构体定义 - 确保这是包内唯一的顶级定义
+// type translatorOptions struct {
+// 	cache             Cache
+// 	forceCacheRefresh bool
+// 	progressBar       *customprogress.Tracker // 类型应为 *customprogress.Tracker
+// 	useNewProgressBar bool
+// }
+
+// // Option 类型定义 - 确保这是包内唯一的顶级定义
+// type Option func(*translatorOptions)
+
 // New creates a new Impl.
 func New(cfg *config.Config, opts ...Option) (*Impl, error) {
-	// Default options
-	options := translatorOptions{
-		// Initialize with default cache if necessary, or handle nil case
-		// cache: newMemoryCache(), // Example: Default to memory cache
-	}
+	options := translatorOptions{}
 	for _, opt := range opts {
 		opt(&options)
 	}
 
-	// 使用配置中的 Debug 标志来创建 zapLogger
-	var zapLogger *zap.Logger // 声明 zapLogger
-	var err error             // 声明 err
+	var zapLogger *zap.Logger
+	var err error
 	if cfg.Debug {
-		zapLogger, err = zap.NewDevelopment() // 更正： लाभ -> zap
+		zapLogger, err = zap.NewDevelopment()
 	} else {
-		zapLogger, err = zap.NewProduction() // 更正： लाभ -> zap
+		zapLogger, err = zap.NewProduction()
 	}
 	if err != nil {
 		return nil, fmt.Errorf("创建 zapLogger 失败: %w", err)
 	}
 
-	// 使用 zapLogger 创建 logger.Logger 实例
-	log := logger.NewZapLogger(cfg.Debug) // 这个函数接收 bool，与上面 zap.NewXXX 不完全一致，需要确认 logger.NewZapLogger 的实现
+	log := logger.NewZapLogger(cfg.Debug)
 
 	models, err := initModels(cfg, log)
 	if err != nil {
@@ -175,13 +172,11 @@ func New(cfg *config.Config, opts ...Option) (*Impl, error) {
 		llmClient = *NewRawClient()
 	}
 
-	// 创建 cacher
 	var cacher Cache
 	if cfg.UseCache {
-		if options.cache != nil { // 如果通过 Option 提供了 cache
+		if options.cache != nil {
 			cacher = options.cache
-		} else { // 否则，根据配置创建默认的 cache
-			// 默认为文件缓存，如果 CacheDir 为空，则使用内存缓存
+		} else {
 			if cfg.CacheDir != "" {
 				fileCache := newFileCache(cfg.CacheDir)
 				cacher = fileCache
@@ -192,36 +187,33 @@ func New(cfg *config.Config, opts ...Option) (*Impl, error) {
 		}
 	} else {
 		log.Info("缓存已禁用")
-		// 可以选择创建一个空的或无操作的缓存实现
 		cacher = NewMemoryCache()
 	}
 
 	translator := &Impl{
 		config:            cfg,
 		models:            models,
-		logger:            log, // logger.Logger 类型
+		logger:            log,
 		activeSteps:       activeSteps,
-		cache:             cacher,                           // 使用从选项或默认创建的 cacher
-		forceCacheRefresh: options.forceCacheRefresh,        // 来自选项
-		progressBar:       options.progressBar,              // 来自选项
-		progressTracker:   NewTranslationProgressTracker(0), // 旧进度条，后续看是否移除或整合
-		useNewProgressBar: options.useNewProgressBar,        // 来自选项
+		cache:             cacher,
+		forceCacheRefresh: options.forceCacheRefresh,
+		progressBar:       nil,
+		progressTracker:   NewTranslationProgressTracker(0),
+		useNewProgressBar: options.useNewProgressBar,
 		modelPrice:        modelPrice,
 		client:            llmClient,
-		Logger:            zapLogger, // *zap.Logger 类型
+		Logger:            zapLogger,
 	}
 
 	if translator.useNewProgressBar {
-		translator.newProgressTracker = NewNewProgressTracker(0, zapLogger) // 初始化时 totalChars 可以为0，后续通过 SetTotalChars 更新
+		translator.newProgressTracker = NewNewProgressTracker(1000, zapLogger)
 		translator.newProgressTracker.UpdateModelPrice(modelPrice)
 	}
 
-	// 如果强制刷新缓存，在初始化翻译器之前执行
 	if translator.forceCacheRefresh && translator.cache != nil {
 		translator.logger.Info("正在强制刷新缓存...")
 		if err := translator.cache.Clear(); err != nil {
 			translator.logger.Warn("强制刷新缓存失败", zap.Error(err))
-			// 根据需求决定是否在此处返回错误
 		}
 	}
 
@@ -343,8 +335,6 @@ func (t *Impl) InitTranslator() {
 			t.newProgressTracker = NewNewProgressTracker(1000, t.Logger)
 			t.newProgressTracker.UpdateModelPrice(t.modelPrice)
 		}
-
-		// 启动进度跟踪
 		t.newProgressTracker.Start()
 
 		// 记录初始化信息
@@ -357,23 +347,35 @@ func (t *Impl) InitTranslator() {
 	} else {
 		// 使用旧的进度条系统
 		// 确保进度跟踪器已初始化
-		totalChars, _, _, _, _, _ := t.progressTracker.GetProgress()
-		if totalChars <= 0 {
-			// 如果总字符数未设置，设置一个默认值
-			t.progressTracker.SetTotalChars(1000)
+		totalCharsFromData, _, _, _, _, _ := t.progressTracker.GetProgress()
+		if totalCharsFromData <= 0 {
+			// 如果总字符数未设置，设置一个默认值，但优先让 InitTranslator 处理初始化
+			t.progressTracker.SetTotalChars(1000) // 确保数据跟踪器有值
+			// 获取更新后的值
+			totalCharsFromData, _, _, _, _, _ = t.progressTracker.GetProgress()
 		}
 
-		// 启动进度跟踪
-		go t.startProgress()
-
-		// 记录初始化信息
-		if logger, ok := t.logger.(interface{ Info(string, ...zap.Field) }); ok {
-			logger.Info("翻译器已初始化",
-				zap.Int("总字符数", totalChars),
-				zap.String("源语言", t.config.SourceLang),
-				zap.String("目标语言", t.config.TargetLang),
-				zap.String("活动步骤集", t.config.ActiveStepSet))
+		// 初始化或配置自定义进度条
+		if t.progressBar == nil {
+			// 如果外部没有提供 progressBar，则创建一个新的
+			initialTotal := int64(totalCharsFromData)
+			if initialTotal <= 0 { // 再次检查以防万一
+				initialTotal = 1000 // 默认总数
+			}
+			t.progressBar = customprogress.NewTracker(initialTotal,
+				customprogress.WithMessage("翻译中..."),
+				customprogress.WithUnit("字符", "chars"),
+				customprogress.WithVisibility(true, true, true, true, false, false, true), // 禁用内置ETA和成本
+			)
+		} else {
+			// 如果外部传入了 progressBar, 确保其 Total 是最新的
+			t.progressBar.SetTotal(int64(totalCharsFromData))
 		}
+		t.progressBar.Start() // 启动自定义进度条的渲染
+		t.logger.Info("翻译器已初始化 (使用自定义进度条系统)",
+			zap.String("源语言", t.config.SourceLang),
+			zap.String("目标语言", t.config.TargetLang),
+			zap.String("活动步骤集", t.config.ActiveStepSet))
 	}
 }
 
@@ -637,7 +639,7 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 		}
 	}
 
-	t.updateProgress(improvedTranslation)
+	t.updateProgress(len(improvedTranslation))
 
 	// 记录翻译结果的摘要
 	t.logger.Info("翻译完成（完整流程）",
@@ -984,245 +986,129 @@ func (t *Impl) GetConfig() *config.Config {
 
 // GetProgress 返回当前翻译进度
 func (t *Impl) GetProgress() string {
-	t.progressMu.RLock()
-	defer t.progressMu.RUnlock()
-
 	return ""
 }
 
 // updateProgress 更新翻译进度
-func (t *Impl) updateProgress(text string) {
-	t.progressMu.Lock()
-	defer t.progressMu.Unlock()
-
+func (t *Impl) updateProgress(charsTranslatedInThisStep int) {
 	if t.useNewProgressBar {
 		// 使用新的进度条系统
 		if t.newProgressTracker != nil {
-			t.newProgressTracker.UpdateProgress(len(text))
+			t.newProgressTracker.UpdateProgress(charsTranslatedInThisStep)
 		}
 		return
 	}
 
-	// 使用旧的进度条系统
-	// 获取当前进度信息
-	totalChars, translatedChars, _, estimatedTimeRemaining, _, estimatedCost := t.progressTracker.GetProgress()
-
-	// 计算完成百分比
-	var percentComplete float64
-	if totalChars > 0 {
-		percentComplete = float64(translatedChars) / float64(totalChars) * 100
-	}
-
-	// 确保进度条存在
+	// ----- 使用旧的进度条系统 (现在是自定义进度条) -----
 	if t.progressBar == nil {
+		t.logger.Warn("自定义进度条未初始化，无法更新进度")
 		return
 	}
 
-	// 如果跟踪器不存在，重新初始化进度条
-	if t.translatedTracker == nil || t.costTracker == nil {
-		t.startProgress()
-		return
+	// 从数据跟踪器获取累计值
+	// 注意：我们不再需要 estimatedTimeRemaining 和 estimatedCost 来构建消息字符串
+	// customprogress.Tracker 会自己处理 ETA 和成本的显示（如果配置了）
+	totalChars, cumulativeTranslatedChars, _, _, _, _ := t.progressTracker.GetProgress()
+
+	if totalChars > 0 { // 确保总数有效
+		t.progressBar.SetTotal(int64(totalChars))
 	}
+	t.progressBar.Update(int64(cumulativeTranslatedChars))
 
-	// 更新翻译字数跟踪器
-	if t.translatedTracker != nil {
-		// 确保总字符数已设置
-		if t.translatedTracker.Total <= 0 && totalChars > 0 {
-			t.translatedTracker.UpdateTotal(int64(totalChars))
-		}
-
-		// 更新当前值
-		t.translatedTracker.SetValue(int64(translatedChars))
-
-		// 设置额外信息
-		t.translatedTracker.UpdateMessage(fmt.Sprintf("翻译字数 (%.1f%%)", percentComplete))
-	}
-
-	// 更新成本跟踪器
-	if t.costTracker != nil {
-		costValue := int64(estimatedCost.TotalCost * 1000)
-		t.costTracker.SetValue(costValue)
-
-		// 设置额外信息
-		remainingTimeStr := "计算中..."
-		if estimatedTimeRemaining > 0 {
-			remainingTimeStr = fmt.Sprintf("%.1f分钟", estimatedTimeRemaining/60)
-		}
-		t.costTracker.UpdateMessage(fmt.Sprintf("成本: $%.2f (剩余: %s)",
-			estimatedCost.TotalCost, remainingTimeStr))
-	}
-
-	// 确保进度条正在渲染
-	if !(*t.progressBar).IsRenderInProgress() {
-		go (*t.progressBar).Render()
-	}
+	// SetMessage 可以用于显示一般状态，例如当前正在处理的步骤名。
+	// 但主要的进度指标（百分比、条、速度、ETA、成本）由 Tracker 自动渲染。
+	// t.progressBar.SetMessage("处理中...") // 可选：如果需要覆盖默认消息
 }
 
-// startProgress 开始跟踪翻译进度
-func (t *Impl) startProgress() {
-	if t.progressBar == nil {
-		return
-	}
-
-	t.progressMu.Lock()
-	defer t.progressMu.Unlock()
-
-	totalChars, _, _, _, _, _ := t.progressTracker.GetProgress()
-
-	// 确保总字符数大于0，避免进度条显示异常
-	if totalChars <= 0 {
-		totalChars = 1 // 设置一个默认值，避免除零错误
-	}
-
-	// 如果已经有跟踪器，先停止进度条
-	if t.translatedTracker != nil || t.costTracker != nil {
-		// 停止当前进度条
-		(*t.progressBar).Stop()
-
-		// 重置跟踪器
-		t.translatedTracker = nil
-		t.costTracker = nil
-	}
-
-	// 创建翻译字数跟踪器
-	t.translatedTracker = &progress.Tracker{
-		Message: "翻译字数",
-		Total:   int64(totalChars),
-		Units:   progress.UnitsBytes,
-	}
-
-	// 添加到进度条
-	(*t.progressBar).AppendTracker(t.translatedTracker)
-
-	// 创建翻译成本跟踪器
-	t.costTracker = &progress.Tracker{
-		Message: "翻译成本",
-		Total:   1000, // 设置一个合理的最大值
-		Units:   progress.UnitsCurrencyDollar,
-	}
-
-	// 添加到进度条
-	(*t.progressBar).AppendTracker(t.costTracker)
-
-	// 确保进度条正在渲染
-	if !(*t.progressBar).IsRenderInProgress() {
-		go (*t.progressBar).Render()
-	}
-}
-
-// endProgress 结束翻译进度跟踪
-// func (t *Impl) endProgress() { // UNUSED FUNCTION
-// 	t.progressMu.Lock()
-// 	defer t.progressMu.Unlock()
-//
-// 	_, translatedChars, _, _, _, estimatedCost := t.progressTracker.GetProgress()
-//
-// 	t.translatedTracker.SetValue(int64(translatedChars))
-// 	t.costTracker.SetValue(int64(estimatedCost.TotalCost * 1000))
-// }
-
+// GetProgressTracker 返回数据进度跟踪器
 func (t *Impl) GetProgressTracker() *TranslationProgressTracker {
 	return t.progressTracker
 }
 
-func (t *Impl) SetTotalChars(realTotalChars int, totalChars int) {
-	if t.useNewProgressBar && t.newProgressTracker != nil {
-		// 使用新的进度条系统
-		t.newProgressTracker.SetRealTotalChars(realTotalChars)
-		t.newProgressTracker.SetTotalChars(totalChars)
-	} else {
-		// 使用旧的进度条系统
-		t.progressTracker.SetRealTotalChars(realTotalChars)
-		t.progressTracker.SetTotalChars(totalChars)
+// Finish 方法负责结束翻译过程并打印总结信息
+func (t *Impl) Finish() {
+	var summaryData *customprogress.SummaryStats
 
-		// 如果进度条已创建，更新其总值
-		if t.translatedTracker != nil {
-			t.translatedTracker.UpdateTotal(int64(totalChars))
+	// 收集统计数据用于生成总结表格
+	// 这些数据源自 t.progressTracker (旧系统) 或 t.newProgressTracker (新系统)
+	var translatedChars, realTotalChars int // totalChars 已移除，不再使用
+	var tokenUsage TokenUsage               // 来自 pkg/translator/progress.go
+	var estimatedCost EstimatedCost         // 来自 pkg/translator/progress.go
+	var elapsedTime time.Duration
+
+	if t.useNewProgressBar && t.newProgressTracker != nil {
+		_, translatedChars, realTotalChars, _, tokenUsage, estimatedCost = t.newProgressTracker.GetProgress() // totalChars 的返回值被忽略
+		elapsedTime = tokenUsage.ElapsedTime
+	} else if !t.useNewProgressBar && t.progressTracker != nil {
+		_, translatedChars, realTotalChars, _, tokenUsage, estimatedCost = t.progressTracker.GetProgress() // totalChars 的返回值被忽略
+		if t.progressTracker.startTime.IsZero() {
+			elapsedTime = 0
+		} else {
+			elapsedTime = time.Since(t.progressTracker.startTime)
+		}
+	} else {
+		if t.progressBar != nil {
+			t.progressBar.Done(nil)
+		} else if t.newProgressTracker != nil {
+			// NewProgressTracker.Done() 也需要更新以接受 SummaryStats
+			// 暂时假设它会处理 nil summary
+			t.newProgressTracker.Done(nil) // 假设 Done 签名已更新
+		}
+		t.logger.Warn("Finish called but no active progress tracker found to generate summary.")
+		return
+	}
+
+	if realTotalChars > 0 || translatedChars > 0 || tokenUsage.InitialInputTokens > 0 || tokenUsage.InitialOutputTokens > 0 { // 调整条件以确保仅在有数据时创建摘要
+		summaryData = &customprogress.SummaryStats{
+			InputTextLength: realTotalChars,
+			TextTranslated:  translatedChars,
+			TotalTime:       elapsedTime,
+			Steps:           []customprogress.StepStats{},
+			TotalCost:       estimatedCost.TotalCost,
+			TotalCostUnit:   estimatedCost.TotalCostUnit,
+		}
+
+		if tokenUsage.InitialInputTokens > 0 || tokenUsage.InitialOutputTokens > 0 || estimatedCost.InitialTotalCost > 0 {
+			summaryData.Steps = append(summaryData.Steps, customprogress.StepStats{
+				StepName:     "Initial Translation",
+				InputTokens:  tokenUsage.InitialInputTokens,
+				OutputTokens: tokenUsage.InitialOutputTokens,
+				TokenSpeed:   tokenUsage.InitialTokenSpeed,
+				Cost:         estimatedCost.InitialTotalCost,
+				CostUnit:     estimatedCost.InitialCostUnit,
+				HasData:      true,
+			})
+		}
+
+		if tokenUsage.ReflectionInputTokens > 0 || tokenUsage.ReflectionOutputTokens > 0 || estimatedCost.ReflectionTotalCost > 0 {
+			summaryData.Steps = append(summaryData.Steps, customprogress.StepStats{
+				StepName:     "Reflection",
+				InputTokens:  tokenUsage.ReflectionInputTokens,
+				OutputTokens: tokenUsage.ReflectionOutputTokens,
+				TokenSpeed:   tokenUsage.ReflectionTokenSpeed,
+				Cost:         estimatedCost.ReflectionTotalCost,
+				CostUnit:     estimatedCost.ReflectionCostUnit,
+				HasData:      true,
+			})
+		}
+
+		if tokenUsage.ImprovementInputTokens > 0 || tokenUsage.ImprovementOutputTokens > 0 || estimatedCost.ImprovementTotalCost > 0 {
+			summaryData.Steps = append(summaryData.Steps, customprogress.StepStats{
+				StepName:     "Improvement",
+				InputTokens:  tokenUsage.ImprovementInputTokens,
+				OutputTokens: tokenUsage.ImprovementOutputTokens,
+				TokenSpeed:   tokenUsage.ImprovementTokenSpeed,
+				Cost:         estimatedCost.ImprovementTotalCost,
+				CostUnit:     estimatedCost.ImprovementCostUnit,
+				HasData:      true,
+			})
 		}
 	}
-}
 
-func (t *Impl) Finish() {
-	go func() {
-		fmt.Println(text.FgGreen.Sprint("============Finished============"))
-		fmt.Println("")
-		fmt.Println("")
-
-		if t.useNewProgressBar && t.newProgressTracker != nil {
-			// 使用新的进度条系统
-			t.newProgressTracker.Done()
-
-			// 获取进度信息
-			totalChars, translatedChars, realTotalChars, estimatedTimeRemaining, tokenUsage, estimatedCost := t.newProgressTracker.GetProgress()
-
-			tw := table.NewWriter()
-
-			tw.AppendRow(table.Row{"Input Text Length", realTotalChars})
-			tw.AppendRow(table.Row{"Text To Be Translated", totalChars - translatedChars})
-			tw.AppendRow(table.Row{"Text Translated", translatedChars})
-			tw.AppendRow(table.Row{"Total Time", estimatedTimeRemaining})
-			tw.AppendRow(table.Row{"Step 1 Input Token Usage", tokenUsage.InitialInputTokens})
-			tw.AppendRow(table.Row{"Step 1 Output Token Usage", tokenUsage.InitialOutputTokens})
-			tw.AppendRow(table.Row{"Step 1 Token Speed", tokenUsage.InitialTokenSpeed})
-			tw.AppendRow(table.Row{"Step 1 Cost", estimatedCost.InitialTotalCost})
-			tw.AppendRow(table.Row{"Step 1 Cost Unit", estimatedCost.InitialCostUnit})
-			tw.AppendRow(table.Row{"Step 2 Input Token Usage", tokenUsage.ReflectionInputTokens})
-			tw.AppendRow(table.Row{"Step 2 Output Token Usage", tokenUsage.ReflectionOutputTokens})
-			tw.AppendRow(table.Row{"Step 2 Token Speed", tokenUsage.ReflectionTokenSpeed})
-			tw.AppendRow(table.Row{"Step 2 Cost", estimatedCost.ReflectionTotalCost})
-			tw.AppendRow(table.Row{"Step 2 Cost Unit", estimatedCost.ReflectionCostUnit})
-			tw.AppendRow(table.Row{"Step 3 Input Token Usage", tokenUsage.ImprovementInputTokens})
-			tw.AppendRow(table.Row{"Step 3 Output Token Usage", tokenUsage.ImprovementOutputTokens})
-			tw.AppendRow(table.Row{"Step 3 Token Speed", tokenUsage.ImprovementTokenSpeed})
-			tw.AppendRow(table.Row{"Step 3 Cost", estimatedCost.ImprovementTotalCost})
-			tw.AppendRow(table.Row{"Step 3 Cost Unit", estimatedCost.ImprovementCostUnit})
-			tw.AppendRow(table.Row{"Total Cost", estimatedCost.TotalCost})
-			tw.AppendRow(table.Row{"Total Cost Unit", estimatedCost.TotalCostUnit})
-
-			tw.SetColumnConfigs([]table.ColumnConfig{
-				{Name: "Green", Align: text.AlignCenter, AlignHeader: text.AlignCenter},
-				{Name: "White", Align: text.AlignCenter, AlignHeader: text.AlignCenter},
-			})
-
-			fmt.Println(tw.Render())
-		} else {
-			// 使用旧的进度条系统
-			totalChars, translatedChars, realTotalChars, estimatedTimeRemaining, tokenUsage, estimatedCost := t.progressTracker.GetProgress()
-
-			tw := table.NewWriter()
-
-			tw.AppendRow(table.Row{"Input Text Length", realTotalChars})
-			tw.AppendRow(table.Row{"Text To Be Translated", totalChars - translatedChars})
-			tw.AppendRow(table.Row{"Text Translated", translatedChars})
-			tw.AppendRow(table.Row{"Total Time", estimatedTimeRemaining})
-			tw.AppendRow(table.Row{"Step 1 Input Token Usage", tokenUsage.InitialInputTokens})
-			tw.AppendRow(table.Row{"Step 1 Output Token Usage", tokenUsage.InitialOutputTokens})
-			tw.AppendRow(table.Row{"Step 1 Token Speed", tokenUsage.InitialTokenSpeed})
-			tw.AppendRow(table.Row{"Step 1 Cost", estimatedCost.InitialTotalCost})
-			tw.AppendRow(table.Row{"Step 1 Cost Unit", estimatedCost.InitialCostUnit})
-			tw.AppendRow(table.Row{"Step 2 Input Token Usage", tokenUsage.ReflectionInputTokens})
-			tw.AppendRow(table.Row{"Step 2 Output Token Usage", tokenUsage.ReflectionOutputTokens})
-			tw.AppendRow(table.Row{"Step 2 Token Speed", tokenUsage.ReflectionTokenSpeed})
-			tw.AppendRow(table.Row{"Step 2 Cost", estimatedCost.ReflectionTotalCost})
-			tw.AppendRow(table.Row{"Step 2 Cost Unit", estimatedCost.ReflectionCostUnit})
-			tw.AppendRow(table.Row{"Step 3 Input Token Usage", tokenUsage.ImprovementInputTokens})
-			tw.AppendRow(table.Row{"Step 3 Output Token Usage", tokenUsage.ImprovementOutputTokens})
-			tw.AppendRow(table.Row{"Step 3 Token Speed", tokenUsage.ImprovementTokenSpeed})
-			tw.AppendRow(table.Row{"Step 3 Cost", estimatedCost.ImprovementTotalCost})
-			tw.AppendRow(table.Row{"Step 3 Cost Unit", estimatedCost.ImprovementCostUnit})
-			tw.AppendRow(table.Row{"Total Cost", estimatedCost.TotalCost})
-			tw.AppendRow(table.Row{"Total Cost Unit", estimatedCost.TotalCostUnit})
-
-			tw.SetColumnConfigs([]table.ColumnConfig{
-				{Name: "Green", Align: text.AlignCenter, AlignHeader: text.AlignCenter},
-				{Name: "White", Align: text.AlignCenter, AlignHeader: text.AlignCenter},
-			})
-
-			fmt.Println(tw.Render())
-
-			if t.progressBar != nil {
-				(*t.progressBar).Stop()
-			}
-		}
-	}()
+	if t.useNewProgressBar && t.newProgressTracker != nil {
+		// 调用 NewProgressTracker.Done()，它需要被修改以传递 summaryData
+		t.newProgressTracker.Done(summaryData)
+	} else if !t.useNewProgressBar && t.progressBar != nil {
+		t.progressBar.Done(summaryData)
+	}
 }

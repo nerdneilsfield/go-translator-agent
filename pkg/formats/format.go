@@ -181,7 +181,7 @@ func formatLatex(filePath string, logger *zap.Logger) error {
 		logger.Error("latexindent 执行失败", zap.Error(err), zap.String("output", string(output)))
 		return fmt.Errorf("latexindent 执行失败: %v\n输出: %s", err, string(output))
 	}
-	logger.Info("latexindent 执行成功", zap.String("file", filePath))
+	logger.Debug("latexindent 执行成功", zap.String("file", filePath))
 	return nil
 }
 
@@ -215,7 +215,8 @@ func formatWithPrettier(filePath string, logger *zap.Logger) error {
 		logger.Error("prettier 执行失败", zap.Error(err), zap.String("output", string(output)))
 		return fmt.Errorf("prettier 执行失败: %v\n输出: %s", err, string(output))
 	}
-	logger.Info("prettier 执行成功", zap.String("file", filePath))
+	// fmt.Println()
+	logger.Debug("prettier 执行成功", zap.String("file", filePath))
 	return nil
 }
 
@@ -226,7 +227,7 @@ func formatJava(filePath string, logger *zap.Logger) error {
 		logger.Error("google-java-format 执行失败", zap.Error(err), zap.String("output", string(output)))
 		return fmt.Errorf("google-java-format 执行失败: %v\n输出: %s", err, string(output))
 	}
-	logger.Info("google-java-format 执行成功", zap.String("file", filePath))
+	logger.Debug("google-java-format 执行成功", zap.String("file", filePath))
 	return nil
 }
 
