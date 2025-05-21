@@ -29,7 +29,7 @@ type MockTranslator struct {
 func NewMockTranslator(cfg *config.Config, zapLogger *zap.Logger) *MockTranslator {
 	log := NewCustomZapLogger(zapLogger)
 
-	progressTracker := translator.NewTranslationProgressTracker(1000)
+	progressTracker := translator.NewTranslationProgressTracker(1000, log.logger, "测试", 0.0)
 
 	return &MockTranslator{
 		logger:            log,
@@ -141,7 +141,7 @@ func (m *MockTranslator) GetProgress() string {
 }
 
 // GetProgressDetails 返回详细进度信息
-func (m *MockTranslator) GetProgressDetails() (int, int, int, float64, translator.TokenUsage, translator.EstimatedCost) {
+func (m *MockTranslator) GetProgressDetails() (int, int, int, int, float64, translator.TokenUsage, translator.EstimatedCost) {
 	return m.progressTracker.GetProgress()
 }
 

@@ -1,6 +1,7 @@
 package html_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -108,7 +109,13 @@ func containsPattern(text, pattern string) bool {
 }
 
 func containsXMLDeclaration(text string) bool {
-	return containsPattern(text, `<\?xml`)
+	// add more test detail
+	if !containsPattern(text, `<\?xml`) {
+		fmt.Println("text:\n", text)
+		fmt.Println("text contains <?xml: ", containsPattern(text, `<\?xml`))
+		return false
+	}
+	return true
 }
 
 func containsDOCTYPE(text string) bool {

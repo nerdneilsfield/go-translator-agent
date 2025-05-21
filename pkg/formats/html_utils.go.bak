@@ -9,6 +9,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 	"go.uber.org/zap"
+	"golang.org/x/net/html"
 )
 
 // NodeFormatInfo 保存节点的原始格式信息
@@ -45,64 +46,38 @@ func replaceTextPreservingStructure(selection *goquery.Selection, translatedText
 		return
 	}
 
-	// 如果有多个文本节点，尝试智能分配翻译文本
-	// 这里使用一个简单的启发式方法：按照原始文本长度的比例分配翻译文本
-	totalOriginalLength := 0
-	for _, node := range textNodes {
-		totalOriginalLength += len(strings.TrimSpace(node.Text()))
-	}
-
-	// 如果原始文本总长度为0，无法按比例分配，直接返回
-	if totalOriginalLength == 0 {
-		return
-	}
-
-	// 按比例分配翻译文本
-	translatedWords := strings.Split(translatedText, " ")
-	if len(translatedWords) == 0 {
-		return
-	}
-
-	// 计算每个节点应该分配的单词数
-	wordsPerNode := make([]int, len(textNodes))
-	for i, node := range textNodes {
-		nodeTextLength := len(strings.TrimSpace(node.Text()))
-		ratio := float64(nodeTextLength) / float64(totalOriginalLength)
-		wordsPerNode[i] = int(ratio * float64(len(translatedWords)))
-	}
-
-	// 确保所有单词都被分配
-	totalAllocated := 0
-	for _, count := range wordsPerNode {
-		totalAllocated += count
-	}
-	remaining := len(translatedWords) - totalAllocated
-	if remaining > 0 {
-		// 将剩余的单词分配给最长的文本节点
-		maxLengthIndex := 0
-		maxLength := 0
-		for i, node := range textNodes {
-			nodeTextLength := len(strings.TrimSpace(node.Text()))
-			if nodeTextLength > maxLength {
-				maxLength = nodeTextLength
-				maxLengthIndex = i
-			}
+	// 尝试将翻译文本分割成与原始文本节点数量相同的部分
+	parts := strings.Split(translatedText, " ")
+	if len(parts) < len(textNodes) {
+		// 如果分割后的部分少于文本节点数，直接将整个翻译文本放入第一个节点
+		textNodes[0].ReplaceWithHtml(translatedText)
+		// 清空其他节点
+		for i := 1; i < len(textNodes); i++ {
+			textNodes[i].ReplaceWithHtml("")
 		}
-		wordsPerNode[maxLengthIndex] += remaining
+		return
 	}
+
+	// 计算每个节点应该分配的部分数量
+	partsPerNode := len(parts) / len(textNodes)
+	extraParts := len(parts) % len(textNodes)
 
 	// 分配翻译文本到各个节点
-	startIndex := 0
+	startIdx := 0
 	for i, node := range textNodes {
-		endIndex := startIndex + wordsPerNode[i]
-		if endIndex > len(translatedWords) {
-			endIndex = len(translatedWords)
+		endIdx := startIdx + partsPerNode
+		if i < extraParts {
+			endIdx++
 		}
-		if startIndex < endIndex {
-			nodeTranslation := strings.Join(translatedWords[startIndex:endIndex], " ")
-			node.ReplaceWithHtml(nodeTranslation)
-			startIndex = endIndex
+		if endIdx > len(parts) {
+			endIdx = len(parts)
 		}
+
+		// 将分配的部分组合成文本
+		nodeText := strings.Join(parts[startIdx:endIdx], " ")
+		node.ReplaceWithHtml(nodeText)
+
+		startIdx = endIdx
 	}
 }
 
@@ -126,7 +101,7 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 	hasXMLDeclaration := strings.Contains(htmlStr, "<?xml")
 	var xmlDeclaration string
 	if hasXMLDeclaration {
-		xmlDeclRegex := regexp.MustCompile(`<\?xml[^>]*\?>`)
+		xmlDeclRegex := regexp.MustCompile(`<\\?xml[^>]*\\?>`)
 		if match := xmlDeclRegex.FindString(htmlStr); match != "" {
 			xmlDeclaration = match
 			logger.Debug("找到XML声明", zap.String("declaration", xmlDeclaration))
@@ -203,6 +178,7 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 
 	doc, err = goquery.NewDocumentFromReader(strings.NewReader(tempHTMLForProtection))
 	if err != nil {
+		logger.Error("重新解析受保护的HTML失败", zap.Error(err))
 		return "", fmt.Errorf("重新解析受保护的HTML失败: %w", err)
 	}
 
@@ -232,13 +208,13 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 			return
 		}
 
-		// Check if this node has a translate attribute
+		// Determine current node's translatability based on parent and its own 'translate' attribute
 		currentNodeTranslates := parentTranslates
 		if translateAttr, exists := s.Attr("translate"); exists {
 			attrValLower := strings.ToLower(translateAttr)
-			if attrValLower == "no" || attrValLower == "false" {
+			if attrValLower == "no" {
 				currentNodeTranslates = false
-			} else if attrValLower == "yes" || attrValLower == "true" {
+			} else if attrValLower == "yes" {
 				// Explicitly set to yes, can override a parent's "no"
 				currentNodeTranslates = true
 			}
@@ -333,25 +309,20 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 		nodeTextLength := len(node.Text)
 		if currentLength+nodeTextLength > chunkSize && len(currentGroup) > 0 {
 			groups = append(groups, currentGroup)
-			currentGroup = []TextNodeInfo{node}
-			currentLength = nodeTextLength
-		} else {
-			currentGroup = append(currentGroup, node)
-			currentLength += nodeTextLength
+			currentGroup = []TextNodeInfo{}
+			currentLength = 0
 		}
+		currentGroup = append(currentGroup, node)
+		currentLength += nodeTextLength
 	}
 	if len(currentGroup) > 0 {
 		groups = append(groups, currentGroup)
 	}
+	logger.Info("文本节点分组完成", zap.Int("组数", len(groups)))
 
-	logger.Debug("分组后的节点数量", zap.Int("groups", len(groups)))
-
-	// 并行翻译各个组
-	var wg sync.WaitGroup
 	groupTranslationResults := make([]map[int]string, len(groups))
 	groupTranslationErrors := make([]error, len(groups))
-
-	// 创建信号量控制并发
+	var wg sync.WaitGroup
 	sem := make(chan struct{}, concurrency)
 
 	for groupIndex, groupData := range groups {
@@ -390,7 +361,6 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 				return
 			}
 
-			// 解析翻译结果，提取每个节点的翻译
 			translatedParts := strings.Split(translatedText, "\\n\\n")
 			currentGroupTranslations := make(map[int]string)
 			for _, part := range translatedParts {
@@ -398,7 +368,7 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 					nodeMarker := fmt.Sprintf("@@NODE_%d@@", i)
 					if strings.Contains(part, nodeMarker) {
 						translatedContent := strings.Replace(part, nodeMarker, "", 1)
-						translatedContent = strings.TrimSpace(strings.Replace(translatedContent, "\\n", "", 1))
+						translatedContent = strings.TrimSpace(translatedContent)
 						if translatedContent != "" {
 							currentGroupTranslations[i] = translatedContent
 						}
@@ -406,39 +376,27 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 					}
 				}
 			}
-
-			// 确保所有节点都有翻译，如果没有则使用原文
 			for i := range currentGroupData {
 				if _, ok := currentGroupTranslations[i]; !ok {
 					currentGroupTranslations[i] = originalTextsForGroup[i]
 				}
 			}
-
 			groupTranslationResults[gIdx] = currentGroupTranslations
 		}(groupIndex, groupData)
 	}
-
 	wg.Wait()
 
-	// 检查是否有翻译错误
-	for groupIndex, err := range groupTranslationErrors {
-		if err != nil {
-			logger.Warn("HTML节点组翻译失败", zap.Error(err), zap.Int("groupIndex", groupIndex))
-		}
-	}
-
-	// 应用翻译结果到DOM
 	for groupIndex, groupData := range groups {
-		if groupIndex >= len(groupTranslationResults) {
-			continue
+		if groupTranslationErrors[groupIndex] != nil {
+			logger.Warn("跳过应用翻译组（由于错误）", zap.Int("groupIndex", groupIndex), zap.Error(groupTranslationErrors[groupIndex]))
 		}
 		translationsForThisGroup := groupTranslationResults[groupIndex]
 		for nodeIdxInGroup, nodeInfo := range groupData {
 			translatedContent, ok := translationsForThisGroup[nodeIdxInGroup]
-			if !ok || translatedContent == "" {
-				translatedContent = nodeInfo.Text
+			if !ok {
+				logger.Debug("节点无翻译（应已回退到原文）", zap.Int("groupIndex", groupIndex), zap.Int("nodeIdx", nodeIdxInGroup), zap.String("path", nodeInfo.Path))
+				continue
 			}
-
 			if nodeInfo.IsAttribute {
 				nodeInfo.Selection.SetAttr(nodeInfo.AttributeName, translatedContent)
 			} else if goquery.NodeName(nodeInfo.Selection) == "#text" {
@@ -631,3 +589,72 @@ func IsSVGElement(s *goquery.Selection) bool {
 	}
 	return false
 }
+
+func GetTextNodesWithExclusions(selection *goquery.Selection, exclusions []string) []*html.Node {
+	var textNodes []*html.Node
+	selection.Contents().Each(func(_ int, s *goquery.Selection) {
+		node := s.Get(0)
+		if node.Type == html.TextNode {
+			textNodes = append(textNodes, node)
+		} else if node.Type == html.ElementNode {
+			// 检查是否在排除列表中
+			isExcluded := false
+			for _, ex := range exclusions {
+				if node.Data == ex {
+					isExcluded = true
+					break
+				}
+			}
+			if !isExcluded {
+				textNodes = append(textNodes, GetTextNodesWithExclusions(s, exclusions)...)
+			}
+		}
+	})
+	return textNodes
+}
+
+// getChildTextNodes 收集子节点的文本节点
+// func getChildTextNodes(s *goquery.Selection, exclusions []string, includeStyleAndScript bool) []*html.Node { // UNUSED FUNCTION
+// 	var nodes []*html.Node
+// 	s.Contents().Each(func(k int, child *goquery.Selection) {
+// 		node := child.Get(0)
+// 		if node.Type == html.TextNode {
+// 			// 过滤掉只包含空白字符的文本节点
+// 			if strings.TrimSpace(node.Data) != "" {
+// 				nodes = append(nodes, node)
+// 			}
+// 		} else if node.Type == html.ElementNode {
+// 			// 恢复内层循环来定义 grandchild 和 k
+// 			child.Contents().Each(func(k int, grandchild *goquery.Selection) {
+// 				// 检查是否是需要排除的元素类型 (例如 <script>, <style>)
+// 				isExcluded := false
+// 				for _, ex := range exclusions {
+// 					if grandchild.Is(ex) {
+// 						isExcluded = true
+// 						break
+// 					}
+// 				}
+// 				if includeStyleAndScript && (grandchild.Is("style") || grandchild.Is("script")) {
+// 					isExcluded = false // 如果明确要求包含，则不排除
+// 				}
+//
+// 				if !isExcluded {
+// 					if grandchild.Get(0).Type == html.TextNode {
+// 						if strings.TrimSpace(grandchild.Text()) != "" {
+// 							nodes = append(nodes, grandchild.Get(0))
+// 						}
+// 					} else {
+// 						// 递归处理更深层级的节点
+// 						// 注意：这里的 depth 应该来自外层函数的参数或迭代变量，此处假设为 k 或其他合适的值
+// 						grandchildTextNodes := collectTextNodesRecursive(grandchild, exclusions, false, false, k+1)
+// 						nodes = append(nodes, grandchildTextNodes...)
+// 					}
+// 				}
+// 			})
+// 		}
+// 	})
+// 	return nodes
+// }
+
+// collectTextNodesRecursive 递归收集文本节点，处理嵌套情况
+// ... (collectTextNodesRecursive function)
