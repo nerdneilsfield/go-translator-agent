@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jedib0t/go-pretty/v6/text"
+	"github.com/mattn/go-runewidth"
 )
 
 // Tracker is responsible for tracking the progress of a task.
@@ -677,22 +678,39 @@ func (pt *Tracker) renderSummaryTable(stats *SummaryStats) {
 
 	// Helper to create a horizontal line
 	makeHorizontalLine := func(left, mid, right string) string {
-		return fmt.Sprintf("%s%s%s%s%s%s%s%s\n",
+		return fmt.Sprintf("%s%s%s%s%s%s%s\n",
 			borderColored, left, strings.Repeat("─", keyColHorizontalLineWidth), mid, strings.Repeat("─", valColHorizontalLineWidth), right, colorReset)
 	}
 
 	// Write a single row
-	// writeRow("原始文本长度 (单位)", fmt.Sprintf("%d %s", stats.InputTextLength, pt.opts.unitNamePlural))
 	writeRow := func(key, value string, valueColor string) {
 		if valueColor == "" {
 			valueColor = valueTextColored
 		}
-		b.WriteString(fmt.Sprintf("%s│%s %s%-*s%s %s│%s %s%-*s%s %s│%s\n",
-			borderColored, colorReset, // Left border and space after it
-			keyTextColored, keyTextDisplayWidth, key, colorReset, // Key text
-			borderColored, colorReset, // Middle border and space after it
-			valueColor, valueTextDisplayWidth, value, colorReset, // Value text
-			borderColored, colorReset, // Right border
+
+		// Calculate visible width and padding for the key
+		visibleKeyWidth := runewidth.StringWidth(key)
+		paddingKeyCount := 0
+		if keyTextDisplayWidth > visibleKeyWidth {
+			paddingKeyCount = keyTextDisplayWidth - visibleKeyWidth
+		}
+		keyPart := fmt.Sprintf("%s%s%s%s", keyTextColored, key, colorReset, strings.Repeat(" ", paddingKeyCount))
+
+		// Calculate visible width and padding for the value
+		visibleValueWidth := runewidth.StringWidth(value)
+		paddingValueCount := 0
+		if valueTextDisplayWidth > visibleValueWidth {
+			paddingValueCount = valueTextDisplayWidth - visibleValueWidth
+		}
+		valuePart := fmt.Sprintf("%s%s%s%s", valueColor, value, colorReset, strings.Repeat(" ", paddingValueCount))
+
+		b.WriteString(fmt.Sprintf("%s│ %s %s│ %s %s│%s\n",
+			borderColored, // Left border
+			keyPart,       // Colored key with manual padding
+			borderColored, // Middle border
+			valuePart,     // Colored value with manual padding
+			borderColored, // Right border
+			colorReset,    // Final reset for the line
 		))
 	}
 
@@ -702,12 +720,30 @@ func (pt *Tracker) renderSummaryTable(stats *SummaryStats) {
 	// Header
 	headerKeyText := "项"
 	headerValueText := "值"
-	b.WriteString(fmt.Sprintf("%s│%s %s%-*s%s %s│%s %s%-*s%s %s│%s\n",
-		borderColored, colorReset,
-		headerTextColored, keyTextDisplayWidth, headerKeyText, colorReset,
-		borderColored, colorReset,
-		headerTextColored, valueTextDisplayWidth, headerValueText, colorReset,
-		borderColored, colorReset,
+
+	// Calculate visible width and padding for the header key
+	visibleHeaderKeyWidth := runewidth.StringWidth(headerKeyText)
+	paddingHeaderKeyCount := 0
+	if keyTextDisplayWidth > visibleHeaderKeyWidth {
+		paddingHeaderKeyCount = keyTextDisplayWidth - visibleHeaderKeyWidth
+	}
+	headerKeyPart := fmt.Sprintf("%s%s%s%s", headerTextColored, headerKeyText, colorReset, strings.Repeat(" ", paddingHeaderKeyCount))
+
+	// Calculate visible width and padding for the header value
+	visibleHeaderValueWidth := runewidth.StringWidth(headerValueText)
+	paddingHeaderValueCount := 0
+	if valueTextDisplayWidth > visibleHeaderValueWidth {
+		paddingHeaderValueCount = valueTextDisplayWidth - visibleHeaderValueWidth
+	}
+	headerValuePart := fmt.Sprintf("%s%s%s%s", headerTextColored, headerValueText, colorReset, strings.Repeat(" ", paddingHeaderValueCount))
+
+	b.WriteString(fmt.Sprintf("%s│ %s %s│ %s %s│%s\n",
+		borderColored,   // Left border
+		headerKeyPart,   // Colored header key with manual padding
+		borderColored,   // Middle border
+		headerValuePart, // Colored header value with manual padding
+		borderColored,   // Right border
+		colorReset,      // Final reset for the line
 	))
 
 	// Header separator
@@ -796,12 +832,24 @@ func (pt *Tracker) renderSummaryTable(stats *SummaryStats) {
 	// Bottom border
 	b.WriteString(makeHorizontalLine("└", "┴", "┘"))
 
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
+	// pt.mu.Lock() // Lock is already held by the calling function (Done)
+	// defer pt.mu.Unlock()
 	if _, err := fmt.Fprint(pt.writer, b.String()); err != nil {
 		// Handle potential write error, e.g., log it
-		if pt.writer == nil {
-			fmt.Fprintf(os.Stderr, "Error writing summary table: %v\n", err)
+		// Considering pt.writer might be os.Stderr or a file, direct logging inside this critical path might be complex.
+		// If pt.opts.logger is available and thread-safe, it could be used.
+		// For now, let's assume if writer is nil, it's handled, and otherwise, error is propagated if necessary or ignored.
+		if pt.writer == nil { // This check is a bit odd, as Done already checks pt.writer
+			// This path should ideally not be reached if pt.writer was nil in Done.
+			// However, to be safe, or if there's a direct call path elsewhere (unlikely for renderSummaryTable directly).
+			fmt.Fprintf(os.Stderr, "Error writing summary table (writer was nil unexpectedly): %v\n", err)
+		} else {
+			// If a logger is configured with the tracker (e.g. via options), use it.
+			// Example: if pt.opts.logger != nil { pt.opts.logger.Printf("Error writing summary table: %v", err) }
+			// Otherwise, printing to os.Stderr might be too noisy or not desired.
+			// For this specific case, we'll rely on the caller or a configured logger.
+			// Let's simplify: if an error occurs, it's often due to a closed writer, and direct panic might be too much.
+			// Consider if error handling is needed here or if it's better to let it be handled by the writer's owner.
 		}
 	}
 }
