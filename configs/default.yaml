@@ -13,6 +13,8 @@ request_timeout: 300 # 请求超时时间（秒）
 translation_timeout: 1800 # 整体翻译超时时间（秒）
 auto_save_interval: 300 # 自动保存间隔（秒）
 concurrency: 4 # 并行翻译请求数
+html_concurrency: 2 # 并行HTML翻译请求(每个html文件同时翻译请求数)
+epub_concurrency: 5 # 并行EPUB翻译请求(同时翻译几个 html 文件)
 
 # 文本分割设置
 min_split_size: 100 # 最小分割大小（字符数）

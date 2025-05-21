@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/jedib0t/go-pretty/v6/progress"
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
@@ -44,43 +45,6 @@ func NewEPUBProcessor(t translator.Translator, predefinedTranslations *config.Pr
 
 // TranslateFile 翻译EPUB文件
 func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
-	var totalChars int
-	var htmlFiles []string
-
-	// 计算总字符数并收集HTML文件
-	err := filepath.Walk(inputPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-		ext := strings.ToLower(filepath.Ext(path))
-		if ext == ".html" || ext == ".xhtml" || ext == ".htm" {
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			totalChars += len(data)
-			htmlFiles = append(htmlFiles, path)
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	p.logger.Info("EPUB文件分析完成",
-		zap.Int("HTML文件数", len(htmlFiles)),
-		zap.Int("总字符数", totalChars))
-
-	p.Translator.GetProgressTracker().SetRealTotalChars(totalChars)
-	p.Translator.GetProgressTracker().SetTotalChars(totalChars)
-
-	// 初始化翻译器并开始进度跟踪
-	p.Translator.InitTranslator()
-	defer p.Translator.Finish()
-
 	// 创建临时目录
 	tempDir, err := os.MkdirTemp("", "epub_work")
 	if err != nil {
@@ -92,11 +56,12 @@ func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
 	if err := unzipEPUB(inputPath, tempDir); err != nil {
 		return fmt.Errorf("解压EPUB失败: %w", err)
 	}
-
 	p.logger.Info("EPUB文件已解压到临时目录", zap.String("临时目录", tempDir))
 
-	// 收集所有需要翻译的HTML文件
+	var totalChars int
 	var filesToTranslate []string
+
+	// 收集所有需要翻译的HTML文件并计算总字符数
 	err = filepath.Walk(tempDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -106,61 +71,119 @@ func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
 		}
 		ext := strings.ToLower(filepath.Ext(path))
 		if ext == ".html" || ext == ".xhtml" || ext == ".htm" {
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				// Log error but continue walking to collect other files if possible
+				p.logger.Error("读取解压后的HTML文件失败（用于计数字符）", zap.String("文件", path), zap.Error(readErr))
+				return readErr // Or return nil to continue, depending on desired strictness
+			}
+			totalChars += len(data)
 			filesToTranslate = append(filesToTranslate, path)
 		}
 		return nil
 	})
 	if err != nil {
-		return err
+		// This error comes from filepath.Walk itself or a critical error during file read
+		return fmt.Errorf("遍历解压后的EPUB内容失败: %w", err)
 	}
+
+	p.logger.Info("EPUB文件分析完成",
+		zap.Int("HTML文件数", len(filesToTranslate)),
+		zap.Int("总字符数", totalChars))
+
+	p.Translator.GetProgressTracker().SetRealTotalChars(totalChars)
+	p.Translator.GetProgressTracker().SetTotalChars(totalChars)
+
+	// 初始化翻译器并开始进度跟踪
+	p.Translator.InitTranslator()
+	defer p.Translator.Finish()
 
 	p.logger.Debug("找到需要翻译的HTML文件", zap.Int("文件数", len(filesToTranslate)))
 
+	// 获取EPUB并发设置
+	epubConcurrency := 1 // 默认为1，即串行处理文件
+	if agentConfig := p.Translator.GetConfig(); agentConfig != nil && agentConfig.EpubConcurrency > 0 {
+		epubConcurrency = agentConfig.EpubConcurrency
+	}
+	p.logger.Info("EPUB内文件并行翻译数设置", zap.Int("epub_concurrency", epubConcurrency))
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, epubConcurrency)
+	translationErrors := make(chan error, len(filesToTranslate)) // 用于收集翻译过程中的错误
+
 	// 遍历 HTML/XHTML 文件并翻译
 	for i, filePath := range filesToTranslate {
-		p.logger.Debug("开始翻译HTML文件",
-			zap.Int("当前文件", i+1),
-			zap.Int("总文件数", len(filesToTranslate)),
-			zap.String("文件路径", filePath))
+		wg.Add(1)
+		go func(idx int, fPath string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 
-		// 读取文件内容
-		data, err := os.ReadFile(filePath)
+			p.logger.Debug("开始翻译HTML文件",
+				zap.Int("当前文件索引", idx),
+				zap.Int("总文件数", len(filesToTranslate)),
+				zap.String("文件路径", fPath))
+
+			// 读取文件内容
+			data, err := os.ReadFile(fPath)
+			if err != nil {
+				p.logger.Error("读取HTML文件失败", zap.String("文件", fPath), zap.Error(err))
+				translationErrors <- fmt.Errorf("读取HTML文件失败 %s: %w", fPath, err)
+				return
+			}
+
+			// 翻译文件内容
+			originalContent := string(data)
+			translated, err := p.TranslateText(originalContent) // TranslateText 内部已使用 HtmlConcurrency
+			if err != nil {
+				p.logger.Error("翻译HTML文件失败", zap.String("文件", fPath), zap.Error(err))
+				translationErrors <- fmt.Errorf("翻译HTML文件失败 %s: %w", fPath, err)
+				return
+			}
+
+			// 记录翻译结果摘要
+			p.logger.Debug("HTML文件翻译结果",
+				zap.String("文件", fPath),
+				zap.String("原文摘要", Snippet(originalContent)),
+				zap.String("译文摘要", Snippet(translated)),
+				zap.Int("原文长度", len(originalContent)),
+				zap.Int("译文长度", len(translated)))
+
+			// 写入翻译后的内容
+			if err := os.WriteFile(fPath, []byte(translated), 0644); err != nil {
+				p.logger.Error("写入翻译后的HTML文件失败", zap.String("文件", fPath), zap.Error(err))
+				translationErrors <- fmt.Errorf("写入翻译后的HTML文件失败 %s: %w", fPath, err)
+				return
+			}
+
+			// 格式化HTML文件
+			if err := FormatFile(fPath, p.logger); err != nil {
+				p.logger.Warn("格式化HTML文件失败", zap.String("文件", fPath), zap.Error(err))
+				// 格式化失败通常不认为是关键错误，不通过 translationErrors 返回
+			}
+
+			p.logger.Debug("HTML文件翻译完成",
+				zap.Int("当前文件索引", idx),
+				zap.Int("总文件数", len(filesToTranslate)),
+				zap.String("文件路径", fPath))
+		}(i, filePath)
+	}
+
+	wg.Wait()
+	close(translationErrors)
+
+	var encounteredError bool
+	for err := range translationErrors {
 		if err != nil {
-			p.logger.Error("读取HTML文件失败", zap.String("文件", filePath), zap.Error(err))
-			return fmt.Errorf("读取HTML文件失败 %s: %w", filePath, err)
+			p.logger.Error("EPUB翻译过程中发生错误", zap.Error(err))
+			encounteredError = true
+			// 可以选择在这里返回第一个遇到的错误，或者收集所有错误信息统一返回
+			// 为简单起见，这里打印所有错误，并在最后根据encounteredError标志决定是否返回一个通用错误
 		}
+	}
 
-		// 翻译文件内容
-		originalContent := string(data)
-		translated, err := p.TranslateText(originalContent)
-		if err != nil {
-			p.logger.Error("翻译HTML文件失败", zap.String("文件", filePath), zap.Error(err))
-			return fmt.Errorf("翻译HTML文件失败 %s: %w", filePath, err)
-		}
-
-		// 记录翻译结果摘要
-		p.logger.Debug("HTML文件翻译结果",
-			zap.String("文件", filePath),
-			zap.String("原文摘要", Snippet(originalContent)),
-			zap.String("译文摘要", Snippet(translated)),
-			zap.Int("原文长度", len(originalContent)),
-			zap.Int("译文长度", len(translated)))
-
-		// 写入翻译后的内容
-		if err := os.WriteFile(filePath, []byte(translated), 0644); err != nil {
-			p.logger.Error("写入翻译后的HTML文件失败", zap.String("文件", filePath), zap.Error(err))
-			return fmt.Errorf("写入翻译后的HTML文件失败 %s: %w", filePath, err)
-		}
-
-		// 格式化HTML文件
-		if err := FormatFile(filePath, p.logger); err != nil {
-			p.logger.Warn("格式化HTML文件失败", zap.String("文件", filePath), zap.Error(err))
-		}
-
-		p.logger.Debug("HTML文件翻译完成",
-			zap.Int("当前文件", i+1),
-			zap.Int("总文件数", len(filesToTranslate)),
-			zap.String("文件路径", filePath))
+	if encounteredError {
+		return fmt.Errorf("EPUB翻译过程中发生一个或多个错误，请检查日志")
 	}
 
 	p.logger.Info("所有HTML文件翻译完成，开始重新打包EPUB")
@@ -177,7 +200,7 @@ func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
 
 // TranslateText 翻译EPUB内容
 func (p *EPUBProcessor) TranslateText(text string) (string, error) {
-	translated, err := TranslateHTMLDOM(text, p.Translator, p.logger)
+	translated, err := TranslateHTMLWithGoQuery(text, p.Translator, p.logger)
 	if err != nil {
 		return "", err
 	}

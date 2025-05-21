@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
@@ -100,26 +101,22 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 	hasXMLDeclaration := strings.Contains(htmlStr, "<?xml")
 	var xmlDeclaration string
 	if hasXMLDeclaration {
-		xmlDeclRegex := regexp.MustCompile(`<\?xml[^>]*\?>`)
+		xmlDeclRegex := regexp.MustCompile(`<\\?xml[^>]*\\?>`)
 		if match := xmlDeclRegex.FindString(htmlStr); match != "" {
 			xmlDeclaration = match
 			logger.Debug("找到XML声明", zap.String("declaration", xmlDeclaration))
-			// 从HTML中移除XML声明，以避免重复
-			htmlStr = xmlDeclRegex.ReplaceAllString(htmlStr, "")
+			htmlStr = strings.Replace(htmlStr, xmlDeclaration, "", 1) //移除一次，避免影响解析
 		}
 	}
 
-	// 检查是否包含DOCTYPE声明（不区分大小写）
-	hasDOCTYPE := strings.Contains(strings.ToLower(htmlStr), "<!doctype") || strings.Contains(htmlStr, "<!DOCTYPE")
+	hasDOCTYPE := strings.Contains(strings.ToLower(htmlStr), "<!doctype")
 	var doctypeDeclaration string
 	if hasDOCTYPE {
-		// 使用不区分大小写的正则表达式匹配DOCTYPE声明
 		doctypeRegex := regexp.MustCompile(`(?i)<!DOCTYPE[^>]*>`)
 		if match := doctypeRegex.FindString(htmlStr); match != "" {
 			doctypeDeclaration = match
 			logger.Debug("找到DOCTYPE声明", zap.String("doctype", doctypeDeclaration))
-			// 从HTML中移除DOCTYPE声明，以避免重复
-			htmlStr = doctypeRegex.ReplaceAllString(htmlStr, "")
+			htmlStr = strings.Replace(htmlStr, doctypeDeclaration, "", 1) //移除一次
 		}
 	}
 
@@ -130,10 +127,11 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 	}
 
 	// 获取配置
-	cfg := t.GetConfig()
+	agentConfig := t.GetConfig()
 	chunkSize := 6000
-	if cfg != nil {
-		if modelCfg, ok := cfg.ModelConfigs[cfg.DefaultModelName]; ok {
+	concurrency := 1 // 默认为1，即不进行文件内并行
+	if agentConfig != nil {
+		if modelCfg, ok := agentConfig.ModelConfigs[agentConfig.DefaultModelName]; ok {
 			if modelCfg.MaxInputTokens > 0 {
 				chunkSize = modelCfg.MaxInputTokens - 2000
 				if chunkSize <= 0 {
@@ -141,401 +139,300 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 				}
 			}
 		}
+		// 使用 HtmlConcurrency 控制单个HTML文件内部的并发
+		if agentConfig.HtmlConcurrency > 0 {
+			concurrency = agentConfig.HtmlConcurrency
+		} else {
+			logger.Debug("HtmlConcurrency未配置或为0，单个HTML文件内节点翻译将串行执行。", zap.Int("resolved_concurrency", concurrency))
+		}
 	}
+	logger.Debug("HTML文件内节点翻译并发设置", zap.Int("html_concurrency", concurrency), zap.Int("chunkSize", chunkSize))
 
-	// 保护特定内容，避免被翻译
+	// 保护特定内容
 	protected := make(map[string]string)
 	placeholderIndex := 0
 
-	// 保护脚本、样式、代码块等内容
+	// 为了保护，我们需要操作原始字符串，然后重新解析。或者在goquery文档上操作。
+	// 这里选择先在原始字符串上操作，然后重新解析，因为正则表达式在字符串上更直接。
+	tempHTMLForProtection, err := doc.Html() // Get HTML from current doc state
+	if err != nil {
+		return "", fmt.Errorf("获取临时HTML失败: %w", err)
+	}
+
 	protectRegexes := []*regexp.Regexp{
 		regexp.MustCompile(`(?s)<script[^>]*>.*?</script>`),
 		regexp.MustCompile(`(?s)<style[^>]*>.*?</style>`),
 		regexp.MustCompile(`(?s)<pre[^>]*>.*?</pre>`),
 		regexp.MustCompile(`(?s)<code[^>]*>.*?</code>`),
-		regexp.MustCompile(`(?s)<!--.*?-->`), // 保护HTML注释
+		regexp.MustCompile(`(?s)<!--.*?-->`),
 	}
-
-	// 记录找到的脚本和样式标签
 
 	for _, re := range protectRegexes {
-		matches := re.FindAllString(htmlStr, -1)
-		for _, match := range matches {
+		tempHTMLForProtection = re.ReplaceAllStringFunc(tempHTMLForProtection, func(match string) string {
 			placeholder := fmt.Sprintf("@@PROTECTED_%d@@", placeholderIndex)
 			protected[placeholder] = match
-
-			// 记录脚本和样式标签
-			if strings.HasPrefix(match, "<script") {
-				logger.Debug("保护脚本标签", zap.String("script", match[:30]+"..."))
-			} else if strings.HasPrefix(match, "<style") {
-				logger.Debug("保护样式标签", zap.String("style", match[:30]+"..."))
-			}
-
-			htmlStr = strings.Replace(htmlStr, match, placeholder, 1)
 			placeholderIndex++
-		}
+			return placeholder
+		})
 	}
 
-	// 重新解析处理过的HTML
-	doc, err = goquery.NewDocumentFromReader(strings.NewReader(htmlStr))
+	doc, err = goquery.NewDocumentFromReader(strings.NewReader(tempHTMLForProtection))
 	if err != nil {
-		return "", fmt.Errorf("解析HTML失败: %w", err)
+		return "", fmt.Errorf("重新解析受保护的HTML失败: %w", err)
 	}
 
-	// 创建一个映射来存储需要翻译的文本节点
 	type TextNodeInfo struct {
-		Selection *goquery.Selection
-		Text      string
-		Path      string
-		Format    NodeFormatInfo // 保存格式信息
+		Selection     *goquery.Selection
+		Text          string
+		Path          string
+		Format        NodeFormatInfo
+		IsAttribute   bool
+		AttributeName string
 	}
 
 	var textNodes []TextNodeInfo
-	var skipSelectors = []string{"script", "style", "code", "pre"}
+	skipSelectors := []string{"script", "style", "code", "pre"}
 
-	// 递归处理所有文本节点
 	var processNode func(*goquery.Selection, string)
-	processNode = func(s *goquery.Selection, path string) {
-		// 检查是否是需要跳过的标签
-		for _, selector := range skipSelectors {
-			if s.Is(selector) {
+	processNode = func(s *goquery.Selection, currentPath string) {
+		nodeName := goquery.NodeName(s)
+		for _, skip := range skipSelectors {
+			if nodeName == skip {
 				return
 			}
 		}
+		if IsSVGElement(s) {
+			return
+		} // Skip SVG elements
 
-		// 处理当前节点的直接文本内容（不包括子节点的文本）
-		s.Contents().Each(func(i int, child *goquery.Selection) {
+		// 处理属性
+		attrs := s.Get(0).Attr
+		for _, attr := range attrs {
+			if shouldTranslateAttr(attr.Key) && attr.Val != "" {
+				textNodes = append(textNodes, TextNodeInfo{
+					Selection:     s,
+					Text:          attr.Val,
+					Path:          fmt.Sprintf("%s[@%s]", currentPath, attr.Key),
+					IsAttribute:   true,
+					AttributeName: attr.Key,
+				})
+			}
+		}
+
+		// 处理子节点
+		s.Contents().Each(func(_ int, child *goquery.Selection) {
 			if goquery.NodeName(child) == "#text" {
 				text := child.Text()
 				trimmedText := strings.TrimSpace(text)
 				if trimmedText != "" {
-					// 提取前导和尾随空白
-					leadingWS := regexp.MustCompile(`^\s*`).FindString(text)
-					trailingWS := regexp.MustCompile(`\s*$`).FindString(text)
-
-					nodePath := fmt.Sprintf("%s[%d]", path, i)
+					formatInfo := NodeFormatInfo{
+						LeadingWhitespace:  text[:len(text)-len(strings.TrimLeft(text, " \t\n\r"))],
+						TrailingWhitespace: text[len(strings.TrimRight(text, " \t\n\r")):],
+					}
 					textNodes = append(textNodes, TextNodeInfo{
 						Selection: child,
 						Text:      trimmedText,
-						Path:      nodePath,
-						Format: NodeFormatInfo{
-							LeadingWhitespace:  leadingWS,
-							TrailingWhitespace: trailingWS,
-						},
+						Path:      fmt.Sprintf("%s/#text", currentPath),
+						Format:    formatInfo,
 					})
 				}
-			} else if child.Is("a, p, h1, h2, h3, h4, h5, h6, li, td, th, caption, figcaption, label, button, span, div, title") {
-				// 对于这些常见的包含文本的元素，检查是否有直接文本内容
-				hasDirectText := false
-				child.Contents().Each(func(_ int, grandchild *goquery.Selection) {
-					if goquery.NodeName(grandchild) == "#text" {
-						if strings.TrimSpace(grandchild.Text()) != "" {
-							hasDirectText = true
-						}
-					}
-				})
-
-				if hasDirectText {
-					// 如果有直接文本内容，递归处理子节点
-					childPath := fmt.Sprintf("%s>%s[%d]", path, goquery.NodeName(child), i)
-					processNode(child, childPath)
-				} else {
-					// 如果没有直接文本内容，但有子元素可能包含文本
-					text := strings.TrimSpace(child.Text())
-					if text != "" && !containsOnlyHTMLElements(child) {
-						// 保存原始HTML以便后续恢复结构
-						html, _ := child.Html()
-						nodePath := fmt.Sprintf("%s>%s[%d]", path, goquery.NodeName(child), i)
-						textNodes = append(textNodes, TextNodeInfo{
-							Selection: child,
-							Text:      text,
-							Path:      nodePath,
-							Format: NodeFormatInfo{
-								OriginalHTML: html,
-							},
-						})
-					} else {
-						// 递归处理子节点
-						childPath := fmt.Sprintf("%s>%s[%d]", path, goquery.NodeName(child), i)
-						processNode(child, childPath)
-					}
-				}
-			} else {
-				// 递归处理其他非文本子节点
-				childPath := fmt.Sprintf("%s>%s[%d]", path, goquery.NodeName(child), i)
-				processNode(child, childPath)
+			} else if child.Is("*") { // 确保是元素节点
+				processNode(child, fmt.Sprintf("%s/%s", currentPath, goquery.NodeName(child)))
 			}
 		})
-
-		// s.Contents 已经递归处理了子节点，无需再次遍历
 	}
 
-	// 从body开始处理
-	body := doc.Find("body")
-	if body.Length() > 0 {
-		processNode(body, "body")
-	} else {
-		// 如果没有body标签，从根节点开始处理
-		processNode(doc.Selection, "root")
+	doc.Find("body").Children().Each(func(i int, s *goquery.Selection) {
+		processNode(s, "body/"+goquery.NodeName(s))
+	})
+	if len(textNodes) == 0 { // 尝试 head > title
+		doc.Find("head > title").Each(func(i int, s *goquery.Selection) {
+			processNode(s, "head/title")
+		})
 	}
 
-	// 记录收集到的文本节点数
-	logger.Debug("收集到的文本节点数", zap.Int("节点数", len(textNodes)))
-
-	// 如果没有文本节点，直接返回原始HTML
+	logger.Info("收集到的可翻译节点数量", zap.Int("count", len(textNodes)))
 	if len(textNodes) == 0 {
-		// 恢复被保护的内容
-		result := htmlStr
+		// 没有可翻译内容，恢复原始声明并返回
+		outputHTML, _ := doc.Html()
 		for placeholder, original := range protected {
-			result = strings.Replace(result, placeholder, original, 1)
+			outputHTML = strings.ReplaceAll(outputHTML, placeholder, original)
 		}
-		return result, nil
+		// 使用 strings.Builder 构建最终输出，确保声明顺序正确
+		var finalOutputBuilder strings.Builder
+		if hasXMLDeclaration && xmlDeclaration != "" {
+			finalOutputBuilder.WriteString(xmlDeclaration)
+			finalOutputBuilder.WriteString("\n")
+		}
+		if hasDOCTYPE && doctypeDeclaration != "" {
+			finalOutputBuilder.WriteString(doctypeDeclaration)
+			finalOutputBuilder.WriteString("\n")
+		}
+		finalOutputBuilder.WriteString(outputHTML)
+		return finalOutputBuilder.String(), nil
 	}
 
-	// 将文本节点分组，确保每组不超过模型的输入限制
-	// 同时确保相关节点（如同一个父节点下的文本）尽量在同一组中
 	var groups [][]TextNodeInfo
 	var currentGroup []TextNodeInfo
-	currentLen := 0
-
-	// 创建一个映射，将节点按照其路径的前缀分组
-	// 这样可以确保相关节点（如同一个父节点下的文本）尽量在同一组中
-	pathPrefixMap := make(map[string][]TextNodeInfo)
-
-	// 提取路径前缀（父节点路径）
+	currentLength := 0
 	for _, node := range textNodes {
-		parts := strings.Split(node.Path, ">")
-		if len(parts) > 1 {
-			// 使用父节点路径作为前缀
-			prefix := strings.Join(parts[:len(parts)-1], ">")
-			pathPrefixMap[prefix] = append(pathPrefixMap[prefix], node)
-		} else {
-			// 如果没有父节点，使用节点自身的路径
-			pathPrefixMap[node.Path] = append(pathPrefixMap[node.Path], node)
+		nodeTextLength := len(node.Text)
+		if currentLength+nodeTextLength > chunkSize && len(currentGroup) > 0 {
+			groups = append(groups, currentGroup)
+			currentGroup = []TextNodeInfo{}
+			currentLength = 0
 		}
+		currentGroup = append(currentGroup, node)
+		currentLength += nodeTextLength
 	}
-
-	// 按照前缀分组处理节点
-	for _, nodes := range pathPrefixMap {
-		prefixTextLen := 0
-		for _, node := range nodes {
-			prefixTextLen += len(node.Text)
-		}
-
-		// 如果当前前缀下的所有节点加起来超过限制，需要单独处理这个前缀
-		if prefixTextLen > chunkSize {
-			// 如果当前组不为空，先保存
-			if len(currentGroup) > 0 {
-				groups = append(groups, currentGroup)
-				currentGroup = nil
-				currentLen = 0
-			}
-
-			// 对这个前缀下的节点进行分组
-			var prefixGroup []TextNodeInfo
-			prefixLen := 0
-
-			for _, node := range nodes {
-				nodeLen := len(node.Text)
-
-				// 如果单个节点超过限制，单独处理它
-				if nodeLen > chunkSize {
-					if len(prefixGroup) > 0 {
-						groups = append(groups, prefixGroup)
-						prefixGroup = nil
-						prefixLen = 0
-					}
-					groups = append(groups, []TextNodeInfo{node})
-					continue
-				}
-
-				// 如果添加当前节点会超出限制，先保存当前组
-				if prefixLen+nodeLen > chunkSize && len(prefixGroup) > 0 {
-					groups = append(groups, prefixGroup)
-					prefixGroup = nil
-					prefixLen = 0
-				}
-
-				// 添加当前节点到新组
-				prefixGroup = append(prefixGroup, node)
-				prefixLen += nodeLen
-			}
-
-			// 保存最后一个前缀组
-			if len(prefixGroup) > 0 {
-				groups = append(groups, prefixGroup)
-			}
-		} else {
-			// 如果当前前缀下的所有节点加起来不超过限制，尝试添加到当前组
-			if currentLen+prefixTextLen > chunkSize && len(currentGroup) > 0 {
-				// 如果添加会超出限制，先保存当前组
-				groups = append(groups, currentGroup)
-				currentGroup = nil
-				currentLen = 0
-			}
-
-			// 添加当前前缀下的所有节点到当前组
-			currentGroup = append(currentGroup, nodes...)
-			currentLen += prefixTextLen
-		}
-	}
-
-	// 保存最后一个组
 	if len(currentGroup) > 0 {
 		groups = append(groups, currentGroup)
 	}
+	logger.Info("文本节点分组完成", zap.Int("组数", len(groups)))
 
-	// 记录分组信息
-	logger.Info("文本节点分组完成",
-		zap.Int("组数", len(groups)),
-		zap.Int("总节点数", len(textNodes)))
+	groupTranslationResults := make([]map[int]string, len(groups))
+	groupTranslationErrors := make([]error, len(groups))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, concurrency)
 
-	// 逐组翻译文本节点
-	for groupIndex, group := range groups {
-		// 构建当前组的文本
-		var textsToTranslate []string
-		var nodeIndices []int // 记录每个文本在原始数组中的索引
+	for groupIndex, groupData := range groups {
+		wg.Add(1)
+		go func(gIdx int, currentGroupData []TextNodeInfo) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 
-		for i, node := range group {
-			// 为每个节点添加一个唯一标识符，以便在翻译后能够正确匹配
-			nodeMarker := fmt.Sprintf("@@NODE_%d@@", i)
-			textsToTranslate = append(textsToTranslate, nodeMarker+"\n"+node.Text)
-			nodeIndices = append(nodeIndices, i)
-		}
+			var textsToTranslate []string
+			originalTextsForGroup := make(map[int]string)
 
-		// 将所有文本合并为一个字符串，用于翻译
-		groupText := strings.Join(textsToTranslate, "\n\n")
-
-		logger.Debug("翻译文本组",
-			zap.Int("组索引", groupIndex),
-			zap.Int("组大小", len(group)),
-			zap.Int("文本长度", len(groupText)))
-
-		// 翻译当前组的文本
-		translatedText, err := t.Translate(groupText, true)
-		if err != nil {
-			logger.Warn("翻译HTML节点组失败",
-				zap.Error(err),
-				zap.Int("组索引", groupIndex),
-				zap.Int("组大小", len(group)))
-			continue
-		}
-
-		// 将翻译结果分割回各个节点
-		// 使用双换行符作为分隔符
-		translatedParts := strings.Split(translatedText, "\n\n")
-
-		// 创建一个映射，将节点标识符映射到翻译结果
-		translationMap := make(map[int]string)
-
-		// 解析翻译结果，提取节点标识符和对应的翻译文本
-		for _, part := range translatedParts {
-			// 查找节点标识符
-			for i := range group {
+			for i, node := range currentGroupData {
 				nodeMarker := fmt.Sprintf("@@NODE_%d@@", i)
-				if strings.Contains(part, nodeMarker) {
-					// 移除节点标识符，获取实际翻译文本
-					translatedContent := strings.Replace(part, nodeMarker, "", 1)
-					translatedContent = strings.TrimSpace(translatedContent)
-					if translatedContent != "" {
-						translationMap[i] = translatedContent
+				originalTextsForGroup[i] = node.Text
+				textsToTranslate = append(textsToTranslate, nodeMarker+"\\n"+node.Text)
+			}
+			groupText := strings.Join(textsToTranslate, "\\n\\n")
+
+			if strings.TrimSpace(groupText) == "" && len(textsToTranslate) == 0 {
+				logger.Debug("跳过翻译空组", zap.Int("groupIndex", gIdx))
+				groupTranslationResults[gIdx] = make(map[int]string) // Empty map for this group
+				return
+			}
+
+			logger.Debug("开始翻译HTML文本组", zap.Int("groupIndex", gIdx), zap.Int("textLength", len(groupText)))
+			translatedText, err := t.Translate(groupText, true)
+			if err != nil {
+				groupTranslationErrors[gIdx] = err
+				logger.Warn("翻译HTML节点组失败", zap.Error(err), zap.Int("groupIndex", gIdx))
+				currentGroupTranslations := make(map[int]string)
+				for i := range currentGroupData {
+					currentGroupTranslations[i] = originalTextsForGroup[i]
+				}
+				groupTranslationResults[gIdx] = currentGroupTranslations
+				return
+			}
+
+			translatedParts := strings.Split(translatedText, "\\n\\n")
+			currentGroupTranslations := make(map[int]string)
+			for _, part := range translatedParts {
+				for i := range currentGroupData {
+					nodeMarker := fmt.Sprintf("@@NODE_%d@@", i)
+					if strings.Contains(part, nodeMarker) {
+						translatedContent := strings.Replace(part, nodeMarker, "", 1)
+						translatedContent = strings.TrimSpace(translatedContent)
+						if translatedContent != "" {
+							currentGroupTranslations[i] = translatedContent
+						}
+						break
 					}
-					break
 				}
 			}
-		}
-
-		// 如果没有找到任何翻译结果，尝试直接使用整个翻译文本
-		if len(translationMap) == 0 && len(group) > 0 {
-			translationMap[0] = translatedText
-		}
-
-		// 如果某些节点没有对应的翻译结果，使用原始文本
-		for i, nodeInfo := range group {
-			if _, exists := translationMap[i]; !exists {
-				translationMap[i] = nodeInfo.Text
-				logger.Warn("节点没有对应的翻译结果，使用原始文本",
-					zap.Int("组索引", groupIndex),
-					zap.Int("节点索引", i),
-					zap.String("节点路径", nodeInfo.Path))
+			for i := range currentGroupData {
+				if _, ok := currentGroupTranslations[i]; !ok {
+					currentGroupTranslations[i] = originalTextsForGroup[i]
+				}
 			}
-		}
+			groupTranslationResults[gIdx] = currentGroupTranslations
+		}(groupIndex, groupData)
+	}
+	wg.Wait()
 
-		// 将翻译结果应用到各个节点
-		for i, nodeInfo := range group {
-			translatedContent := translationMap[i]
-			if translatedContent != "" {
-				// 替换节点的文本内容，保留原始格式
-				if goquery.NodeName(nodeInfo.Selection) == "#text" {
-					// 对于文本节点，恢复前导和尾随空白
-					formattedContent := nodeInfo.Format.LeadingWhitespace +
-						translatedContent +
-						nodeInfo.Format.TrailingWhitespace
-					nodeInfo.Selection.ReplaceWithHtml(formattedContent)
-				} else if nodeInfo.Format.OriginalHTML != "" {
-					// 对于包含HTML结构的元素，尝试保留原始结构
-					// 创建一个临时文档来解析原始HTML
-					tempDoc, err := goquery.NewDocumentFromReader(strings.NewReader("<div>" + nodeInfo.Format.OriginalHTML + "</div>"))
+	for groupIndex, groupData := range groups {
+		if groupTranslationErrors[groupIndex] != nil {
+			logger.Warn("跳过应用翻译组（由于错误）", zap.Int("groupIndex", groupIndex), zap.Error(groupTranslationErrors[groupIndex]))
+		}
+		translationsForThisGroup := groupTranslationResults[groupIndex]
+		for nodeIdxInGroup, nodeInfo := range groupData {
+			translatedContent, ok := translationsForThisGroup[nodeIdxInGroup]
+			if !ok {
+				logger.Debug("节点无翻译（应已回退到原文）", zap.Int("groupIndex", groupIndex), zap.Int("nodeIdx", nodeIdxInGroup), zap.String("path", nodeInfo.Path))
+				continue
+			}
+			if nodeInfo.IsAttribute {
+				nodeInfo.Selection.SetAttr(nodeInfo.AttributeName, translatedContent)
+			} else if goquery.NodeName(nodeInfo.Selection) == "#text" {
+				formattedContent := nodeInfo.Format.LeadingWhitespace + translatedContent + nodeInfo.Format.TrailingWhitespace
+				nodeInfo.Selection.ReplaceWithHtml(formattedContent)
+			} else if nodeInfo.Format.OriginalHTML != "" {
+				tempDoc, err := goquery.NewDocumentFromReader(strings.NewReader("<div>" + nodeInfo.Format.OriginalHTML + "</div>"))
+				if err == nil {
+					replaceTextPreservingStructure(tempDoc.Find("div"), translatedContent)
+					newHTML, err := tempDoc.Find("div").Html()
 					if err == nil {
-						// 尝试智能替换文本，保留HTML结构
-						replaceTextPreservingStructure(tempDoc.Find("div"), translatedContent)
-						newHTML, err := tempDoc.Find("div").Html()
-						if err == nil {
-							nodeInfo.Selection.SetHtml(newHTML)
-						} else {
-							// 如果失败，退回到简单的文本替换
-							nodeInfo.Selection.SetText(translatedContent)
-						}
+						nodeInfo.Selection.SetHtml(newHTML)
 					} else {
-						// 如果解析失败，退回到简单的文本替换
 						nodeInfo.Selection.SetText(translatedContent)
 					}
 				} else {
-					// 对于其他元素节点，使用SetText方法
 					nodeInfo.Selection.SetText(translatedContent)
 				}
+			} else {
+				nodeInfo.Selection.SetText(translatedContent)
 			}
 		}
 	}
 
-	// 获取修改后的HTML
 	htmlResult, err := doc.Html()
 	if err != nil {
-		return "", fmt.Errorf("生成HTML失败: %w", err)
+		return "", fmt.Errorf("生成最终HTML失败: %w", err)
 	}
 
-	// 恢复被保护的内容
 	for placeholder, original := range protected {
-		htmlResult = strings.Replace(htmlResult, placeholder, original, 1)
+		htmlResult = strings.ReplaceAll(htmlResult, placeholder, original)
 	}
 
-	// 移除所有XML声明和DOCTYPE声明
-	htmlResult = regexp.MustCompile(`<\?xml[^>]*\?>\s*`).ReplaceAllString(htmlResult, "")
-	htmlResult = regexp.MustCompile(`<!DOCTYPE[^>]*>\s*`).ReplaceAllString(htmlResult, "")
-
-	// 重新添加XML声明和DOCTYPE（如果有）
+	// 使用 strings.Builder 构建最终输出，确保声明顺序正确
+	var finalOutputBuilder strings.Builder
 	if hasXMLDeclaration && xmlDeclaration != "" {
-		// 添加XML声明到文件开头
-		htmlResult = xmlDeclaration + "\n" + htmlResult
-		logger.Debug("重新添加XML声明", zap.String("declaration", xmlDeclaration))
+		finalOutputBuilder.WriteString(xmlDeclaration)
+		finalOutputBuilder.WriteString("\n")
 	}
-
 	if hasDOCTYPE && doctypeDeclaration != "" {
-		// 添加DOCTYPE声明
-		if hasXMLDeclaration {
-			// 如果有XML声明，在XML声明后添加DOCTYPE
-			htmlResult = strings.Replace(htmlResult, xmlDeclaration, xmlDeclaration+"\n"+doctypeDeclaration, 1)
-		} else {
-			// 否则添加到文件开头
-			htmlResult = doctypeDeclaration + "\n" + htmlResult
-		}
-		logger.Debug("重新添加DOCTYPE声明", zap.String("doctype", doctypeDeclaration))
+		finalOutputBuilder.WriteString(doctypeDeclaration)
+		finalOutputBuilder.WriteString("\n")
 	}
+	finalOutputBuilder.WriteString(htmlResult)
 
-	// 检查并修复可能的编码问题
-	htmlResult = fixEncodingIssues(htmlResult)
+	return finalOutputBuilder.String(), nil
+}
 
-	return htmlResult, nil
+func shouldTranslateAttr(attrName string) bool {
+	switch strings.ToLower(attrName) {
+	case "title", "alt", "label", "aria-label", "placeholder", "summary":
+		return true
+	}
+	return false
+}
+
+// IsSVGElement 检查节点是否为SVG元素 (SVG内容通常不翻译)
+func IsSVGElement(s *goquery.Selection) bool {
+	if goquery.NodeName(s) == "svg" {
+		return true
+	}
+	// 还可以检查父节点是否为SVG，以处理SVG内部的元素
+	if s.ParentsFiltered("svg").Length() > 0 {
+		return true
+	}
+	return false
 }
 
 func GetTextNodesWithExclusions(selection *goquery.Selection, exclusions []string) []*html.Node {

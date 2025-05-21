@@ -55,6 +55,8 @@ type Config struct {
 	Debug                   bool                     `mapstructure:"debug"`
 	RequestTimeout          int                      `mapstructure:"request_timeout"`           // 请求超时时间（秒）
 	Concurrency             int                      `mapstructure:"concurrency"`               // 并行翻译请求数
+	HtmlConcurrency         int                      `mapstructure:"html_concurrency"`          // 并行HTML翻译请求数(每个 html 内部翻译请求数)
+	EpubConcurrency         int                      `mapstructure:"epub_concurrency"`          // 并行EPUB翻译请求数（同时翻译几个内部的 html)
 	MinSplitSize            int                      `mapstructure:"min_split_size"`            // 最小分割大小（字符数）
 	MaxSplitSize            int                      `mapstructure:"max_split_size"`            // 最大分割大小（字符数）
 	FilterReasoning         bool                     `mapstructure:"filter_reasoning"`          // 是否过滤推理过程
