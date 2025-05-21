@@ -31,6 +31,10 @@ fix_table_format: true # 修复表格格式
 fix_mixed_content: true # 修复混合内容（中英文混合）
 fix_picture: true # 修复图片链接和说明
 
+# 货币相关配置
+target_currency: "USD"
+usd_rmb_rate: 7.4
+
 models:
   gpt-3.5-turbo:
     name: "gpt-3.5-turbo"

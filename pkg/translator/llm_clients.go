@@ -112,6 +112,7 @@ func maskAuthToken(token string) string {
 // newOpenAIClient 创建一个新的OpenAI客户端
 func newOpenAIClient(cfg config.ModelConfig, log logger.Logger, timeout time.Duration) (*OpenAIClient, error) {
 	var client *openai.Client
+	var err error // Declare error variable for later use
 
 	// 确定使用哪个模型 ID
 	modelID := cfg.Name
@@ -119,23 +120,16 @@ func newOpenAIClient(cfg config.ModelConfig, log logger.Logger, timeout time.Dur
 		modelID = cfg.ModelID
 	}
 
-	// 确保 baseURL 格式正确
-	baseURL := cfg.BaseURL
-	if baseURL != "" && !strings.HasSuffix(baseURL, "/") {
-		baseURL = baseURL + "/"
-	}
-
-	// 记录使用的基础 URL 和模型名称（但不记录 API 密钥）
+	// 记录创建OpenAI客户端时使用的原始配置值
 	maskedKey := maskAuthToken(cfg.Key)
-	log.Debug("创建 OpenAI 客户端",
-		zap.String("模型", cfg.Name),
-		zap.String("模型ID", modelID),
-		zap.String("基础URL", baseURL),
-		zap.String("API密钥", maskedKey),
-		zap.Duration("超时时间", timeout),
+	log.Debug("准备创建 OpenAI 客户端",
+		zap.String("config_name", cfg.Name),
+		zap.String("effective_model_id", modelID),
+		zap.String("config_base_url", cfg.BaseURL),
+		zap.String("config_api_key_masked", maskedKey),
+		zap.Duration("timeout", timeout),
 	)
 
-	// 初始化 OpenAIClient，稍后填充 httpClient 和 client
 	openAIClient := &OpenAIClient{
 		modelName:        cfg.Name,
 		modelID:          modelID,
@@ -143,7 +137,7 @@ func newOpenAIClient(cfg config.ModelConfig, log logger.Logger, timeout time.Dur
 		maxInputTokens:   cfg.MaxInputTokens,
 		maxOutputTokens:  cfg.MaxOutputTokens,
 		log:              log,
-		baseURL:          baseURL,
+		baseURL:          cfg.BaseURL, // Store original cfg.BaseURL for sendManualRequest and logging
 		apiKey:           cfg.Key,
 		timeout:          timeout,
 		inputTokenPrice:  cfg.InputTokenPrice,
@@ -158,19 +152,30 @@ func newOpenAIClient(cfg config.ModelConfig, log logger.Logger, timeout time.Dur
 	}
 	openAIClient.httpClient = httpClient
 
-	if baseURL != "" {
-		// 使用自定义基础URL
-		config := openai.DefaultConfig(cfg.Key)
-		config.BaseURL = baseURL
-		config.HTTPClient = httpClient
-		client = openai.NewClientWithConfig(config)
+	// 为 go-openai 库配置 openai.ClientConfig
+	goOpenaiConfig := openai.DefaultConfig(cfg.Key)
+	goOpenaiConfig.HTTPClient = httpClient
+
+	if cfg.BaseURL != "" {
+		// 如果配置了自定义 BaseURL
+		// 确保传递给 go-openai 的 BaseURL 不以斜杠结尾，
+		// 因为 go-openai 的 API 后缀通常以斜杠开头，避免出现双斜杠。
+		goOpenaiConfig.BaseURL = strings.TrimSuffix(cfg.BaseURL, "/")
+
+		log.Debug("为 go-openai 客户端配置了自定义 BaseURL",
+			zap.String("original_cfg_base_url", cfg.BaseURL),
+			zap.String("go_openai_target_base_url", goOpenaiConfig.BaseURL),
+		)
+		client = openai.NewClientWithConfig(goOpenaiConfig)
 	} else {
-		// 使用默认URL
-		client = openai.NewClient(cfg.Key)
+		// 没有配置自定义 BaseURL，使用 OpenAI 的默认 URL (api.openai.com)
+		// goOpenaiConfig 已包含 httpClient 和 API Key
+		log.Debug("未配置 cfg.BaseURL，go-openai 客户端将使用默认 OpenAI API 地址")
+		client = openai.NewClientWithConfig(goOpenaiConfig)
 	}
 
-	openAIClient.client = client
-	return openAIClient, nil
+	openAIClient.client = client // 将配置好的 go-openai 客户端实例赋给我们的包装器
+	return openAIClient, err     // Return potential error from earlier stages if any
 }
 
 // GetInputTokenPrice 返回输入令牌价格
@@ -834,7 +839,7 @@ func (c *OpenAIClient) sendManualRequest(ctx context.Context, req openai.ChatCom
 					if message, ok := choice["message"].(map[string]interface{}); ok {
 						if content, ok := message["content"].(string); ok && content != "" {
 							// 发现有效的翻译内容，记录警告但不视为错误
-							c.log.Info("API返回非200状态码但包含有效内容",
+							c.log.Info("手动请求成功并提取到内容",
 								zap.Int("状态码", resp.StatusCode),
 								zap.Int("内容长度", len(content)),
 							)

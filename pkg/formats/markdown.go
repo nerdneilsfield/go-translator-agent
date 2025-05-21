@@ -106,6 +106,14 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 	// 3.1 合并连续的占位符段落
 	protectedText = p.combineConsecutivePlaceholderParagraphs(protectedText)
 
+	p.logger.Debug("Markdown pre-processing: Setting character counts for progress tracker",
+		zap.String("inputFile", inputPath),
+		zap.Int("originalTextLength", len(originalText)),
+		zap.Int("protectedTextLength", len(protectedText)),
+	)
+	p.Translator.GetProgressTracker().SetRealTotalChars(len(originalText))
+	p.Translator.GetProgressTracker().SetTotalChars(len(protectedText))
+
 	// 3. 保存 replacements
 	replacementsJSON, err := json.MarshalIndent(ReplacementInfoList{Replacements: p.currentReplacements}, "", "    ")
 	if err != nil {
@@ -144,6 +152,12 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 		// 3.1 合并连续的占位符段落
 		protectedText = p.combineConsecutivePlaceholderParagraphs(protectedText)
 
+		p.logger.Debug("Markdown pre-processing: Setting character counts for progress tracker",
+			zap.String("inputFile", inputPath),
+			zap.Int("originalTextLength", len(originalText)),
+			zap.Int("protectedTextLength", len(protectedText)),
+		)
+		p.Translator.GetProgressTracker().SetRealTotalChars(len(originalText))
 		p.Translator.GetProgressTracker().SetTotalChars(len(protectedText))
 
 		// 3. 保存 replacements
@@ -193,8 +207,16 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 		// 重新计算进度信息
 		originalBytes, err := os.ReadFile(inputPath)
 		if err == nil {
+			p.logger.Debug("Markdown pre-processing (resuming): Setting real total chars for progress tracker",
+				zap.String("inputFile", inputPath),
+				zap.Int("originalBytesLength", len(originalBytes)),
+			)
 			p.Translator.GetProgressTracker().SetRealTotalChars(len(originalBytes))
 		}
+		p.logger.Debug("Markdown pre-processing (resuming): Setting total chars for progress tracker",
+			zap.String("inputFile", inputPath),
+			zap.Int("protectedTextLength", len(protectedText)),
+		)
 		p.Translator.GetProgressTracker().SetTotalChars(len(protectedText))
 	}
 
@@ -247,6 +269,10 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 		p.logger.Warn("格式化输出文件失败", zap.Error(err))
 	}
 
+	p.logger.Debug("Markdown post-processing: Setting real translated chars for progress tracker",
+		zap.String("outputFile", outputPath),
+		zap.Int("finalResultLength", len(finalResult)),
+	)
 	p.Translator.GetProgressTracker().UpdateRealTranslatedChars(len(finalResult))
 
 	p.Translator.Finish()

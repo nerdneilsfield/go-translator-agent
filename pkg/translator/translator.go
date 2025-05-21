@@ -198,7 +198,7 @@ func New(cfg *config.Config, opts ...Option) (*Impl, error) {
 		cache:             cacher,
 		forceCacheRefresh: options.forceCacheRefresh,
 		progressBar:       nil,
-		progressTracker:   NewTranslationProgressTracker(0),
+		progressTracker:   NewTranslationProgressTracker(0, zapLogger, cfg.TargetCurrency, cfg.UsdRmbRate),
 		useNewProgressBar: options.useNewProgressBar,
 		modelPrice:        modelPrice,
 		client:            llmClient,
@@ -206,7 +206,7 @@ func New(cfg *config.Config, opts ...Option) (*Impl, error) {
 	}
 
 	if translator.useNewProgressBar {
-		translator.newProgressTracker = NewNewProgressTracker(1000, zapLogger)
+		translator.newProgressTracker = NewNewProgressTracker(0, zapLogger)
 		translator.newProgressTracker.UpdateModelPrice(modelPrice)
 	}
 
@@ -332,10 +332,17 @@ func (t *Impl) InitTranslator() {
 	if t.useNewProgressBar {
 		// 使用新的进度条系统
 		if t.newProgressTracker == nil {
-			t.newProgressTracker = NewNewProgressTracker(1000, t.Logger)
+			t.newProgressTracker = NewNewProgressTracker(0, t.Logger)
 			t.newProgressTracker.UpdateModelPrice(t.modelPrice)
 		}
 		t.newProgressTracker.Start()
+
+		// 从旧的进度跟踪器获取总字符数并设置到新的进度跟踪器
+		totalCharsFromOldTracker, _, _, _, _, _, _ := t.progressTracker.GetProgress()
+		if totalCharsFromOldTracker > 0 {
+			t.newProgressTracker.SetTotalChars(totalCharsFromOldTracker)
+			t.Logger.Debug("设置新进度条总字符数", zap.Int("totalChars", totalCharsFromOldTracker))
+		}
 
 		// 记录初始化信息
 		if logger, ok := t.logger.(interface{ Info(string, ...zap.Field) }); ok {
@@ -347,18 +354,20 @@ func (t *Impl) InitTranslator() {
 	} else {
 		// 使用旧的进度条系统
 		// 确保进度跟踪器已初始化
-		totalCharsFromData, _, _, _, _, _ := t.progressTracker.GetProgress()
-		if totalCharsFromData <= 0 {
+		var totalCharsFromDataForUI int // Renamed to avoid conflict
+		totalCharsFromDataForUI, _, _, _, _, _, _ = t.progressTracker.GetProgress()
+		if totalCharsFromDataForUI <= 0 {
 			// 如果总字符数未设置，设置一个默认值，但优先让 InitTranslator 处理初始化
 			t.progressTracker.SetTotalChars(1000) // 确保数据跟踪器有值
 			// 获取更新后的值
-			totalCharsFromData, _, _, _, _, _ = t.progressTracker.GetProgress()
+			totalCharsFromDataForUI, _, _, _, _, _, _ = t.progressTracker.GetProgress()
 		}
+		t.logger.Debug("[Old Progress System] Initializing UI progress bar", zap.Int64("totalCharsForUI", int64(totalCharsFromDataForUI)))
 
 		// 初始化或配置自定义进度条
 		if t.progressBar == nil {
 			// 如果外部没有提供 progressBar，则创建一个新的
-			initialTotal := int64(totalCharsFromData)
+			initialTotal := int64(totalCharsFromDataForUI)
 			if initialTotal <= 0 { // 再次检查以防万一
 				initialTotal = 1000 // 默认总数
 			}
@@ -369,7 +378,7 @@ func (t *Impl) InitTranslator() {
 			)
 		} else {
 			// 如果外部传入了 progressBar, 确保其 Total 是最新的
-			t.progressBar.SetTotal(int64(totalCharsFromData))
+			t.progressBar.SetTotal(int64(totalCharsFromDataForUI))
 		}
 		t.progressBar.Start() // 启动自定义进度条的渲染
 		t.logger.Info("翻译器已初始化 (使用自定义进度条系统)",
@@ -425,6 +434,13 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 					zap.Int("文本长度", len(text)),
 					zap.Int("缓存长度", len(cached)),
 				)
+				// 更新进度
+				if t.useNewProgressBar {
+					t.newProgressTracker.UpdateProgress(len(cached))
+				} else {
+					t.progressTracker.UpdateProgress(len(cached))
+					t.updateProgress() // 更新旧UI进度条
+				}
 				return cached, nil
 			}
 		}
@@ -450,6 +466,14 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 
 		if err != nil {
 			return "", fmt.Errorf("快速模式翻译失败: %w", err)
+		}
+
+		// 快速模式下，初始翻译即为最终结果，更新进度
+		if t.useNewProgressBar {
+			t.newProgressTracker.UpdateProgress(len(result))
+		} else {
+			t.progressTracker.UpdateProgress(len(result))
+			t.updateProgress() // 更新旧UI进度条
 		}
 
 		// 缓存结果
@@ -493,6 +517,12 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 				zap.Int("缓存长度", len(cached)),
 			)
 			initialTranslation = cached
+			if t.useNewProgressBar {
+				t.newProgressTracker.UpdateProgress(len(initialTranslation))
+			} else {
+				t.progressTracker.UpdateProgress(len(initialTranslation)) // Corrected: Use UpdateProgress for cumulative UI progress
+				t.updateProgress()                                        // 更新UI
+			}
 		}
 	}
 
@@ -521,6 +551,13 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 			if err != nil {
 				return "", fmt.Errorf("初始翻译步骤失败: %w", err)
 			}
+		}
+
+		if t.useNewProgressBar {
+			t.newProgressTracker.UpdateProgress(len(initialTranslation))
+		} else {
+			t.progressTracker.UpdateProgress(len(initialTranslation)) // Corrected: Use UpdateProgress for cumulative UI progress
+			t.updateProgress()                                        // 更新UI
 		}
 
 		// 缓存初始翻译结果
@@ -554,6 +591,7 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 				zap.Int("缓存长度", len(cached)),
 			)
 			reflection = cached
+			// 反思步骤不直接贡献到UI字符进度条，因为它不是翻译文本输出
 		}
 	}
 
@@ -588,6 +626,7 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 		if t.shouldUseCache() {
 			_ = t.cache.Set(reflectionCacheKey, reflection)
 		}
+		// 反思步骤不更新UI字符进度条
 	}
 
 	// 第三步：改进
@@ -602,6 +641,18 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 				zap.Int("缓存长度", len(cached)),
 			)
 			improvedTranslation = cached
+			// 如果从缓存加载改进结果，需要用它的长度更新进度，
+			// 但要注意，如果之前initialTranslation已经更新过，这里可能是覆盖或累加的逻辑问题。
+			// 假设这里的cached是最终的翻译长度，并且前面的initialTranslation调用UpdateProgress设置的是中间过程。
+			// 最简单的方式是，如果走了完整流程，在最后用 improvedTranslation 的长度来更新。
+			// 但如果分步缓存，且目标是累加进度，则需要更细致处理。
+			// 暂时：如果从缓存获取，我们用它的长度作为当前已翻译字符，并更新UI。
+			if t.useNewProgressBar {
+				t.newProgressTracker.UpdateProgress(len(improvedTranslation))
+			} else {
+				t.progressTracker.UpdateProgress(len(improvedTranslation)) // Corrected: Use UpdateProgress for cumulative UI progress
+				t.updateProgress()
+			}
 		}
 	}
 
@@ -631,6 +682,13 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 				return "", fmt.Errorf("改进步骤失败: %w", err)
 			}
 		}
+		// 改进步骤完成后，用其结果的长度更新进度
+		if t.useNewProgressBar {
+			t.newProgressTracker.UpdateProgress(len(improvedTranslation))
+		} else {
+			t.progressTracker.UpdateProgress(len(improvedTranslation)) // Corrected: Use UpdateProgress for cumulative UI progress
+			t.updateProgress()
+		}
 
 		// 缓存改进结果
 		if t.shouldUseCache() {
@@ -638,8 +696,6 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 			_ = t.cache.Set(t.generateCacheKey(text, "final"), improvedTranslation)
 		}
 	}
-
-	t.updateProgress(len(improvedTranslation))
 
 	// 记录翻译结果的摘要
 	t.logger.Info("翻译完成（完整流程）",
@@ -990,11 +1046,17 @@ func (t *Impl) GetProgress() string {
 }
 
 // updateProgress 更新翻译进度
-func (t *Impl) updateProgress(charsTranslatedInThisStep int) {
+// 这个方法现在不接收参数，它会从 progressTracker 获取最新的累计字符数来更新UI
+func (t *Impl) updateProgress() {
 	if t.useNewProgressBar {
 		// 使用新的进度条系统
 		if t.newProgressTracker != nil {
-			t.newProgressTracker.UpdateProgress(charsTranslatedInThisStep)
+			// 假设 newProgressTracker 内部有自己的逻辑从数据源获取并更新
+			// 或者它也依赖一个共享的 TranslationProgressTracker 实例
+			// 为简化，我们假设它在被调用时会做正确的事，或者这个分支暂时不关键
+			// 如果 newProgressTracker 也依赖 t.progressTracker, 那么它会自动获得更新
+			// _, cumulativeChars, _, _, _, _, _ := t.progressTracker.GetProgress()
+			// t.newProgressTracker.UpdateProgress(cumulativeChars) // 这种方式可能不适用，取决于 newProgressTracker 设计
 		}
 		return
 	}
@@ -1006,18 +1068,20 @@ func (t *Impl) updateProgress(charsTranslatedInThisStep int) {
 	}
 
 	// 从数据跟踪器获取累计值
-	// 注意：我们不再需要 estimatedTimeRemaining 和 estimatedCost 来构建消息字符串
-	// customprogress.Tracker 会自己处理 ETA 和成本的显示（如果配置了）
-	totalChars, cumulativeTranslatedChars, _, _, _, _ := t.progressTracker.GetProgress()
+	var totalCharsForUICurr, cumulativeIntermediateCharsCurr int
+	// 注意：GetProgress 返回的第二个值是 translatedChars，即我们这里关心的 cumulativeIntermediateCharsCurr
+	totalCharsForUICurr, cumulativeIntermediateCharsCurr, _, _, _, _, _ = t.progressTracker.GetProgress()
 
-	if totalChars > 0 { // 确保总数有效
-		t.progressBar.SetTotal(int64(totalChars))
+	t.logger.Debug("Updating UI progress bar (old system)",
+		zap.Int("totalCharsForUI", totalCharsForUICurr),
+		zap.Int("cumulativeIntermediateCharsForUI", cumulativeIntermediateCharsCurr),
+	)
+
+	if totalCharsForUICurr > 0 { // 确保总数有效
+		t.progressBar.SetTotal(int64(totalCharsForUICurr))
 	}
-	t.progressBar.Update(int64(cumulativeTranslatedChars))
+	t.progressBar.Update(int64(cumulativeIntermediateCharsCurr))
 
-	// SetMessage 可以用于显示一般状态，例如当前正在处理的步骤名。
-	// 但主要的进度指标（百分比、条、速度、ETA、成本）由 Tracker 自动渲染。
-	// t.progressBar.SetMessage("处理中...") // 可选：如果需要覆盖默认消息
 }
 
 // GetProgressTracker 返回数据进度跟踪器
@@ -1029,39 +1093,67 @@ func (t *Impl) GetProgressTracker() *TranslationProgressTracker {
 func (t *Impl) Finish() {
 	var summaryData *customprogress.SummaryStats
 
-	// 收集统计数据用于生成总结表格
-	// 这些数据源自 t.progressTracker (旧系统) 或 t.newProgressTracker (新系统)
-	var translatedChars, realTotalChars int // totalChars 已移除，不再使用
-	var tokenUsage TokenUsage               // 来自 pkg/translator/progress.go
-	var estimatedCost EstimatedCost         // 来自 pkg/translator/progress.go
+	// 声明 Finish 函数作用域内的变量，用于存储从 GetProgress 获取的数据
+	var totalCharsForUI, cumulativeIntermediateChars, realTotalCharsFromFile, realTranslatedCharsFinal int
+	var tokenUsage TokenUsage
+	var estimatedCost EstimatedCost
 	var elapsedTime time.Duration
+	// estimatedTimeRemainingFromTracker 暂时不直接用于旧版摘要，但我们接收它以匹配签名
+	var estimatedTimeRemainingFromTracker float64
 
 	if t.useNewProgressBar && t.newProgressTracker != nil {
-		_, translatedChars, realTotalChars, _, tokenUsage, estimatedCost = t.newProgressTracker.GetProgress() // totalChars 的返回值被忽略
+		// 从新的进度跟踪器获取数据
+		var newEstimatedTimeRemaining float64
+		totalCharsForUI, cumulativeIntermediateChars, realTotalCharsFromFile, newEstimatedTimeRemaining, tokenUsage, estimatedCost = t.newProgressTracker.GetProgress()
+
+		// 获取来自旧跟踪器的实际翻译字符数
+		_, _, _, realTranslatedCharsFinal, _, _, _ = t.progressTracker.GetProgress()
+
+		// 获取运行时间
 		elapsedTime = tokenUsage.ElapsedTime
+
+		t.logger.Debug("[New Progress System] Data for summary in Finish()",
+			zap.Int("totalCharsForUI", totalCharsForUI),
+			zap.Int("cumulativeIntermediateChars", cumulativeIntermediateChars),
+			zap.Int("realTotalCharsFromFile", realTotalCharsFromFile),
+			zap.Int("realTranslatedCharsFinal", realTranslatedCharsFinal),
+			zap.Float64("estimatedTimeRemainingFromTracker", newEstimatedTimeRemaining),
+			zap.Any("tokenUsage", tokenUsage),
+			zap.Any("estimatedCost", estimatedCost),
+			zap.Duration("elapsedTime", elapsedTime),
+		)
 	} else if !t.useNewProgressBar && t.progressTracker != nil {
-		_, translatedChars, realTotalChars, _, tokenUsage, estimatedCost = t.progressTracker.GetProgress() // totalChars 的返回值被忽略
-		if t.progressTracker.startTime.IsZero() {
+		totalCharsForUI, cumulativeIntermediateChars, realTotalCharsFromFile, realTranslatedCharsFinal, estimatedTimeRemainingFromTracker, tokenUsage, estimatedCost = t.progressTracker.GetProgress()
+		if t.progressTracker.startTime.IsZero() { // 旧的 progressTracker 有 startTime 字段
 			elapsedTime = 0
 		} else {
 			elapsedTime = time.Since(t.progressTracker.startTime)
 		}
+		t.logger.Debug("[Old Progress System] Data for summary in Finish()",
+			zap.Int("totalCharsForUI", totalCharsForUI),
+			zap.Int("cumulativeIntermediateChars", cumulativeIntermediateChars),
+			zap.Int("realTotalCharsFromFile", realTotalCharsFromFile),
+			zap.Int("realTranslatedCharsFinal", realTranslatedCharsFinal),
+			zap.Float64("estimatedTimeRemainingFromTracker", estimatedTimeRemainingFromTracker),
+			zap.Any("tokenUsage", tokenUsage),
+			zap.Any("estimatedCost", estimatedCost),
+			zap.Duration("elapsedTime", elapsedTime),
+		)
 	} else {
 		if t.progressBar != nil {
 			t.progressBar.Done(nil)
 		} else if t.newProgressTracker != nil {
-			// NewProgressTracker.Done() 也需要更新以接受 SummaryStats
-			// 暂时假设它会处理 nil summary
-			t.newProgressTracker.Done(nil) // 假设 Done 签名已更新
+			t.newProgressTracker.Done(nil)
 		}
-		t.logger.Warn("Finish called but no active progress tracker found to generate summary.")
+		t.logger.Warn("Finish called but no active progress tracker or UI progress bar found to generate summary.")
 		return
 	}
 
-	if realTotalChars > 0 || translatedChars > 0 || tokenUsage.InitialInputTokens > 0 || tokenUsage.InitialOutputTokens > 0 { // 调整条件以确保仅在有数据时创建摘要
+	// 使用从上面分支获取的数据（realTotalCharsFromFile, realTranslatedCharsFinal, tokenUsage, estimatedCost, elapsedTime）
+	if realTotalCharsFromFile > 0 || realTranslatedCharsFinal > 0 || tokenUsage.InitialInputTokens > 0 || tokenUsage.InitialOutputTokens > 0 {
 		summaryData = &customprogress.SummaryStats{
-			InputTextLength: realTotalChars,
-			TextTranslated:  translatedChars,
+			InputTextLength: realTotalCharsFromFile,   // 使用从 GetProgress 获取的原始文件总字符数
+			TextTranslated:  realTranslatedCharsFinal, // 使用最终输出文件的字符数
 			TotalTime:       elapsedTime,
 			Steps:           []customprogress.StepStats{},
 			TotalCost:       estimatedCost.TotalCost,

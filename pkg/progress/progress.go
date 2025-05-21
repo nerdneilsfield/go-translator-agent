@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
 )
 
@@ -646,40 +645,163 @@ type SummaryStats struct {
 
 // renderSummaryTable 渲染最终的总结表格
 func (pt *Tracker) renderSummaryTable(stats *SummaryStats) {
-	if pt.writer == nil || stats == nil {
+	if stats == nil || pt.writer == nil {
 		return
 	}
+	var b strings.Builder
 
-	tw := table.NewWriter()
-	tw.SetOutputMirror(pt.writer) // 直接写入 pt.writer
+	// ANSI Color Definitions
+	const (
+		colorReset         = "\033[0m"
+		colorBold          = "\033[1m"
+		colorFgCyan        = "\033[36m"
+		colorFgYellow      = "\033[33m"
+		colorFgBrightWhite = "\033[97m"
+		colorFgBrightGreen = "\033[92m" // Using 92 for bright green
+	)
 
-	tw.AppendRow(table.Row{"项", "值"})
-	tw.AppendSeparator()
-	tw.AppendRow(table.Row{"原始文本长度 (单位)", fmt.Sprintf("%d %s", stats.InputTextLength, pt.unitSymbol)}) // 使用 pt 的单位
-	tw.AppendRow(table.Row{"已翻译 (单位)", fmt.Sprintf("%d %s", stats.TextTranslated, pt.unitSymbol)})     // 使用 pt 的单位
-	tw.AppendRow(table.Row{"总耗时", formatDuration(stats.TotalTime)})                                    // 使用现有的 formatDuration
+	// Colored components
+	borderColored := colorFgCyan
+	headerTextColored := colorBold + colorFgCyan
+	keyTextColored := colorFgYellow
+	valueTextColored := colorFgBrightWhite
+	valueSpeedTextColored := colorFgBrightGreen
 
-	for _, step := range stats.Steps {
-		if step.HasData {
-			tw.AppendSeparator()
-			tw.AppendRow(table.Row{fmt.Sprintf("%s - 输入 Tokens", step.StepName), step.InputTokens})
-			tw.AppendRow(table.Row{fmt.Sprintf("%s - 输出 Tokens", step.StepName), step.OutputTokens})
-			if step.TokenSpeed > 0 {
-				tw.AppendRow(table.Row{fmt.Sprintf("%s - Token 速度", step.StepName), fmt.Sprintf("%.2f t/s", step.TokenSpeed)})
-			}
-			if step.Cost > 0 || step.InputTokens > 0 || step.OutputTokens > 0 { // Show cost if there are tokens or explicit cost
-				tw.AppendRow(table.Row{fmt.Sprintf("%s - 成本", step.StepName), fmt.Sprintf("%s%.4f", step.CostUnit, step.Cost)})
-			}
+	// Column widths based on typical test output, consider making these dynamic or configurable
+	// Width for the actual text padding
+	keyTextDisplayWidth := 32
+	valueTextDisplayWidth := 23
+	// Width for the horizontal line segments
+	keyColHorizontalLineWidth := 35 // Corresponds to ─ chars for key column
+	valColHorizontalLineWidth := 26 // Corresponds to ─ chars for value column
+
+	// Helper to create a horizontal line
+	makeHorizontalLine := func(left, mid, right string) string {
+		return fmt.Sprintf("%s%s%s%s%s%s%s%s\n",
+			borderColored, left, strings.Repeat("─", keyColHorizontalLineWidth), mid, strings.Repeat("─", valColHorizontalLineWidth), right, colorReset)
+	}
+
+	// Write a single row
+	// writeRow("原始文本长度 (单位)", fmt.Sprintf("%d %s", stats.InputTextLength, pt.opts.unitNamePlural))
+	writeRow := func(key, value string, valueColor string) {
+		if valueColor == "" {
+			valueColor = valueTextColored
+		}
+		b.WriteString(fmt.Sprintf("%s│%s %s%-*s%s %s│%s %s%-*s%s %s│%s\n",
+			borderColored, colorReset, // Left border and space after it
+			keyTextColored, keyTextDisplayWidth, key, colorReset, // Key text
+			borderColored, colorReset, // Middle border and space after it
+			valueColor, valueTextDisplayWidth, value, colorReset, // Value text
+			borderColored, colorReset, // Right border
+		))
+	}
+
+	// Top border
+	b.WriteString(makeHorizontalLine("┌", "┬", "┐"))
+
+	// Header
+	headerKeyText := "项"
+	headerValueText := "值"
+	b.WriteString(fmt.Sprintf("%s│%s %s%-*s%s %s│%s %s%-*s%s %s│%s\n",
+		borderColored, colorReset,
+		headerTextColored, keyTextDisplayWidth, headerKeyText, colorReset,
+		borderColored, colorReset,
+		headerTextColored, valueTextDisplayWidth, headerValueText, colorReset,
+		borderColored, colorReset,
+	))
+
+	// Header separator
+	b.WriteString(makeHorizontalLine("├", "┼", "┤"))
+
+	// Overall Stats
+	if stats.InputTextLength > 0 || stats.TextTranslated > 0 || stats.TotalTime > 0 {
+		if stats.InputTextLength > 0 || pt.unit != "" { // Ensure unit name is available if length is 0 but we still want to show the line
+			writeRow("原始文本长度 (单位)", fmt.Sprintf("%d %s", stats.InputTextLength, pt.unit), valueTextColored)
+		}
+		if stats.TextTranslated > 0 || pt.unit != "" {
+			writeRow("已翻译 (单位)", fmt.Sprintf("%d %s", stats.TextTranslated, pt.unit), valueTextColored)
+		}
+		if stats.TotalTime > 0 {
+			writeRow("总耗时", fmt.Sprintf("%.1fs", stats.TotalTime.Seconds()), valueTextColored)
 		}
 	}
 
-	if len(stats.Steps) > 0 { // Only show total cost if there were steps with cost info
-		tw.AppendSeparator()
-		tw.AppendRow(table.Row{"总成本", fmt.Sprintf("%s%.4f", stats.TotalCostUnit, stats.TotalCost)})
+	hasPrintedOverallStats := stats.InputTextLength > 0 || stats.TextTranslated > 0 || stats.TotalTime > 0
+	hasStepsWithData := false
+	for _, step := range stats.Steps {
+		if step.HasData {
+			hasStepsWithData = true
+			break
+		}
+	}
+	hasTotalCost := stats.TotalCost != 0 || stats.TotalCostUnit != ""
+
+	// Separator before step stats if overall stats were printed and steps/total_cost exist
+	if hasPrintedOverallStats && (hasStepsWithData || hasTotalCost) {
+		b.WriteString(makeHorizontalLine("├", "┼", "┤"))
 	}
 
-	tw.SetStyle(table.StyleLight) // 或者其他样式 table.StyleRounded, table.StyleBold
-	// fmt.Fprintln(pt.writer) // 移除在 tw.Render() 之前的额外换行，Done() 中已添加
-	tw.Render()
-	fmt.Fprintln(pt.writer) // Add a newline after the table
+	// Step Stats
+	for i, step := range stats.Steps {
+		if !step.HasData {
+			continue
+		}
+		writeRow(fmt.Sprintf("%s - 输入 Tokens", step.StepName), fmt.Sprintf("%d", step.InputTokens), valueTextColored)
+		writeRow(fmt.Sprintf("%s - 输出 Tokens", step.StepName), fmt.Sprintf("%d", step.OutputTokens), valueTextColored)
+		if step.TokenSpeed > 0 { // Only show speed if available and non-zero
+			writeRow(fmt.Sprintf("%s - Token 速度", step.StepName), fmt.Sprintf("%.2f t/s", step.TokenSpeed), valueSpeedTextColored)
+		} else { // Explicitly show 0 or N/A if speed is zero
+			writeRow(fmt.Sprintf("%s - Token 速度", step.StepName), "0.00 t/s", valueTextColored)
+		}
+		costStr := fmt.Sprintf("%s%.4f", step.CostUnit, step.Cost)
+		if step.CostUnit == "" && step.Cost == 0 { // If no unit and cost is zero, maybe show N/A or empty
+			// writeRow(fmt.Sprintf("%s - 成本", step.StepName), "N/A", valueTextColored) // Or keep as is for "0.0000"
+			writeRow(fmt.Sprintf("%s - 成本", step.StepName), costStr, valueTextColored)
+		} else {
+			writeRow(fmt.Sprintf("%s - 成本", step.StepName), costStr, valueTextColored)
+		}
+
+		// Separator after each step's details, if not the last step OR if total cost will be printed
+		isLastStepWithData := true
+		for _, nextStep := range stats.Steps[i+1:] {
+			if nextStep.HasData {
+				isLastStepWithData = false
+				break
+			}
+		}
+
+		if !isLastStepWithData || hasTotalCost {
+			b.WriteString(makeHorizontalLine("├", "┼", "┤"))
+		}
+	}
+
+	// Total Cost
+	if hasTotalCost {
+		// If no steps were printed but overall stats were, and now total cost, ensure separator
+		if hasPrintedOverallStats && !hasStepsWithData {
+			// This separator might already be printed if hasPrintedOverallStats is true.
+			// Let's refine the logic: print separator if (overall stats OR steps were printed) AND total cost is next.
+			// The logic above for step separator should handle it mostly.
+			// We need a separator if previous section was overall stats and no steps.
+		} else if !hasPrintedOverallStats && !hasStepsWithData {
+			// If this is the first section being printed, no top separator is needed.
+		}
+		// The separator logic for steps should already place one before total cost if steps were present.
+		// If only overall stats were present, that separator is also handled.
+		// If neither overall nor steps, no separator needed before total cost.
+
+		writeRow("总成本", fmt.Sprintf("%s%.4f", stats.TotalCostUnit, stats.TotalCost), valueTextColored)
+	}
+
+	// Bottom border
+	b.WriteString(makeHorizontalLine("└", "┴", "┘"))
+
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	if _, err := fmt.Fprint(pt.writer, b.String()); err != nil {
+		// Handle potential write error, e.g., log it
+		if pt.writer == nil {
+			fmt.Fprintf(os.Stderr, "Error writing summary table: %v\n", err)
+		}
+	}
 }

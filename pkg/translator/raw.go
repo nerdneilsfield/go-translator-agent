@@ -30,7 +30,7 @@ func NewRawTranslator(cfg *config.Config, logger *zap.Logger, progressBar *progr
 		logger:          logger,
 		progressBar:     progressBar,
 		lock:            &sync.RWMutex{},
-		progressTracker: &TranslationProgressTracker{},
+		progressTracker: NewTranslationProgressTracker(0, logger, cfg.TargetCurrency, cfg.UsdRmbRate),
 	}
 }
 
@@ -38,7 +38,7 @@ func (t *RawTranslator) InitTranslator() {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
-	totalChars, _, _, _, _, _ := t.progressTracker.GetProgress()
+	totalChars, _, _, _, _, _, _ := t.progressTracker.GetProgress()
 
 	t.translatedTracker = &progress.Tracker{
 		Message: "翻译字数",

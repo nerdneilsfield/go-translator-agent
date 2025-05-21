@@ -1,8 +1,12 @@
 package translator
 
 import (
+	"fmt"
+	"strings"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // TranslationProgressTracker 用于跟踪翻译进度
@@ -50,6 +54,11 @@ type TranslationProgressTracker struct {
 	generatedImprovementTokenSpeed float64
 	// 模型价格
 	modelPrice ModelPrice
+	logger     *zap.Logger
+	// 目标货币单位，例如 "USD", "RMB"
+	TargetCurrency string
+	// USD 到 RMB 的汇率
+	UsdRmbRate float64
 }
 
 type TokenUsage struct {
@@ -66,44 +75,41 @@ type TokenUsage struct {
 }
 
 type EstimatedCost struct {
-	InitialInputCost      float64
-	InitialOutputCost     float64
-	InitialTotalCost      float64
-	InitialCostUnit       string
-	ReflectionInputCost   float64
-	ReflectionOutputCost  float64
-	ReflectionTotalCost   float64
-	ReflectionCostUnit    string
-	ImprovementInputCost  float64
-	ImprovementOutputCost float64
-	ImprovementTotalCost  float64
-	ImprovementCostUnit   string
-	TotalCost             float64
-	TotalCostUnit         string
+	InitialInputCost       float64
+	InitialOutputCost      float64
+	InitialTotalCost       float64 // Potentially converted cost
+	InitialCostUnit        string  // Potentially converted unit
+	ReflectionInputCost    float64
+	ReflectionOutputCost   float64
+	ReflectionTotalCost    float64 // Potentially converted cost
+	ReflectionCostUnit     string  // Potentially converted unit
+	ImprovementInputCost   float64
+	ImprovementOutputCost  float64
+	ImprovementTotalCost   float64 // Potentially converted cost
+	ImprovementCostUnit    string  // Potentially converted unit
+	TotalCost              float64 // Potentially converted total cost
+	TotalCostUnit          string  // Potentially converted total unit
+	CostCalculationDetails string
 }
 
 // NewTranslationProgressTracker 创建一个新的进度跟踪器
-func NewTranslationProgressTracker(totalChars int) *TranslationProgressTracker {
-	now := time.Now()
+func NewTranslationProgressTracker(totalCharsForProgressBar int, logger *zap.Logger, targetCurrency string, usdRmbRate float64) *TranslationProgressTracker {
+	log := logger
+	if log == nil {
+		log = zap.NewNop()
+	}
+	log.Debug("Creating new TranslationProgressTracker",
+		zap.Int("totalCharsForProgressBar", totalCharsForProgressBar),
+		zap.String("targetCurrency", targetCurrency),
+		zap.Float64("usdRmbRate", usdRmbRate))
 	return &TranslationProgressTracker{
-		totalChars:                     totalChars,
-		startTime:                      now,
-		lastUpdateTime:                 now,
-		usedInitialInputTokens:         0,
-		usedInitialOutputTokens:        0,
-		usedReflectionInputTokens:      0,
-		usedReflectionOutputTokens:     0,
-		usedImprovementInputTokens:     0,
-		usedImprovementOutputTokens:    0,
-		generatedInitialTokenSpeed:     0,
-		generatedReflectionTokenSpeed:  0,
-		generatedImprovementTokenSpeed: 0,
-		estimatedTimeRemaining:         0,
-		translationSpeed:               0,
-		realTranslatedChars:            0,
-		recentSpeedSamples:             make([]float64, 0, 10),
-		maxSpeedSamples:                10,
-		lastProgressUpdateChars:        0,
+		totalChars:     totalCharsForProgressBar,
+		realTotalChars: totalCharsForProgressBar,
+		startTime:      time.Now(),
+		logger:         log,
+		modelPrice:     ModelPrice{},
+		TargetCurrency: targetCurrency,
+		UsdRmbRate:     usdRmbRate,
 	}
 }
 
@@ -144,6 +150,8 @@ func (tp *TranslationProgressTracker) UpdateModelPrice(modelPrice ModelPrice) {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
 	tp.modelPrice = modelPrice
+	tp.logger.Debug("Updating model price", zap.Any("current_modelPrice", tp.modelPrice), zap.Any("new_modelPrice", modelPrice))
+	tp.logger.Debug("Model price updated", zap.Any("modelPrice", tp.modelPrice))
 }
 
 func (tp *TranslationProgressTracker) GetModelPrice() ModelPrice {
@@ -156,6 +164,8 @@ func (tp *TranslationProgressTracker) UpdateRealTranslatedChars(chars int) {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
 	tp.realTranslatedChars += chars
+	tp.logger.Debug("Updating real translated chars (final output file)", zap.Int("current_realTranslatedChars", tp.realTranslatedChars), zap.Int("chars_to_set", chars))
+	tp.logger.Debug("Real translated chars updated", zap.Int("realTranslatedChars", tp.realTranslatedChars))
 }
 
 // UpdateTokenUsage 更新使用的 token 数量
@@ -177,6 +187,16 @@ func (tp *TranslationProgressTracker) UpdateInitialTokenUsage(inputTokens int, o
 			tp.generatedInitialTokenSpeed = 0.3*instantSpeed + 0.7*tp.generatedInitialTokenSpeed
 		}
 	}
+	tp.logger.Debug("Updating initial token usage",
+		zap.Int("current_initialInputTokens", tp.usedInitialInputTokens),
+		zap.Int("current_initialOutputTokens", tp.usedInitialOutputTokens),
+		zap.Int("inputTokens_to_add", inputTokens),
+		zap.Int("outputTokens_to_add", outputTokens),
+	)
+	tp.logger.Debug("Initial token usage updated",
+		zap.Int("initialInputTokens", tp.usedInitialInputTokens),
+		zap.Int("initialOutputTokens", tp.usedInitialOutputTokens),
+	)
 }
 
 func (tp *TranslationProgressTracker) UpdateReflectionTokenUsage(inputTokens int, outputTokens int) {
@@ -197,6 +217,16 @@ func (tp *TranslationProgressTracker) UpdateReflectionTokenUsage(inputTokens int
 			tp.generatedReflectionTokenSpeed = 0.3*instantSpeed + 0.7*tp.generatedReflectionTokenSpeed
 		}
 	}
+	tp.logger.Debug("Updating reflection token usage",
+		zap.Int("current_reflectionInputTokens", tp.usedReflectionInputTokens),
+		zap.Int("current_reflectionOutputTokens", tp.usedReflectionOutputTokens),
+		zap.Int("inputTokens_to_add", inputTokens),
+		zap.Int("outputTokens_to_add", outputTokens),
+	)
+	tp.logger.Debug("Reflection token usage updated",
+		zap.Int("reflectionInputTokens", tp.usedReflectionInputTokens),
+		zap.Int("reflectionOutputTokens", tp.usedReflectionOutputTokens),
+	)
 }
 
 func (tp *TranslationProgressTracker) UpdateImprovementTokenUsage(inputTokens int, outputTokens int) {
@@ -217,80 +247,190 @@ func (tp *TranslationProgressTracker) UpdateImprovementTokenUsage(inputTokens in
 			tp.generatedImprovementTokenSpeed = 0.3*instantSpeed + 0.7*tp.generatedImprovementTokenSpeed
 		}
 	}
+	tp.logger.Debug("Updating improvement token usage",
+		zap.Int("current_improvementInputTokens", tp.usedImprovementInputTokens),
+		zap.Int("current_improvementOutputTokens", tp.usedImprovementOutputTokens),
+		zap.Int("inputTokens_to_add", inputTokens),
+		zap.Int("outputTokens_to_add", outputTokens),
+	)
+	tp.logger.Debug("Improvement token usage updated",
+		zap.Int("improvementInputTokens", tp.usedImprovementInputTokens),
+		zap.Int("improvementOutputTokens", tp.usedImprovementOutputTokens),
+	)
 }
 
 // GetProgress 获取当前进度信息
-func (tp *TranslationProgressTracker) GetProgress() (totalChars int, translatedChars int, realTotalChars int, estimatedTimeRemaining float64, tokenUsage TokenUsage, estimatedCost EstimatedCost) {
+func (tp *TranslationProgressTracker) GetProgress() (totalChars int, translatedChars int, realTotalChars int, realTranslatedChars int, estimatedTimeRemaining float64, tokenUsage TokenUsage, estimatedCost EstimatedCost) {
 	tp.mu.Lock()
-	// 先复制所有需要的数据
-	modelPrice := tp.modelPrice // 直接使用字段，不调用 GetModelPrice
-	usedInitialInput := tp.usedInitialInputTokens
-	usedInitialOutput := tp.usedInitialOutputTokens
-	usedReflectionInput := tp.usedReflectionInputTokens
-	usedReflectionOutput := tp.usedReflectionOutputTokens
-	usedImprovementInput := tp.usedImprovementInputTokens
-	usedImprovementOutput := tp.usedImprovementOutputTokens
-	total := tp.totalChars
-	translated := tp.translatedChars
-	realTotal := tp.realTotalChars
-	timeRemaining := tp.estimatedTimeRemaining
-	startTime := tp.startTime
-	speeds := TokenUsage{
-		InitialTokenSpeed:     tp.generatedInitialTokenSpeed,
-		ReflectionTokenSpeed:  tp.generatedReflectionTokenSpeed,
-		ImprovementTokenSpeed: tp.generatedImprovementTokenSpeed,
-	}
-	tp.mu.Unlock()
+	defer tp.mu.Unlock()
 
-	// 在锁外进行计算
-	initialInputCost := modelPrice.InitialModelInputPrice * float64(usedInitialInput) / 1000000
-	initialOutputCost := modelPrice.InitialModelOutputPrice * float64(usedInitialOutput) / 1000000
-	initialTotalCost := initialInputCost + initialOutputCost
+	elapsedTime := time.Since(tp.startTime)
 
-	reflectionInputCost := modelPrice.ReflectionModelInputPrice * float64(usedReflectionInput) / 1000000
-	reflectionOutputCost := modelPrice.ReflectionModelOutputPrice * float64(usedReflectionOutput) / 1000000
-	reflectionTotalCost := reflectionInputCost + reflectionOutputCost
-
-	improvementInputCost := modelPrice.ImprovementModelInputPrice * float64(usedImprovementInput) / 1000000
-	improvementOutputCost := modelPrice.ImprovementModelOutputPrice * float64(usedImprovementOutput) / 1000000
-	improvementTotalCost := improvementInputCost + improvementOutputCost
-
-	totalCost := initialTotalCost + reflectionTotalCost + improvementTotalCost
-	totalCostUnit := modelPrice.InitialModelPriceUnit
-
-	if modelPrice.InitialModelPriceUnit != modelPrice.ReflectionModelPriceUnit ||
-		modelPrice.InitialModelPriceUnit != modelPrice.ImprovementModelPriceUnit {
-		totalCost = 0
-		totalCostUnit = "模型价格单位不一致"
+	tokenUsage = TokenUsage{
+		InitialInputTokens:      tp.usedInitialInputTokens,
+		InitialOutputTokens:     tp.usedInitialOutputTokens,
+		ReflectionInputTokens:   tp.usedReflectionInputTokens,
+		ReflectionOutputTokens:  tp.usedReflectionOutputTokens,
+		ImprovementInputTokens:  tp.usedImprovementInputTokens,
+		ImprovementOutputTokens: tp.usedImprovementOutputTokens,
+		ElapsedTime:             elapsedTime,
 	}
 
-	return total, translated, realTotal, timeRemaining, TokenUsage{
-			InitialInputTokens:      usedInitialInput,
-			InitialOutputTokens:     usedInitialOutput,
-			ReflectionInputTokens:   usedReflectionInput,
-			ReflectionOutputTokens:  usedReflectionOutput,
-			ImprovementInputTokens:  usedImprovementInput,
-			ImprovementOutputTokens: usedImprovementOutput,
-			InitialTokenSpeed:       speeds.InitialTokenSpeed,
-			ReflectionTokenSpeed:    speeds.ReflectionTokenSpeed,
-			ImprovementTokenSpeed:   speeds.ImprovementTokenSpeed,
-			ElapsedTime:             time.Since(startTime),
-		}, EstimatedCost{
-			InitialInputCost:      initialInputCost,
-			InitialOutputCost:     initialOutputCost,
-			InitialTotalCost:      initialTotalCost,
-			InitialCostUnit:       modelPrice.InitialModelPriceUnit,
-			ReflectionInputCost:   reflectionInputCost,
-			ReflectionOutputCost:  reflectionOutputCost,
-			ReflectionTotalCost:   reflectionTotalCost,
-			ReflectionCostUnit:    modelPrice.ReflectionModelPriceUnit,
-			ImprovementInputCost:  improvementInputCost,
-			ImprovementOutputCost: improvementOutputCost,
-			ImprovementTotalCost:  improvementTotalCost,
-			ImprovementCostUnit:   modelPrice.ImprovementModelPriceUnit,
-			TotalCost:             totalCost,
-			TotalCostUnit:         totalCostUnit,
+	// Calculate token speeds (tokens per second)
+	elapsedSeconds := elapsedTime.Seconds()
+	if elapsedSeconds > 0 {
+		if tp.usedInitialOutputTokens > 0 || tp.usedInitialInputTokens > 0 { // Avoid division by zero if no tokens
+			tokenUsage.InitialTokenSpeed = float64(tp.usedInitialInputTokens+tp.usedInitialOutputTokens) / elapsedSeconds
 		}
+		if tp.usedReflectionOutputTokens > 0 || tp.usedReflectionInputTokens > 0 {
+			tokenUsage.ReflectionTokenSpeed = float64(tp.usedReflectionInputTokens+tp.usedReflectionOutputTokens) / elapsedSeconds
+		}
+		if tp.usedImprovementOutputTokens > 0 || tp.usedImprovementInputTokens > 0 {
+			tokenUsage.ImprovementTokenSpeed = float64(tp.usedImprovementInputTokens+tp.usedImprovementOutputTokens) / elapsedSeconds
+		}
+	}
+
+	modelPrice := tp.modelPrice
+	var detailsBuilder strings.Builder
+	targetCurrency := tp.TargetCurrency
+	usdRmbRate := tp.UsdRmbRate
+
+	// Helper function for cost conversion
+	convert := func(cost float64, fromUnit string) (convertedCost float64, newUnit string, detail string) {
+		if targetCurrency == "" || fromUnit == "" || fromUnit == targetCurrency || usdRmbRate <= 0 {
+			return cost, fromUnit, "" // No conversion
+		}
+		if fromUnit == "USD" && targetCurrency == "RMB" {
+			converted := cost * usdRmbRate
+			return converted, "RMB", fmt.Sprintf(" (%.6f USD * %.4f = %.6f RMB)", cost, usdRmbRate, converted)
+		}
+		if fromUnit == "RMB" && targetCurrency == "USD" {
+			converted := cost / usdRmbRate
+			return converted, "USD", fmt.Sprintf(" (%.6f RMB / %.4f = %.6f USD)", cost, usdRmbRate, converted)
+		}
+		return cost, fromUnit, fmt.Sprintf(" (cannot convert %s to %s)", fromUnit, targetCurrency) // Cannot convert
+	}
+
+	// Calculate costs (prices are per 1,000,000 tokens)
+	originalInitialInputCost := modelPrice.InitialModelInputPrice * float64(tp.usedInitialInputTokens) / 1000000.0
+	originalInitialOutputCost := modelPrice.InitialModelOutputPrice * float64(tp.usedInitialOutputTokens) / 1000000.0
+	originalInitialTotalCost := originalInitialInputCost + originalInitialOutputCost
+	currentInitialCost, currentInitialUnit, convDetailInitial := convert(originalInitialTotalCost, modelPrice.InitialModelPriceUnit)
+
+	originalReflectionInputCost := modelPrice.ReflectionModelInputPrice * float64(tp.usedReflectionInputTokens) / 1000000.0
+	originalReflectionOutputCost := modelPrice.ReflectionModelOutputPrice * float64(tp.usedReflectionOutputTokens) / 1000000.0
+	originalReflectionTotalCost := originalReflectionInputCost + originalReflectionOutputCost
+	currentReflectionCost, currentReflectionUnit, convDetailReflection := convert(originalReflectionTotalCost, modelPrice.ReflectionModelPriceUnit)
+
+	originalImprovementInputCost := modelPrice.ImprovementModelInputPrice * float64(tp.usedImprovementInputTokens) / 1000000.0
+	originalImprovementOutputCost := modelPrice.ImprovementModelOutputPrice * float64(tp.usedImprovementOutputTokens) / 1000000.0
+	originalImprovementTotalCost := originalImprovementInputCost + originalImprovementOutputCost
+	currentImprovementCost, currentImprovementUnit, convDetailImprovement := convert(originalImprovementTotalCost, modelPrice.ImprovementModelPriceUnit)
+
+	finalTotalCost := currentInitialCost + currentReflectionCost + currentImprovementCost
+	finalTotalCostUnit := ""
+
+	if currentInitialCost > 0 || (targetCurrency != "" && modelPrice.InitialModelPriceUnit != "" && modelPrice.InitialModelPriceUnit != targetCurrency) {
+		detailsBuilder.WriteString(fmt.Sprintf("Initial: (In: %d * %.6f %s, Out: %d * %.6f %s) / 1M = %.6f %s%s. ",
+			tp.usedInitialInputTokens, modelPrice.InitialModelInputPrice, modelPrice.InitialModelPriceUnit,
+			tp.usedInitialOutputTokens, modelPrice.InitialModelOutputPrice, modelPrice.InitialModelPriceUnit,
+			currentInitialCost, currentInitialUnit, convDetailInitial))
+	}
+
+	if currentReflectionCost > 0 || (targetCurrency != "" && modelPrice.ReflectionModelPriceUnit != "" && modelPrice.ReflectionModelPriceUnit != targetCurrency) {
+		detailsBuilder.WriteString(fmt.Sprintf("Reflection: (In: %d * %.6f %s, Out: %d * %.6f %s) / 1M = %.6f %s%s. ",
+			tp.usedReflectionInputTokens, modelPrice.ReflectionModelInputPrice, modelPrice.ReflectionModelPriceUnit,
+			tp.usedReflectionOutputTokens, modelPrice.ReflectionModelOutputPrice, modelPrice.ReflectionModelPriceUnit,
+			currentReflectionCost, currentReflectionUnit, convDetailReflection))
+	}
+
+	if currentImprovementCost > 0 || (targetCurrency != "" && modelPrice.ImprovementModelPriceUnit != "" && modelPrice.ImprovementModelPriceUnit != targetCurrency) {
+		detailsBuilder.WriteString(fmt.Sprintf("Improvement: (In: %d * %.6f %s, Out: %d * %.6f %s) / 1M = %.6f %s%s. ",
+			tp.usedImprovementInputTokens, modelPrice.ImprovementModelInputPrice, modelPrice.ImprovementModelPriceUnit,
+			tp.usedImprovementOutputTokens, modelPrice.ImprovementModelOutputPrice, modelPrice.ImprovementModelPriceUnit,
+			currentImprovementCost, currentImprovementUnit, convDetailImprovement))
+	}
+
+	if finalTotalCost > 0 {
+		var activePhaseUnits []string
+		if currentInitialCost > 0 && currentInitialUnit != "" {
+			activePhaseUnits = append(activePhaseUnits, currentInitialUnit)
+		}
+		if currentReflectionCost > 0 && currentReflectionUnit != "" {
+			activePhaseUnits = append(activePhaseUnits, currentReflectionUnit)
+		}
+		if currentImprovementCost > 0 && currentImprovementUnit != "" {
+			activePhaseUnits = append(activePhaseUnits, currentImprovementUnit)
+		}
+
+		if targetCurrency != "" {
+			if finalTotalCost == 0 {
+				finalTotalCostUnit = targetCurrency // Or "" if preferred for zero cost in target currency
+			} else {
+				allMatchTarget := true
+				for _, u := range activePhaseUnits {
+					if u != targetCurrency {
+						allMatchTarget = false
+						break
+					}
+				}
+				if allMatchTarget {
+					finalTotalCostUnit = targetCurrency
+				} else {
+					finalTotalCostUnit = "无法统一到目标货币" // Some costs couldn't be converted or were not in target
+				}
+			}
+		} else { // No target currency, use previous logic
+			if finalTotalCost == 0 {
+				finalTotalCostUnit = ""
+			} else if len(activePhaseUnits) > 0 {
+				firstUnit := activePhaseUnits[0]
+				allSame := true
+				for _, unit := range activePhaseUnits[1:] {
+					if unit != firstUnit {
+						allSame = false
+						break
+					}
+				}
+				if allSame {
+					finalTotalCostUnit = firstUnit
+				} else {
+					finalTotalCostUnit = "模型价格单位不一致"
+				}
+			} else { // No active costs with units
+				finalTotalCostUnit = ""
+			}
+		}
+	} // else, if finalTotalCost is 0, finalTotalCostUnit remains ""
+
+	estimatedCost = EstimatedCost{
+		InitialInputCost:       originalInitialInputCost,  // Store original input for potential reference
+		InitialOutputCost:      originalInitialOutputCost, // Store original output for potential reference
+		InitialTotalCost:       currentInitialCost,        // This is the (potentially) converted cost
+		InitialCostUnit:        currentInitialUnit,        // This is the (potentially) converted unit
+		ReflectionInputCost:    originalReflectionInputCost,
+		ReflectionOutputCost:   originalReflectionOutputCost,
+		ReflectionTotalCost:    currentReflectionCost,
+		ReflectionCostUnit:     currentReflectionUnit,
+		ImprovementInputCost:   originalImprovementInputCost,
+		ImprovementOutputCost:  originalImprovementOutputCost,
+		ImprovementTotalCost:   currentImprovementCost,
+		ImprovementCostUnit:    currentImprovementUnit,
+		TotalCost:              finalTotalCost,
+		TotalCostUnit:          finalTotalCostUnit,
+		CostCalculationDetails: strings.TrimSpace(detailsBuilder.String()),
+	}
+
+	tp.logger.Debug("Getting progress",
+		zap.Int("totalCharsForProgressBar", tp.totalChars),
+		zap.Int("cumulativeTranslatedChars", tp.translatedChars),
+		zap.Int("realTotalChars", tp.realTotalChars),
+		zap.Int("realTranslatedChars", tp.realTranslatedChars),
+		zap.Any("tokenUsage", tokenUsage),
+		zap.Any("estimatedCost", estimatedCost),
+	)
+
+	return tp.totalChars, tp.translatedChars, tp.realTotalChars, tp.realTranslatedChars, tp.estimatedTimeRemaining, tokenUsage, estimatedCost
 }
 
 // GetTranslationSpeed 获取当前翻译速度（字/秒）
@@ -334,23 +474,26 @@ func (tp *TranslationProgressTracker) SetTotalChars(totalChars int) {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
 	tp.totalChars = totalChars
+	tp.logger.Debug("Setting total chars for progress bar", zap.Int("current_totalChars", tp.totalChars), zap.Int("new_totalChars", totalChars))
+	tp.logger.Debug("Total chars for progress bar set", zap.Int("totalChars", tp.totalChars))
 }
 
 func (tp *TranslationProgressTracker) SetRealTotalChars(realTotalChars int) {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
 	tp.realTotalChars = realTotalChars
+	tp.logger.Debug("Setting real total chars (original file)", zap.Int("current_realTotalChars", tp.realTotalChars), zap.Int("new_realTotalChars", realTotalChars))
+	tp.logger.Debug("Real total chars set", zap.Int("realTotalChars", tp.realTotalChars))
 }
 
 // Reset 重置进度跟踪器
 func (tp *TranslationProgressTracker) Reset() {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
-
-	now := time.Now()
+	tp.logger.Debug("Resetting TranslationProgressTracker")
 	tp.translatedChars = 0
-	tp.startTime = now
-	tp.lastUpdateTime = now
+	tp.startTime = time.Now()
+	tp.lastUpdateTime = time.Now()
 	tp.estimatedTimeRemaining = 0
 	tp.translationSpeed = 0
 	tp.recentSpeedSamples = make([]float64, 0, tp.maxSpeedSamples)
@@ -365,4 +508,6 @@ func (tp *TranslationProgressTracker) Reset() {
 	tp.usedImprovementOutputTokens = 0
 	tp.realTranslatedChars = 0
 	tp.lastProgressUpdateChars = 0
+	tp.modelPrice = ModelPrice{}
+	tp.logger.Debug("TranslationProgressTracker has been reset")
 }
