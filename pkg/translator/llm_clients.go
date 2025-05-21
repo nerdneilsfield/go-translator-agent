@@ -17,6 +17,20 @@ import (
 	"go.uber.org/zap"
 )
 
+// statusRoundTripper 记录最近一次请求的状态码
+type statusRoundTripper struct {
+	base http.RoundTripper
+	code *int
+}
+
+func (s *statusRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := s.base.RoundTrip(req)
+	if err == nil && resp != nil && s.code != nil {
+		*s.code = resp.StatusCode
+	}
+	return resp, err
+}
+
 // initModels 初始化所有配置的语言模型
 func initModels(cfg *config.Config, log logger.Logger) (map[string]LLMClient, error) {
 	models := make(map[string]LLMClient)
@@ -84,6 +98,7 @@ type OpenAIClient struct {
 	inputTokenPrice  float64
 	outputTokenPrice float64
 	priceUnit        string
+	lastStatusCode   int
 }
 
 // maskAuthToken 遮蔽认证令牌，只显示前4位和后4位
@@ -120,10 +135,28 @@ func newOpenAIClient(cfg config.ModelConfig, log logger.Logger, timeout time.Dur
 		zap.Duration("超时时间", timeout),
 	)
 
-	// 创建自定义 HTTP 客户端
-	httpClient := &http.Client{
-		Timeout: timeout,
+	// 初始化 OpenAIClient，稍后填充 httpClient 和 client
+	openAIClient := &OpenAIClient{
+		modelName:        cfg.Name,
+		modelID:          modelID,
+		modelType:        "openai",
+		maxInputTokens:   cfg.MaxInputTokens,
+		maxOutputTokens:  cfg.MaxOutputTokens,
+		log:              log,
+		baseURL:          baseURL,
+		apiKey:           cfg.Key,
+		timeout:          timeout,
+		inputTokenPrice:  cfg.InputTokenPrice,
+		outputTokenPrice: cfg.OutputTokenPrice,
+		priceUnit:        cfg.PriceUnit,
 	}
+
+	// 创建自定义 HTTP 客户端并记录状态码
+	httpClient := &http.Client{
+		Timeout:   timeout,
+		Transport: &statusRoundTripper{base: http.DefaultTransport, code: &openAIClient.lastStatusCode},
+	}
+	openAIClient.httpClient = httpClient
 
 	if baseURL != "" {
 		// 使用自定义基础URL
@@ -136,22 +169,8 @@ func newOpenAIClient(cfg config.ModelConfig, log logger.Logger, timeout time.Dur
 		client = openai.NewClient(cfg.Key)
 	}
 
-	return &OpenAIClient{
-		client:           client,
-		modelName:        cfg.Name,
-		modelID:          modelID,
-		modelType:        "openai",
-		maxInputTokens:   cfg.MaxInputTokens,
-		maxOutputTokens:  cfg.MaxOutputTokens,
-		log:              log,
-		baseURL:          baseURL,
-		apiKey:           cfg.Key,
-		httpClient:       httpClient,
-		timeout:          timeout,
-		inputTokenPrice:  cfg.InputTokenPrice,
-		outputTokenPrice: cfg.OutputTokenPrice,
-		priceUnit:        cfg.PriceUnit,
-	}, nil
+	openAIClient.client = client
+	return openAIClient, nil
 }
 
 // GetInputTokenPrice 返回输入令牌价格
@@ -277,9 +296,11 @@ func (c *OpenAIClient) Complete(prompt string, maxTokens int, temperature float6
 	c.log.Debug("API 调用成功",
 		zap.String("模型", c.modelName),
 		zap.String("模型ID", c.modelID),
+		zap.Int("状态码", c.lastStatusCode),
 		zap.Int("提示词令牌数", resp.Usage.PromptTokens),
 		zap.Int("完成令牌数", resp.Usage.CompletionTokens),
 		zap.Int("总令牌数", resp.Usage.TotalTokens),
+		zap.String("返回片段", snippet(content)),
 	)
 
 	// 返回结果
