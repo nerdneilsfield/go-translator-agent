@@ -16,12 +16,20 @@ type LaTeXProcessor struct {
 
 // NewLaTeXProcessor 创建一个新的LaTeX处理器
 func NewLaTeXProcessor(t translator.Translator, predefinedTranslations *config.PredefinedTranslation, progressBar *progress.Writer) (*LaTeXProcessor, error) {
+	// 获取logger，如果无法转换则创建新的
+	zapLogger, _ := zap.NewProduction()
+	if loggerProvider, ok := t.GetLogger().(interface{ GetZapLogger() *zap.Logger }); ok {
+		if zl := loggerProvider.GetZapLogger(); zl != nil {
+			zapLogger = zl
+		}
+	}
 	return &LaTeXProcessor{
 		BaseProcessor: BaseProcessor{
 			Translator:             t,
 			Name:                   "LaTeX",
 			predefinedTranslations: predefinedTranslations,
 			progressBar:            progressBar,
+			logger:                 zapLogger, // 初始化 BaseProcessor 中的 logger
 		},
 	}, nil
 }

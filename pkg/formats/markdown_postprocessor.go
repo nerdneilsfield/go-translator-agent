@@ -78,7 +78,7 @@ func (p *MarkdownPostProcessor) ProcessMarkdown(text string, replacements []Repl
 	}
 	defer os.Remove(tempFile)
 
-	if err := formatWithPrettier(tempFile); err != nil {
+	if err := formatWithPrettier(tempFile, p.logger); err != nil {
 		p.logger.Error("Prettier 格式化失败", zap.Error(err))
 		return text
 	}

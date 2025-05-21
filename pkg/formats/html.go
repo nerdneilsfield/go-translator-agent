@@ -14,7 +14,6 @@ import (
 // HTMLProcessor 是HTML文件的处理器
 type HTMLProcessor struct {
 	BaseProcessor
-	logger       *zap.Logger
 	replacements []ReplacementInfo
 }
 
@@ -33,9 +32,9 @@ func NewHTMLProcessor(t translator.Translator, predefinedTranslations *config.Pr
 			Name:                   "HTML",
 			predefinedTranslations: predefinedTranslations,
 			progressBar:            progressBar,
+			logger:                 zapLogger,
 		},
 		replacements: []ReplacementInfo{},
-		logger:       zapLogger,
 	}, nil
 }
 
@@ -77,11 +76,11 @@ func (p *HTMLProcessor) TranslateFile(inputPath, outputPath string) error {
 	}
 
 	// 格式化输出文件
-	if err := FormatFile(outputPath); err != nil {
+	if err := FormatFile(outputPath, p.logger); err != nil {
 		p.logger.Warn("格式化HTML文件失败", zap.Error(err))
 	}
 
-	p.logger.Info("HTML文件翻译完成",
+	p.logger.Debug("HTML文件翻译完成",
 		zap.String("输出文件", outputPath),
 		zap.Int("原始长度", len(content)),
 		zap.Int("翻译长度", len(restoredText)),

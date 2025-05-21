@@ -17,7 +17,6 @@ import (
 // EPUBProcessor 是EPUB电子书的处理器
 type EPUBProcessor struct {
 	BaseProcessor
-	logger *zap.Logger
 }
 
 // NewEPUBProcessor 创建一个新的EPUB处理器
@@ -30,16 +29,17 @@ func NewEPUBProcessor(t translator.Translator, predefinedTranslations *config.Pr
 		}
 	}
 
-	zapLogger.Debug("Loading predefined translations", zap.Int("count", len(predefinedTranslations.Translations)))
-	return &EPUBProcessor{
+	p := &EPUBProcessor{
 		BaseProcessor: BaseProcessor{
 			Translator:             t,
 			Name:                   "EPUB",
 			predefinedTranslations: predefinedTranslations,
 			progressBar:            progressBar,
+			logger:                 zapLogger,
 		},
-		logger: zapLogger,
-	}, nil
+	}
+	p.logger.Debug("Loading predefined translations", zap.Int("count", len(predefinedTranslations.Translations)))
+	return p, nil
 }
 
 // TranslateFile 翻译EPUB文件
@@ -153,11 +153,11 @@ func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
 		}
 
 		// 格式化HTML文件
-		if err := FormatFile(filePath); err != nil {
+		if err := FormatFile(filePath, p.logger); err != nil {
 			p.logger.Warn("格式化HTML文件失败", zap.String("文件", filePath), zap.Error(err))
 		}
 
-		p.logger.Info("HTML文件翻译完成",
+		p.logger.Debug("HTML文件翻译完成",
 			zap.Int("当前文件", i+1),
 			zap.Int("总文件数", len(filesToTranslate)),
 			zap.String("文件路径", filePath))
@@ -194,7 +194,7 @@ func (p *EPUBProcessor) FormatFile(inputPath, outputPath string) error {
 	if err := os.WriteFile(outputPath, data, 0644); err != nil {
 		return err
 	}
-	if err := FormatFile(outputPath); err != nil {
+	if err := FormatFile(outputPath, p.logger); err != nil {
 		p.logger.Warn("格式化EPUB文件失败", zap.Error(err))
 	}
 	return nil
@@ -277,11 +277,15 @@ func zipDir(dir, dest string) error {
 		if err != nil {
 			return err
 		}
+
+		// 将路径分隔符转换为ZIP规范的'/'
+		zipPath := filepath.ToSlash(relPath)
+
 		if info.IsDir() {
-			if relPath == "." {
+			if zipPath == "." { // 使用转换后的 zipPath
 				return nil
 			}
-			_, err := w.Create(relPath + "/")
+			_, err := w.Create(zipPath + "/") // 使用转换后的 zipPath
 			return err
 		}
 
@@ -290,7 +294,7 @@ func zipDir(dir, dest string) error {
 			return err
 		}
 		defer file.Close()
-		f, err := w.Create(relPath)
+		f, err := w.Create(zipPath) // 使用转换后的 zipPath
 		if err != nil {
 			return err
 		}

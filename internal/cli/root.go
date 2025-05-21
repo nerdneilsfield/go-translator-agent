@@ -69,7 +69,7 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			outputPath := args[1]
 
 			if formatOnly {
-				if err := formats.FormatFile(inputPath); err != nil {
+				if err := formats.FormatFile(inputPath, log); err != nil {
 					log.Error("格式化文件失败", zap.Error(err))
 					os.Exit(1)
 				}
@@ -78,7 +78,7 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			}
 
 			// 在翻译之前先格式化文件
-			if err := formats.FormatFile(inputPath); err != nil {
+			if err := formats.FormatFile(inputPath, log); err != nil {
 				log.Error("文件格式化失败，无法继续翻译",
 					zap.String("文件", inputPath),
 					zap.Error(err))

@@ -37,9 +37,9 @@ func NewTextProcessor(t translator.Translator, predefinedTranslations *config.Pr
 			Name:                   "文本",
 			predefinedTranslations: predefinedTranslations,
 			progressBar:            progressBar,
+			logger:                 zapLogger,
 		},
 		replacements: []ReplacementInfo{},
-		logger:       zapLogger,
 	}, nil
 }
 
@@ -77,8 +77,7 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 		}
 	}
 
-	log := p.Translator.GetLogger()
-	log.Info("开始翻译文件",
+	p.logger.Info("开始翻译文件",
 		zap.String("输入文件", inputPath),
 		zap.String("输出文件", outputPath),
 		zap.Int("自动保存间隔", autoSaveInterval),
@@ -106,7 +105,7 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 
 	// 分割文本为块
 	chunks := p.splitTextToChunks(protectedText, minSplitSize, maxSplitSize)
-	log.Info("文本分割完成", zap.Int("块数", len(chunks)))
+	p.logger.Info("文本分割完成", zap.Int("块数", len(chunks)))
 
 	// 创建通道，用于接收翻译结果
 	resultCh := make(chan struct {
@@ -163,7 +162,7 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 		select {
 		case <-ctx.Done():
 			// 翻译超时
-			log.Error("翻译超时",
+			p.logger.Error("翻译超时",
 				zap.String("输入文件", inputPath),
 				zap.Duration("已用时间", time.Since(lastSaveTime)),
 			)
@@ -172,12 +171,12 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 			if partialResult != "" {
 				tempOutputPath := outputPath + ".partial"
 				if err := os.WriteFile(tempOutputPath, []byte(partialResult), 0644); err != nil {
-					log.Error("保存部分结果失败",
+					p.logger.Error("保存部分结果失败",
 						zap.String("输出文件", tempOutputPath),
 						zap.Error(err),
 					)
 				} else {
-					log.Info("已保存部分结果",
+					p.logger.Info("已保存部分结果",
 						zap.String("输出文件", tempOutputPath),
 					)
 				}
@@ -205,7 +204,7 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 
 			p.Translator.Finish()
 
-			log.Info("翻译完成",
+			p.logger.Info("翻译完成",
 				zap.String("输出文件", outputPath),
 				zap.Int("原始长度", len(content)),
 				zap.Int("翻译长度", len(translatedText)),
@@ -218,12 +217,12 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 			if partialResult != "" {
 				tempOutputPath := outputPath + ".partial"
 				if err := os.WriteFile(tempOutputPath, []byte(partialResult), 0644); err != nil {
-					log.Error("自动保存失败",
+					p.logger.Error("自动保存失败",
 						zap.String("输出文件", tempOutputPath),
 						zap.Error(err),
 					)
 				} else {
-					log.Info("自动保存成功",
+					p.logger.Info("自动保存成功",
 						zap.String("输出文件", tempOutputPath),
 						zap.Duration("距上次保存", time.Since(lastSaveTime)),
 					)
@@ -597,8 +596,7 @@ func (p *TextProcessor) FormatFile(inputPath, outputPath string) error {
 		return fmt.Errorf("读取文件失败 %s: %w", inputPath, err)
 	}
 
-	log := p.Translator.GetLogger()
-	log.Info("开始格式化文件",
+	p.logger.Info("开始格式化文件",
 		zap.String("输入文件", inputPath),
 		zap.String("输出文件", outputPath),
 	)
@@ -633,7 +631,7 @@ func (p *TextProcessor) FormatFile(inputPath, outputPath string) error {
 		return fmt.Errorf("写入文件失败 %s: %w", outputPath, err)
 	}
 
-	log.Info("格式化完成",
+	p.logger.Info("格式化完成",
 		zap.String("输出文件", outputPath),
 	)
 

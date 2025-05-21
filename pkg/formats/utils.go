@@ -146,7 +146,7 @@ func TranslateHTMLDOM(htmlStr string, t translator.Translator, logger *zap.Logge
 
 	// 记录总节点数
 	totalNodes := len(textNodes)
-	logger.Info("收集到的文本节点数", zap.Int("节点数", totalNodes))
+	logger.Debug("收集到的文本节点数", zap.Int("节点数", totalNodes))
 
 	// 如果没有文本节点，直接返回原始HTML
 	if totalNodes == 0 {
@@ -155,7 +155,7 @@ func TranslateHTMLDOM(htmlStr string, t translator.Translator, logger *zap.Logge
 
 	// 将文本节点分组，确保每组不超过模型的输入限制
 	groups := groupTextNodes(textNodes, chunkSize)
-	logger.Info("文本节点分组完成", zap.Int("组数", len(groups)))
+	logger.Debug("文本节点分组完成", zap.Int("组数", len(groups)))
 
 	// 逐组翻译文本节点
 	for groupIndex, group := range groups {

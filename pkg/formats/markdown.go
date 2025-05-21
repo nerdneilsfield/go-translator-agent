@@ -32,7 +32,6 @@ type markdownPart struct {
 // MarkdownProcessor 是Markdown文件处理器
 type MarkdownProcessor struct {
 	BaseProcessor
-	logger              *zap.Logger
 	currentInputFile    string // 当前正在处理的输入文件路径
 	currentReplacements []ReplacementInfo
 	config              *config.Config // 添加配置字段
@@ -70,24 +69,24 @@ func NewMarkdownProcessor(t translator.Translator, predefinedTranslations *confi
 		}
 	}
 
-	zapLogger.Debug("Loading predefined translations", zap.Int("count", len(predefinedTranslations.Translations)))
-
-	return &MarkdownProcessor{
+	p := &MarkdownProcessor{
 		BaseProcessor: BaseProcessor{
 			Translator:             t,
 			Name:                   "Markdown",
 			predefinedTranslations: predefinedTranslations,
 			progressBar:            progressBar,
+			logger:                 zapLogger, // 初始化 BaseProcessor 中的 logger
 		},
-		logger: zapLogger,
 		config: cfg,
-	}, nil
+	}
+	p.logger.Debug("Loading predefined translations", zap.Int("count", len(predefinedTranslations.Translations))) // 使用 p.logger
+	return p, nil
 }
 
 // TranslateFile 翻译Markdown文件
 func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 
-	if err := FormatFile(inputPath); err != nil {
+	if err := FormatFile(inputPath, p.logger); err != nil {
 		p.logger.Warn("格式化输入文件失败", zap.Error(err))
 	}
 
@@ -123,7 +122,7 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 
 	if !IsFileExists(replacementsPath) || !IsFileExists(protectedTextFile) {
 
-		if err := FormatFile(inputPath); err != nil {
+		if err := FormatFile(inputPath, p.logger); err != nil {
 			p.logger.Warn("格式化输入文件失败 (在检查替换文件是否存在之后)", zap.Error(err), zap.String("file", inputPath))
 		}
 
@@ -165,7 +164,7 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 			return fmt.Errorf("无法写出保护后的文本 %s: %v", protectedTextFile, err)
 		}
 
-		if err := FormatFile(protectedTextFile); err != nil {
+		if err := FormatFile(protectedTextFile, p.logger); err != nil {
 			p.logger.Warn("格式化保护文件失败", zap.Error(err), zap.String("file", protectedTextFile))
 		}
 
@@ -228,7 +227,7 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 		return fmt.Errorf("无法写出中间结果 %s: %v", outputPathWithExt, err)
 	}
 
-	if err := FormatFile(outputPathWithExt); err != nil {
+	if err := FormatFile(outputPathWithExt, p.logger); err != nil {
 		p.logger.Warn("格式化中间结果失败", zap.Error(err))
 	}
 
@@ -244,7 +243,7 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 		return fmt.Errorf("无法写出文件 %s: %v", outputPath, err)
 	}
 
-	if err := FormatFile(outputPath); err != nil {
+	if err := FormatFile(outputPath, p.logger); err != nil {
 		p.logger.Warn("格式化输出文件失败", zap.Error(err))
 	}
 
@@ -261,13 +260,13 @@ func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
 	// }
 
 	// 格式化回原始文件
-	if err := FormatFile(inputPath); err != nil { // 修正：FormatFile 只返回一个 error
+	if err := FormatFile(inputPath, p.logger); err != nil {
 		return fmt.Errorf("格式化原始 MarkDown 文件失败: %w", err)
 	}
 
 	// 最后，格式化这个受保护文本文件，它现在应该只包含翻译后的文本
 	formattedTranslatedProtectedTextFile := strings.ReplaceAll(translatedProtectedTextFile, ".md", ".formatted.md")
-	if err := FormatFile(protectedTextFile); err != nil { // 修正：FormatFile 只返回一个 error
+	if err := FormatFile(protectedTextFile, p.logger); err != nil {
 		return fmt.Errorf("格式化受保护的 MarkDown 文件失败: %w", err)
 	}
 	defer os.Remove(formattedTranslatedProtectedTextFile) // 清理：删除格式化后的受保护文本文件

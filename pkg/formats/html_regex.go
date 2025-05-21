@@ -99,7 +99,7 @@ func TranslateHTMLWithRegex(htmlStr string, t translator.Translator, logger *zap
 	}
 
 	// 记录收集到的文本节点数
-	logger.Info("收集到的文本节点数", zap.Int("节点数", len(textParts)))
+	logger.Debug("收集到的文本节点数", zap.Int("节点数", len(textParts)))
 
 	// 如果没有文本节点，直接返回原始HTML
 	if len(textParts) == 0 {

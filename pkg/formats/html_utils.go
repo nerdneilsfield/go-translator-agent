@@ -280,7 +280,7 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 	}
 
 	// 记录收集到的文本节点数
-	logger.Info("收集到的文本节点数", zap.Int("节点数", len(textNodes)))
+	logger.Debug("收集到的文本节点数", zap.Int("节点数", len(textNodes)))
 
 	// 如果没有文本节点，直接返回原始HTML
 	if len(textNodes) == 0 {
