@@ -114,7 +114,7 @@ func TestGoQueryHTMLTranslation(t *testing.T) {
 
 	cfg := test.CreateTestConfig()
 	newLogger := logger.NewZapLogger(true)
-	mockTrans := NewMockTranslator(cfg, newLogger.GetZapLogger())
+	mockTrans := test.NewMockTranslator(cfg, newLogger)
 	mockTrans.On("Translate", mock.Anything, mock.Anything).Return("这是翻译后的文本", nil)
 
 	translated, err := formats.TranslateHTMLWithGoQuery(htmlContent, mockTrans, newLogger.GetZapLogger())
@@ -145,7 +145,7 @@ func TestComplexHTMLTranslation(t *testing.T) {
 
 	cfg := test.CreateTestConfig()
 	newLogger := logger.NewZapLogger(true)
-	mockTrans := NewMockTranslator(cfg, newLogger.GetZapLogger())
+	mockTrans := test.NewMockTranslator(cfg, newLogger)
 	mockTrans.On("Translate", mock.Anything, mock.Anything).Return("这是翻译后的文本", nil)
 
 	translated, err := formats.TranslateHTMLWithGoQuery(htmlContent, mockTrans, newLogger.GetZapLogger())

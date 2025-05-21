@@ -55,11 +55,14 @@ func (m *MockCache) Clear() error {
 }
 
 // NewMockTranslator 创建一个新的模拟翻译器
-func NewMockTranslator(cfg *config.Config, logger logger.Logger) *MockTranslator {
+func NewMockTranslator(cfg *config.Config, logger_ logger.Logger) *MockTranslator {
+	// convert logger to ZapLogger
+	zapLogger := (&logger.ZapLogger{}).GetZapLogger()
 	return &MockTranslator{
 		config:            cfg,
-		logger:            logger,
+		logger:            logger_,
 		predefinedResults: make(map[string]string),
+		progressTracker:   translator.NewTranslationProgressTracker(0, zapLogger, cfg.TargetCurrency, cfg.UsdRmbRate),
 	}
 }
 

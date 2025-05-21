@@ -6,27 +6,27 @@ import (
 	"testing"
 
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
+	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
+	"github.com/nerdneilsfield/go-translator-agent/internal/test"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"go.uber.org/zap"
 )
 
 // 测试Markdown格式的翻译
 func TestMarkdownTranslation(t *testing.T) {
 	// 创建模拟服务器
-	server := NewMockOpenAIServer(t)
+	server := test.NewMockOpenAIServer(t)
 	defer server.Stop()
 
 	// 设置默认响应
 	server.SetDefaultResponse("这是翻译后的文本")
 
 	// 创建logger
-	zapLogger, _ := zap.NewDevelopment()
-	defer zapLogger.Sync()
+	zapLogger := logger.NewZapLogger(true)
 
 	// 创建配置
-	cfg := createTestConfig()
+	cfg := test.CreateTestConfig()
 	// 设置模型配置
 	cfg.ModelConfigs["test-model"] = config.ModelConfig{
 		Name:            "test-model",
@@ -41,7 +41,7 @@ func TestMarkdownTranslation(t *testing.T) {
 	_ = zapLogger
 
 	// 创建模拟的缓存
-	mockCache := new(MockCache)
+	mockCache := new(test.MockCache)
 	mockCache.On("Get", mock.Anything).Return("", false)
 	mockCache.On("Set", mock.Anything, mock.Anything).Return(nil)
 
@@ -96,7 +96,7 @@ $$
 	assert.NoError(t, err2)
 
 	// 创建模拟翻译器
-	mockTrans := NewMockTranslator(cfg, zapLogger)
+	mockTrans := test.NewMockTranslator(cfg, zapLogger)
 	mockTrans.On("Translate", mock.Anything, mock.Anything).Return("这是翻译后的文本", nil)
 
 	// 执行翻译
@@ -126,7 +126,7 @@ $$
 // 测试Markdown格式的批处理翻译
 func TestMarkdownBatchTranslation(t *testing.T) {
 	// 创建模拟服务器
-	server := NewMockOpenAIServer(t)
+	server := test.NewMockOpenAIServer(t)
 	defer server.Stop()
 
 	// 设置特定响应
@@ -135,11 +135,10 @@ func TestMarkdownBatchTranslation(t *testing.T) {
 	server.AddResponse("This is paragraph 3.", "这是第3段。")
 
 	// 创建logger
-	zapLogger, _ := zap.NewDevelopment()
-	defer zapLogger.Sync()
+	zapLogger := logger.NewZapLogger(true)
 
 	// 创建配置
-	cfg := createTestConfig()
+	cfg := test.CreateTestConfig()
 	// 设置模型配置
 	cfg.ModelConfigs["test-model"] = config.ModelConfig{
 		Name:            "test-model",
@@ -154,7 +153,7 @@ func TestMarkdownBatchTranslation(t *testing.T) {
 	_ = zapLogger
 
 	// 创建模拟的缓存
-	mockCache := new(MockCache)
+	mockCache := new(test.MockCache)
 	mockCache.On("Get", mock.Anything).Return("", false)
 	mockCache.On("Set", mock.Anything, mock.Anything).Return(nil)
 
@@ -180,7 +179,7 @@ This is paragraph 3.
 	assert.NoError(t, err2)
 
 	// 创建模拟翻译器
-	mockTrans := NewMockTranslator(cfg, zapLogger)
+	mockTrans := test.NewMockTranslator(cfg, zapLogger)
 	mockTrans.SetPredefinedResult("This is paragraph 1.", "这是第1段。")
 	mockTrans.SetPredefinedResult("This is paragraph 2.", "这是第2段。")
 	mockTrans.SetPredefinedResult("This is paragraph 3.", "这是第3段。")

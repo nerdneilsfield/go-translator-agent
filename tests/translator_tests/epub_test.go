@@ -9,11 +9,11 @@ import (
 
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
+	"github.com/nerdneilsfield/go-translator-agent/internal/test"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/formats"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"go.uber.org/zap"
 )
 
 // 创建测试用的EPUB文件
@@ -166,18 +166,17 @@ func extractFileFromEPUB(t *testing.T, epubPath, filePath string) string {
 // 测试EPUB格式的翻译
 func TestEPUBTranslation(t *testing.T) {
 	// 创建模拟服务器
-	server := NewMockOpenAIServer(t)
+	server := test.NewMockOpenAIServer(t)
 	defer server.Stop()
 
 	// 设置默认响应
 	server.SetDefaultResponse("这是翻译后的文本")
 
 	// 创建logger
-	zapLogger, _ := zap.NewDevelopment()
-	defer zapLogger.Sync()
+	zapLogger := logger.NewZapLogger(true)
 
 	// 创建配置
-	cfg := createTestConfig()
+	cfg := test.CreateTestConfig()
 	// 设置模型配置
 	cfg.ModelConfigs["test-model"] = config.ModelConfig{
 		Name:            "test-model",
@@ -192,7 +191,7 @@ func TestEPUBTranslation(t *testing.T) {
 	_ = zapLogger
 
 	// 创建模拟的缓存
-	mockCache := new(MockCache)
+	mockCache := new(test.MockCache)
 	mockCache.On("Get", mock.Anything).Return("", false)
 	mockCache.On("Set", mock.Anything, mock.Anything).Return(nil)
 
@@ -208,8 +207,10 @@ func TestEPUBTranslation(t *testing.T) {
 	_ = filepath.Join(tempDir, "test_translated.epub")
 
 	// 创建模拟翻译器
-	mockTrans := NewMockTranslator(cfg, zapLogger)
+	mockTrans := test.NewMockTranslator(cfg, zapLogger)
 	mockTrans.On("Translate", mock.Anything, mock.Anything).Return("这是翻译后的文本", nil)
+	// 设置Finish方法的期望行为
+	mockTrans.On("Finish").Return()
 
 	// 执行翻译
 	epubPath := createTestEPUB(t, tempDir)
@@ -233,18 +234,17 @@ func TestEPUBTranslation(t *testing.T) {
 // 测试EPUB章节末尾翻译问题
 func TestEPUBChapterEndTranslation(t *testing.T) {
 	// 创建模拟服务器
-	server := NewMockOpenAIServer(t)
+	server := test.NewMockOpenAIServer(t)
 	defer server.Stop()
 
 	// 设置特定响应
 	server.AddResponse("This is the last paragraph of the chapter.", "这是本章的最后一段。")
 
 	// 创建logger
-	zapLogger, _ := zap.NewDevelopment()
-	defer zapLogger.Sync()
+	zapLogger := logger.NewZapLogger(true)
 
 	// 创建配置
-	cfg := createTestConfig()
+	cfg := test.CreateTestConfig()
 	// 设置模型配置
 	cfg.ModelConfigs["test-model"] = config.ModelConfig{
 		Name:            "test-model",
@@ -259,7 +259,7 @@ func TestEPUBChapterEndTranslation(t *testing.T) {
 	_ = zapLogger
 
 	// 创建模拟的缓存
-	mockCache := new(MockCache)
+	mockCache := new(test.MockCache)
 	mockCache.On("Get", mock.Anything).Return("", false)
 	mockCache.On("Set", mock.Anything, mock.Anything).Return(nil)
 
@@ -275,9 +275,11 @@ func TestEPUBChapterEndTranslation(t *testing.T) {
 	_ = filepath.Join(tempDir, "test_end_translated.epub")
 
 	// 创建模拟翻译器
-	mockTrans := NewMockTranslator(cfg, zapLogger)
+	mockTrans := test.NewMockTranslator(cfg, zapLogger)
 	mockTrans.SetPredefinedResult("This is the last paragraph of the book.", "这是本书的最后一段。")
 	mockTrans.On("Translate", mock.Anything, mock.Anything).Return("这是翻译后的文本", nil)
+	// 设置Finish方法的期望行为
+	mockTrans.On("Finish").Return()
 
 	// 执行翻译
 	epubPath := createTestEPUB(t, tempDir)
@@ -304,12 +306,14 @@ func TestEPUBMissingNodeHandling(t *testing.T) {
 	outputPath := filepath.Join(tempDir, "missing_node.epub")
 
 	// 使用内部测试包的配置和logger
-	cfg := createTestConfig()
+	cfg := test.CreateTestConfig()
 	newLogger := logger.NewZapLogger(true)
 
 	// 创建模拟翻译器，仅返回统一的翻译结果，导致节点匹配不完全
-	mockTrans := NewMockTranslator(cfg, newLogger.GetZapLogger())
+	mockTrans := test.NewMockTranslator(cfg, newLogger)
 	mockTrans.On("Translate", mock.Anything, mock.Anything).Return("这是翻译后的文本", nil)
+	// 设置Finish方法的期望行为
+	mockTrans.On("Finish").Return()
 
 	// 使用真实的EPUB处理器执行翻译
 	processor, err := formats.NewEPUBProcessor(mockTrans, &config.PredefinedTranslation{}, nil)

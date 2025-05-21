@@ -82,7 +82,7 @@ func TestGoQueryXMLTranslation(t *testing.T) {
 
 	cfg := test.CreateTestConfig()
 	newLogger := logger.NewZapLogger(true)
-	mockTrans := NewMockTranslator(cfg, newLogger.GetZapLogger())
+	mockTrans := test.NewMockTranslator(cfg, newLogger)
 	mockTrans.On("Translate", mock.Anything, mock.Anything).Return("这是翻译后的文本", nil)
 
 	translated, err := formats.TranslateHTMLWithGoQuery(xmlContent, mockTrans, newLogger.GetZapLogger())
@@ -103,7 +103,7 @@ func TestComplexXMLTranslation(t *testing.T) {
 
 	cfg := test.CreateTestConfig()
 	newLogger := logger.NewZapLogger(true)
-	mockTrans := NewMockTranslator(cfg, newLogger.GetZapLogger())
+	mockTrans := test.NewMockTranslator(cfg, newLogger)
 	mockTrans.On("Translate", mock.Anything, mock.Anything).Return("这是翻译后的文本", nil)
 
 	translated, err := formats.TranslateHTMLWithGoQuery(xmlContent, mockTrans, newLogger.GetZapLogger())

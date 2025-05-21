@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nerdneilsfield/go-translator-agent/internal/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -11,7 +12,7 @@ import (
 // 测试文本批处理功能
 func TestBatchTextProcessing(t *testing.T) {
 	// 创建模拟的LLM客户端
-	mockClient := new(MockLLMClient)
+	mockClient := new(test.MockLLMClient)
 	mockClient.On("Name").Return("test-model")
 	mockClient.On("Type").Return("openai")
 	mockClient.On("MaxInputTokens").Return(8000)

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
+	"github.com/nerdneilsfield/go-translator-agent/internal/test"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
@@ -12,7 +13,7 @@ import (
 // 测试LLM客户端与模拟服务器的集成
 func TestLLMClientWithMockServer(t *testing.T) {
 	// 创建模拟服务器
-	server := NewMockOpenAIServer(t)
+	server := test.NewMockOpenAIServer(t)
 	defer server.Stop()
 
 	// 设置默认响应
@@ -23,7 +24,7 @@ func TestLLMClientWithMockServer(t *testing.T) {
 	defer zapLogger.Sync()
 
 	// 创建配置
-	cfg := createTestConfig()
+	cfg := test.CreateTestConfig()
 	// 设置模型配置
 	cfg.ModelConfigs["test-model"] = config.ModelConfig{
 		Name:            "test-model",
@@ -53,7 +54,7 @@ func TestLLMClientWithMockServer(t *testing.T) {
 // 测试LLM客户端与模拟服务器的错误处理
 func TestLLMClientWithMockServerErrorHandling(t *testing.T) {
 	// 创建模拟服务器
-	server := NewMockOpenAIServer(t)
+	server := test.NewMockOpenAIServer(t)
 	defer server.Stop()
 
 	// 设置100%错误率
@@ -64,7 +65,7 @@ func TestLLMClientWithMockServerErrorHandling(t *testing.T) {
 	defer zapLogger.Sync()
 
 	// 创建配置
-	cfg := createTestConfig()
+	cfg := test.CreateTestConfig()
 	// 设置模型配置
 	cfg.ModelConfigs["test-model"] = config.ModelConfig{
 		Name:            "test-model",
@@ -89,7 +90,7 @@ func TestLLMClientWithMockServerErrorHandling(t *testing.T) {
 // 测试LLM客户端与模拟服务器的超时处理
 func TestLLMClientWithMockServerTimeout(t *testing.T) {
 	// 创建模拟服务器
-	server := NewMockOpenAIServer(t)
+	server := test.NewMockOpenAIServer(t)
 	defer server.Stop()
 
 	// 设置响应延迟为5秒
@@ -100,7 +101,7 @@ func TestLLMClientWithMockServerTimeout(t *testing.T) {
 	defer zapLogger.Sync()
 
 	// 创建配置，设置超时为1秒
-	cfg := createTestConfig()
+	cfg := test.CreateTestConfig()
 	// 设置模型配置
 	cfg.ModelConfigs["test-model"] = config.ModelConfig{
 		Name:            "test-model",
@@ -126,7 +127,7 @@ func TestLLMClientWithMockServerTimeout(t *testing.T) {
 // 测试LLM客户端与模拟服务器的响应处理
 func TestLLMClientWithMockServerResponseProcessing(t *testing.T) {
 	// 创建模拟服务器
-	server := NewMockOpenAIServer(t)
+	server := test.NewMockOpenAIServer(t)
 	defer server.Stop()
 
 	// 设置特定响应
@@ -138,7 +139,7 @@ func TestLLMClientWithMockServerResponseProcessing(t *testing.T) {
 	defer zapLogger.Sync()
 
 	// 创建配置
-	cfg := createTestConfig()
+	cfg := test.CreateTestConfig()
 	// 设置模型配置
 	cfg.ModelConfigs["test-model"] = config.ModelConfig{
 		Name:            "test-model",
