@@ -206,6 +206,10 @@ func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
 
 	p.logger.Info("EPUB文件重新打包完成", zap.String("输出文件", outputPath))
 
+	if impl, ok := p.Translator.(interface{ SaveDebugInfo(string) error }); ok {
+		_ = impl.SaveDebugInfo(outputPath)
+	}
+
 	return nil
 }
 

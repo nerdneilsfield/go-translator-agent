@@ -73,6 +73,7 @@ type Config struct {
 	TargetCurrency          string                   `mapstructure:"target_currency"`           // 目标货币单位 (例如 USD, RMB), 空字符串表示不转换
 	UsdRmbRate              float64                  `mapstructure:"usd_rmb_rate"`              // USD 到 RMB 的汇率, 用于成本估算时的货币转换
 	KeepIntermediateFiles   bool                     `mapstructure:"keep_intermediate_files"`   // 是否保留中间文件（如EPUB解压的临时文件夹）
+	SaveDebugInfo           bool                     `mapstructure:"save_debug_info"`           // 是否保存调试信息到 JSON 文件
 }
 
 // LoadConfig 从文件加载配置
@@ -184,6 +185,7 @@ func NewDefaultConfig() *Config {
 		TargetCurrency:          "",    // 默认不指定目标货币，按原始单位显示
 		UsdRmbRate:              7.4,   // 默认 USD 到 RMB 汇率
 		KeepIntermediateFiles:   false, // 默认不保留中间文件
+		SaveDebugInfo:           false,
 	}
 }
 
@@ -356,6 +358,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("target_currency", "")
 	v.SetDefault("usd_rmb_rate", 7.4)
 	v.SetDefault("keep_intermediate_files", false)
+	v.SetDefault("save_debug_info", false)
 }
 
 // structToMap 将结构体转换为map
@@ -390,5 +393,6 @@ func structToMap(config *Config) map[string]interface{} {
 		"target_currency":           config.TargetCurrency,
 		"usd_rmb_rate":              config.UsdRmbRate,
 		"keep_intermediate_files":   config.KeepIntermediateFiles,
+		"save_debug_info":           config.SaveDebugInfo,
 	}
 }
