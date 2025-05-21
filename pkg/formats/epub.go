@@ -50,7 +50,18 @@ func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
 	if err != nil {
 		return fmt.Errorf("创建临时目录失败: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+
+	// 根据配置决定是否保留中间文件
+	keepIntermediateFiles := false
+	if agentConfig := p.Translator.GetConfig(); agentConfig != nil {
+		keepIntermediateFiles = agentConfig.KeepIntermediateFiles
+	}
+
+	if !keepIntermediateFiles {
+		defer os.RemoveAll(tempDir)
+	} else {
+		p.logger.Info("将保留EPUB中间解压文件夹", zap.String("临时目录", tempDir))
+	}
 
 	// 解压 EPUB
 	if err := unzipEPUB(inputPath, tempDir); err != nil {
