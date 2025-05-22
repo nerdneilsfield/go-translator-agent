@@ -483,6 +483,9 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 					break
 				}
 			}
+			if err != nil {
+				t.logger.Error("快速模式翻译失败", zap.Error(err))
+			}
 		}
 
 		if err != nil {
@@ -638,6 +641,9 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 						break
 					}
 				}
+				if err != nil {
+					t.logger.Error("反思步骤重试失败", zap.Error(err))
+				}
 			}
 
 			if err != nil {
@@ -699,6 +705,9 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 						break
 					}
 				}
+				if err != nil {
+					t.logger.Error("改进步骤重试失败", zap.Error(err))
+				}
 			}
 
 			if err != nil {
@@ -757,30 +766,43 @@ func (t *Impl) initialTranslation(text string) (string, error) {
 [INTERNAL INSTRUCTIONS: The following formatting rules are for internal reference only and must NOT appear in the final output.]
 
 Formatting Rules:
-1. Preserve all original formatting exactly:
-	- Do not modify any Markdown syntax (**, *, #, etc.).
-	- Do not translate any content within LaTeX formulas ($...$, $$...$$, \( ... \), \[ ... \]) or any LaTeX commands.
-	- For LaTeX files, preserve all commands, environments (such as \begin{...} and \end{...}), and macros exactly as they are.
-	- Keep all HTML tags intact.
-2. Do not alter abbreviations, technical terms, or code identifiers.
-3. Preserve document structure, including line breaks, paragraph spacing, lists, and tables.
-4. IMPORTANT: Do not translate or modify any text matching the following pattern:
-  @@PRESERVE_<number>@@...@@/PRESERVE_<number>@@
-For example, if you see:
-  @@PRESERVE_0@@[1] Author et al.@@/PRESERVE_0@@
-or
-  @@PRESERVE_1@@$E = mc^2$@@/PRESERVE_1@@
-you must leave these parts exactly as they are.
-5. IMPORTANT: Preserve all paragraph breaks exactly as they are. Do not convert double newlines ("\n\n") into single newlines ("\n").
+1.  Preserve all original formatting exactly:
+    - Do not modify any Markdown syntax (**, *, #, etc.).
+    - Do not translate any content within LaTeX formulas ($...$, $$...$$, \( ... \), \[ ... \]) or any LaTeX commands.
+    - For LaTeX files, preserve all commands, environments (such as \begin{...} and \end{...}), and macros exactly as they are.
+    - Keep all HTML tags intact.
+2.  Do not alter abbreviations, technical terms, or code identifiers.
+3.  Preserve document structure, including line breaks, paragraph spacing, lists, and tables.
+4.  IMPORTANT: There are two types of special markers you must handle:
+    a.  **PRESERVE Markers**: Do not translate or modify any text enclosed by @@PRESERVE_<number>@@ and @@/PRESERVE_<number>@@.
+        For example, if you see:
+          @@PRESERVE_0@@[1] Author et al.@@/PRESERVE_0@@
+        or
+          @@PRESERVE_1@@$E = mc^2$@@/PRESERVE_1@@
+        you must leave these parts (including the markers themselves) exactly as they are.
+    b.  **NODE Markers for Translation Units**: The text to translate will be provided in segments, each enclosed by @@NODE_START_<number>@@ and @@NODE_END_<number>@@ markers.
+        Each segment will look like:
+          @@NODE_START_<number>@@
+          Content to be translated
+          @@NODE_END_<number>@@
+        You MUST:
+          i.  Translate ONLY the "Content to be translated" part within these NODE markers.
+          ii. Preserve the @@NODE_START_<number>@@ marker, the newline character following it, the newline character preceding @@NODE_END_<number>@@, and the @@NODE_END_<number>@@ marker EXACTLY as they are.
+          iii.Your output for each such segment must strictly follow this structure:
+             @@NODE_START_<number>@@
+             Your translated content for this segment
+             @@NODE_END_<number>@@
+        Note: The "Content to be translated" itself might contain PRESERVE markers (see 4a), which should be handled as per rule 4a.
+5.  IMPORTANT: Preserve all paragraph breaks (double newlines like "\n\n" BETWEEN segments or marker blocks) exactly as they are. Do not convert double newlines into single newlines.
 
 [END OF INTERNAL INSTRUCTIONS]
 
-Please provide only the translation of the text below, strictly adhering to the above formatting rules.
+Please provide only the translation of the text below, strictly adhering to all the above formatting rules, especially for both PRESERVE and NODE markers.
 
 <TEXT TO TRANSLATE>
 %s
 </TEXT TO TRANSLATE>
-	`,
+    `,
 		t.config.SourceLang, t.config.TargetLang, text)
 
 	// 调用语言模型
@@ -843,6 +865,7 @@ func (t *Impl) reflection(sourceText, translation string) (string, error) {
 	}
 
 	// 构建提示词
+	// Prompt for reflection step
 	prompt := fmt.Sprintf(`
 Your task is to review a source text and its translation from %s to %s, and then provide a list of constructive and specific suggestions to improve the translation.
 The final style and tone should match the style of %s colloquially spoken in %s.
@@ -850,31 +873,32 @@ The final style and tone should match the style of %s colloquially spoken in %s.
 [INTERNAL INSTRUCTIONS: The following guidelines are for internal use only and must NOT appear in the final output.]
 
 Formatting and Review Guidelines:
-1. Preserve all original formatting exactly:
-	- Do not modify Markdown syntax (**, *, #, etc.).
-	- Do not alter any LaTeX formulas ($...$, $$...$$, \( ... \), \[ ... \]) or any LaTeX commands/environments.
-	- Do not change HTML tags (<...>).
-2. Maintain all abbreviations, technical terms, and code identifiers exactly as they appear.
-3. Preserve the document structure, including line breaks, paragraph spacing, table formatting, and list markers.
-4. IMPORTANT: Do not translate or modify any text matching the following pattern:
-  @@PRESERVE_<number>@@...@@/PRESERVE_<number>@@
-For example, if you see:
-  @@PRESERVE_0@@[1] Author et al.@@/PRESERVE_0@@
-or
-  @@PRESERVE_1@@$E = mc^2$@@/PRESERVE_1@@
-you must leave these parts exactly as they are.
-5. IMPORTANT: Preserve all paragraph breaks exactly as they are. Do not convert double newlines ("\n\n") into single newlines ("\n").
+1.  Preserve all original formatting exactly:
+    - Do not modify Markdown syntax (**, *, #, etc.).
+    - Do not alter any LaTeX formulas ($...$, $$...$$, \( ... \), \[ ... \]) or any LaTeX commands/environments.
+    - Do not change HTML tags (<...>).
+2.  Maintain all abbreviations, technical terms, and code identifiers exactly as they appear.
+3.  Preserve the document structure, including line breaks, paragraph spacing, table formatting, and list markers.
+4.  IMPORTANT: The source text and translation you are reviewing contain two types of special markers:
+    a.  **PRESERVE Markers**: Text enclosed by @@PRESERVE_<number>@@ and @@/PRESERVE_<number>@@ (e.g., @@PRESERVE_0@@text@@/PRESERVE_0@@) IS NOT TRANSLATED and MUST remain unchanged. When providing suggestions, acknowledge that these parts are intentionally preserved.
+    b.  **NODE Markers for Translation Units**: The original source text and its translation are structured into segments, each enclosed by @@NODE_START_<number>@@ and @@NODE_END_<number>@@ markers.
+        Example of a segment in the source or translation:
+          @@NODE_START_<number>@@
+          Content (original or translated)
+          @@NODE_END_<number>@@
+        When you provide suggestions, you may refer to these segments if it helps clarify the location of an issue (e.g., "In segment @@NODE_START_3@@...@@NODE_END_3@@, the translation of '...' could be improved to '...'."). Do NOT suggest altering these NODE markers themselves.
+5.  IMPORTANT: Preserve all paragraph breaks exactly as they are. Do not convert double newlines ("\n\n") into single newlines ("\n"). This applies to the provided source/translation and any quoted text in your suggestions.
 
 Review Criteria:
-(i) Accuracy: Identify and correct any issues such as additions, mistranslations, omissions, or untranslated segments.
+(i) Accuracy: Identify and correct any issues such as additions, mistranslations, omissions, or untranslated segments within the "Content" part of the NODE-marked segments.
 (ii) Fluency: Ensure the translation follows %s grammar, spelling, and punctuation rules, avoiding unnecessary repetitions.
 (iii) Style: Verify that the translation reflects the source text's style and cultural context.
 (iv) Terminology: Ensure consistency in technical terms and that equivalent idioms in %s are properly used.
-(v) Formatting: Confirm that the translation maintains the original formatting, including Markdown, LaTeX, and HTML.
+(v) Formatting: Confirm that the translation maintains the original formatting (Markdown, LaTeX, HTML) and that PRESERVE and NODE markers are intact in the provided translation.
 
 [END OF INTERNAL INSTRUCTIONS]
 
-The source text and the initial translation are delimited by the following XML tags:
+The source text and the initial translation are delimited by the following XML tags. Both may contain PRESERVE and NODE markers as described above.
 
 <SOURCE_TEXT>
 %s
@@ -889,8 +913,8 @@ Output only a list of constructive suggestions, each addressing a specific aspec
 		t.config.TargetLang, t.config.Country,
 		t.config.TargetLang,
 		t.config.TargetLang,
-		sourceText,
-		translation)
+		sourceText,  // This is groupText, containing @@NODE_START/END@@ and @@PRESERVE@@
+		translation) // This is initialTranslation, also containing @@NODE_START/END@@ and @@PRESERVE@@
 
 	// 调用语言模型
 	model := t.activeSteps.ReflectionModel
@@ -952,64 +976,71 @@ func (t *Impl) improvement(sourceText, translation, reflection string) (string, 
 	}
 
 	// 构建提示词
+	// Prompt for improvement step
 	prompt := fmt.Sprintf(`
 Your task is to carefully read, then edit, a translation from %s to %s, taking into account a list of expert suggestions and constructive criticisms.
+Your final output must be ONLY the new, edited translation, strictly adhering to all formatting requirements below.
 
 [INTERNAL INSTRUCTIONS: The following guidelines are for internal use only and must NOT appear in the final output.]
 
 Critical Formatting Requirements:
-1. The following elements MUST remain exactly as in the source:
-   - All Markdown formatting (**, *, #, etc.)
-   - All LaTeX formulas ($...$, $$...$$, \( ... \), \[ ... \])
-   - All HTML tags (<...>)
-2. Preserve all technical elements:
-   - Keep unknown abbreviations in original form
-   - Maintain all code identifiers and variables
-   - Preserve all URLs and file paths
-3. Maintain document structure:
-   - Keep all line breaks and spacing
-   - Preserve table formatting
-   - Keep list markers and numbering
-4. IMPORTANT: Do not translate or modify any text matching the following pattern:
-  @@PRESERVE_<number>@@...@@/PRESERVE_<number>@@
-For example, if you see:
-  @@PRESERVE_0@@[1] Author et al.@@/PRESERVE_0@@
-or
-  @@PRESERVE_1@@$E = mc^2$@@/PRESERVE_1@@
-you must leave these parts exactly as they are.
-5. IMPORTANT: Preserve all paragraph breaks exactly as they are. Do not convert double newlines ("\n\n") into single newlines ("\n").
+1.  The following elements MUST remain exactly as in the source text (and should be present in the initial translation):
+    - All Markdown formatting (**, *, #, etc.)
+    - All LaTeX formulas ($...$, $$...$$, \( ... \), \[ ... \]) or any LaTeX commands/environments.
+    - All HTML tags (<...>).
+2.  Preserve all technical elements:
+    - Keep unknown abbreviations in original form.
+    - Maintain all code identifiers and variables.
+    - Preserve all URLs and file paths.
+3.  Maintain document structure:
+    - Keep all line breaks and spacing.
+    - Preserve table formatting.
+    - Keep list markers and numbering.
+4.  IMPORTANT: Handling Special Markers - There are two types of special markers present in the <SOURCE_TEXT> and <TRANSLATION> that you must handle with extreme care in your output:
+    a.  **PRESERVE Markers**: Any text enclosed by @@PRESERVE_<number>@@ and @@/PRESERVE_<number>@@ (e.g., @@PRESERVE_0@@text@@/PRESERVE_0@@) IS NOT TRANSLATED and MUST be preserved exactly as it appears in the <TRANSLATION> (or <SOURCE_TEXT> if missing/corrupted in <TRANSLATION>). DO NOT MODIFY THESE.
+    b.  **NODE Markers for Translation Units**: The <SOURCE_TEXT> and the <TRANSLATION> you are editing are structured into segments, each enclosed by @@NODE_START_<number>@@ and @@NODE_END_<number>@@ markers.
+        Example of a segment structure:
+          @@NODE_START_<number>@@
+          Content (original or translated)
+          @@NODE_END_<number>@@
+        Your edited translation for EACH segment MUST strictly follow this structure in your final output:
+          @@NODE_START_<number>@@
+          Your new, edited translated content for this segment
+          @@NODE_END_<number>@@
+        It is CRITICAL that you reproduce these @@NODE_START_<number>@@, the newline after it, the newline before @@NODE_END_<number>@@, and the @@NODE_END_<number>@@ markers for EVERY segment, exactly as they appear in the provided <TRANSLATION> (or reconstruct them based on <SOURCE_TEXT> if necessary).
+        The "Content" part within these NODE markers is what you edit based on the suggestions. This content may itself contain PRESERVE markers, which must be handled according to rule 4a.
+5.  IMPORTANT: Preserve all paragraph breaks (double newlines like "\n\n" BETWEEN segments or marker blocks) exactly as they are. Do not convert double newlines into single newlines.
 
-Editing Instructions:
-Please incorporate the following aspects when editing:
+Editing Instructions (apply these to the "Content" within each NODE-marked segment):
 (i) Accuracy: Correct any errors of addition, mistranslation, omission, or untranslated text.
 (ii) Fluency: Apply %s grammar, spelling, and punctuation rules and remove any unnecessary repetitions.
 (iii) Style: Ensure the translation reflects the style of the source text.
 (iv) Terminology: Address any inappropriate or inconsistent terminology.
-(v) Formatting: Ensure the translation preserves the original formatting, including Markdown, LaTeX, and HTML.
-(vi) Other errors as applicable.
+(v) Formatting: Ensure the translation preserves the original formatting (Markdown, LaTeX, HTML) within the content part of each NODE segment, and that the overall PRESERVE and NODE marker structure is perfectly maintained.
+(vi) Other errors as applicable, based on the <EXPERT_SUGGESTIONS>.
 
 [END OF INTERNAL INSTRUCTIONS]
 
-The source text, the initial translation, and the expert suggestions are provided below:
+The source text, the initial translation (which you will edit), and the expert suggestions are provided below. All three may contain PRESERVE and NODE markers.
 
 <SOURCE_TEXT>
 %s
 </SOURCE_TEXT>
 
 <TRANSLATION>
-%s
+%s 
 </TRANSLATION>
 
 <EXPERT_SUGGESTIONS>
 %s
 </EXPERT_SUGGESTIONS>
 
-Output only the new, edited translation and nothing else.`,
+Output only the new, edited translation, ensuring all NODE_START/END and PRESERVE markers are correctly reproduced, and nothing else.`,
 		t.config.SourceLang, t.config.TargetLang,
 		t.config.TargetLang,
-		sourceText,
-		translation,
-		reflection)
+		sourceText,  // This is groupText from initial translation
+		translation, // This is initialTranslation result (containing NODE_START/END and PRESERVE)
+		reflection)  // This is the list of suggestions
 
 	// 调用语言模型
 	model := t.activeSteps.ImprovementModel

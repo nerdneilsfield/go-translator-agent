@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="epubProcessingDiagram" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1200 1250">
+    <defs>
+        <marker id="arrowhead" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto" markerUnits="strokeWidth">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#6b7280" />
+        </marker>
+        <style type="text/css">
+        /* Copied from the HTML*/
+        /* block */
+        .node rect {
+        stroke-width: 1.5;
+        rx: 6;
+        ry: 6;
+        transition: filter 0.2s ease-in-out;
+        }
+        .node text {
+        font-size: 11px;
+        font-family: 'Inter', sans-serif; /* Ensure font is available or use generic */
+        dominant-baseline: middle;
+        text-anchor: middle;
+        fill: #1f2937; /* Gray-800 */
+        pointer-events: none;
+        }
+        .node .subtext {
+        font-size: 9px;
+        fill: #4b5563; /* Gray-600 */
+        }
+        /* .node:hover rect { filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.2)); }
+        Hover effects might not work consistently in all SVG viewers if not supported,
+        but it's fine to keep them.
+        */
+        .line {
+        stroke: #6b7280; /* Gray-500 */
+        stroke-width: 1; /* Made lines even thinner */
+        marker-end: url(#arrowhead);
+        fill: none; /* Important for paths */
+        }
+        .line-dashed {
+        stroke-dasharray: 5, 3;
+        }
+        .label { /* This class was in HTML, might not be used directly in SVG text if not styled */
+        font-size: 10px;
+        fill: #4b5563; /* Gray-600 */
+        text-anchor: middle;
+        }
+        .group-box { /* Main blue group boxes */
+        fill: rgba(230, 247, 255, 0.3);
+        stroke: #91d5ff;
+        stroke-width: 1px;
+        stroke-dasharray: 4, 2;
+        rx: 8;
+        ry: 8;
+        }
+        .loop-box { /* Grayish loop background boxes */
+        fill: rgba(243, 244, 246, 0.5); /* Light gray, slightly transparent */
+        stroke: #d1d5db; /* Gray-300 */
+        stroke-width: 1px;
+        stroke-dasharray: 3 3;
+        rx: 5;
+        ry: 5;
+        }
+        .group-label {
+        font-size: 13px;
+        font-weight: bold;
+        font-family: 'Inter', sans-serif;
+        fill: #0050b3; /* Darker blue */
+        text-anchor: middle;
+        }
+        .loop-label {
+        font-size: 12px;
+        font-family: 'Inter', sans-serif;
+        fill: #374151; /* Gray-700 */
+        text-anchor: middle;
+        }
+
+        /* Node Colors */
+        .entry-point rect { fill: #e6f7ff; stroke: #91d5ff; }
+        .file-op rect { fill: #fffbe6; stroke: #ffd666; }
+        .parsing rect { fill: #f9f0ff; stroke: #d3adf7; }
+        .processing rect { fill: #e6fffb; stroke: #87e8de; }
+        .html-formatter-node rect { fill: #f6ffed; stroke: #b7eb8f; }
+        .data-struct rect { fill: #fff0f6; stroke: #ffadd2; }
+        .translation-node rect { fill: #fff2e8; stroke: #ffbb96; }
+        .packaging rect { fill: #e6f7ff; stroke: #91d5ff; }
+        .cleanup rect { fill: #fafafa; stroke: #d9d9d9; }
+
+        .icon { /* Ensure tspan with this class is styled if specific font is needed for icons */
+        font-size: 14px;
+        }
+    </style>
+    </defs>
+
+    <rect class="group-box" x="10" y="10" width="1180" height="600"></rect>
+    <text class="group-label" x="600" y="35">EPUBFormatter.PreProcess</text>
+    <rect class="group-box" x="10" y="670" width="1180" height="580"></rect>
+    <text class="group-label" x="600" y="695">EPUBFormatter.PostProcess</text>
+
+    <rect class="loop-box" x="40" y="150" width="1120" height="280"/>
+    <text class="loop-label" x="600" y="170">对于每个 XHTML 内容文档 (循环)</text>
+    <rect class="loop-box" x="40" y="810" width="1120" height="280"/>
+    <text class="loop-label" x="600" y="830">对于每个预处理过的 XHTML (循环)</text>
+
+    <g class="node entry-point" transform="translate(50, 70)">
+        <rect width="180" height="50"></rect>
+        <text x="90" y="25">EPUBFormatter.PreProcess</text>
+        <text x="90" y="40" class="subtext">(content: []byte)</text>
+    </g>
+    <g class="node file-op" transform="translate(300, 70)">
+        <rect width="180" height="50"></rect>
+        <text x="90" y="18"><tspan class="icon">📁</tspan> 创建临时目录</text>
+        <text x="90" y="35" class="subtext">os.MkdirTemp</text>
+    </g>
+    <g class="node file-op" transform="translate(550, 70)">
+        <rect width="180" height="50"></rect>
+        <text x="90" y="18"><tspan class="icon">📦</tspan> 解压 EPUB</text>
+        <text x="90" y="35" class="subtext">zip.OpenReader, 遍历解压</text>
+    </g>
+    <g class="node parsing" transform="translate(800, 70)">
+        <rect width="180" height="50"></rect>
+        <text x="90" y="18"><tspan class="icon">📄</tspan> 解析 OPF 文件</text>
+        <text x="90" y="35" class="subtext">获取 XHTML 列表</text>
+    </g>
+
+    <g class="node file-op" transform="translate(80, 200)">
+        <rect width="200" height="40"></rect>
+        <text x="100" y="20">读取 XHTML 文件内容</text>
+    </g>
+    <g class="node html-formatter-node" transform="translate(330, 200)">
+        <rect width="240" height="60"></rect>
+        <text x="120" y="25">调用 htmlFormatter.PreProcess</text>
+        <text x="120" y="42" class="subtext">(xhtmlContent)</text>
+    </g>
+    <g class="node data-struct" transform="translate(620, 200)">
+        <rect width="240" height="60"></rect>
+        <text x="120" y="25">返回: XHTML片段,</text>
+        <text x="120" y="42" class="subtext">xhtmlOriginalStructure</text>
+    </g>
+    <g class="node processing" transform="translate(910, 200)">
+        <rect width="200" height="50"></rect>
+        <text x="100" y="18">收集片段, 分配唯一ID</text>
+        <text x="100" y="35" class="subtext">(含文件名和索引)</text>
+    </g>
+
+    <g class="node data-struct" transform="translate(450, 460)">
+        <rect width="300" height="100"></rect>
+        <text x="150" y="20">存储 EPUB OriginalStructure</text>
+        <text x="150" y="40" class="subtext">- 临时目录路径</text>
+        <text x="150" y="55" class="subtext">- OPF 信息</text>
+        <text x="150" y="70" class="subtext">- 各XHTML的路径和结构</text>
+        <text x="150" y="85" class="subtext">- 非内容文件列表</text>
+    </g>
+    <g class="node entry-point" transform="translate(850, 500)">
+        <rect width="220" height="60"></rect>
+        <text x="110" y="25">返回: allSegmentsToTranslate,</text>
+        <text x="110" y="42" class="subtext">epubOriginalStructure</text>
+    </g>
+
+    <g class="node translation-node" transform="translate(490, 620)">
+        <rect width="220" height="40"></rect>
+        <text x="110" y="20">translator.Translate(allSegments)</text>
+    </g>
+
+    <g class="node entry-point" transform="translate(50, 730)">
+        <rect width="200" height="60"></rect>
+        <text x="100" y="25">EPUBFormatter.PostProcess</text>
+        <text x="100" y="42" class="subtext">(translatedSegments, ...)</text>
+    </g>
+    <g class="node data-struct" transform="translate(320, 730)">
+        <rect width="220" height="50"></rect>
+        <text x="110" y="18">恢复 OriginalStructure</text>
+        <text x="110" y="35" class="subtext">(临时目录, OPF, ...)</text>
+    </g>
+    <g class="node processing" transform="translate(610, 730)">
+        <rect width="220" height="50"></rect>
+        <text x="110" y="18">分发 translatedSegments</text>
+        <text x="110" y="35" class="subtext">至对应的XHTML文件</text>
+    </g>
+
+    <g class="node data-struct" transform="translate(80, 860)">
+        <rect width="240" height="60"></rect>
+        <text x="120" y="25">获取: XHTML的已翻译片段,</text>
+        <text x="120" y="42" class="subtext">xhtmlOriginalStructure</text>
+    </g>
+    <g class="node html-formatter-node" transform="translate(370, 860)">
+        <rect width="260" height="60"></rect>
+        <text x="130" y="25">调用 htmlFormatter.PostProcess</text>
+        <text x="130" y="42" class="subtext">(translatedXHTMLSegments, ...)</text>
+    </g>
+    <g class="node file-op" transform="translate(680, 860)">
+        <rect width="220" height="60"></rect>
+        <text x="110" y="25">返回: 翻译后的XHTML内容</text>
+        <text x="110" y="42" class="subtext">(byte[])</text>
+    </g>
+    <g class="node file-op" transform="translate(950, 860)">
+        <rect width="200" height="50"></rect>
+        <text x="100" y="18">写回翻译后的XHTML</text>
+        <text x="100" y="35" class="subtext">到临时目录</text>
+    </g>
+
+    <g class="node packaging" transform="translate(100, 1120)">
+        <rect width="220" height="60"></rect>
+        <text x="110" y="25"><tspan class="icon">📦</tspan> 重新打包 EPUB</text>
+        <text x="110" y="42" class="subtext">(遍历临时目录, 创建ZIP)</text>
+    </g>
+    <g class="node file-op" transform="translate(370, 1120)">
+        <rect width="260" height="60"></rect>
+        <text x="130" y="25">注意: mimetype 文件</text>
+        <text x="130" y="42" class="subtext">(首个文件, 不压缩)</text>
+    </g>
+    <g class="node cleanup" transform="translate(680, 1120)">
+        <rect width="180" height="50"></rect>
+        <text x="90" y="18"><tspan class="icon">🗑️</tspan> 清理临时目录</text>
+        <text x="90" y="35" class="subtext">os.RemoveAll</text>
+    </g>
+    <g class="node entry-point" transform="translate(910, 1120)">
+        <rect width="220" height="50"></rect>
+        <text x="110" y="18">返回: 翻译后的EPUB</text>
+        <text x="110" y="35" class="subtext">([]byte)</text>
+    </g>
+
+    <line class="line" x1="230" y1="95" x2="300" y2="95"></line>
+    <line class="line" x1="480" y1="95" x2="550" y2="95"></line>
+    <line class="line" x1="730" y1="95" x2="800" y2="95"></line>
+    <path class="line" d="M 980 95 Q 1050 95, 1050 180 L 280 180"></path>
+
+    <line class="line" x1="280" y1="220" x2="330" y2="220"></line>
+    <line class="line" x1="570" y1="220" x2="620" y2="220"></line>
+    <line class="line" x1="860" y1="220" x2="910" y2="220"></line>
+    <path class="line" d="M 1110 225 L 1150 225 Q 1170 225 1170 245 L 1170 290 Q 1170 310 1150 310 L 50 310 Q 30 310 30 290 L 30 245 Q 30 225 50 225 L 80 225"></path>
+
+    <path class="line" d="M 600 430 L 600 460"></path>
+    <line class="line" x1="750" y1="530" x2="850" y2="530"></line>
+    <path class="line" d="M 850 560 Q 750 580, 710 640"></path>
+
+    <line class="line" x1="250" y1="760" x2="320" y2="760"></line>
+    <line class="line" x1="540" y1="760" x2="610" y2="760"></line>
+    <path class="line" d="M 830 755 Q 900 755, 900 840 L 320 840"></path>
+
+    <line class="line" x1="320" y1="880" x2="370" y2="880"></line>
+    <line class="line" x1="630" y1="880" x2="680" y2="880"></line>
+    <line class="line" x1="900" y1="880" x2="950" y2="880"></line>
+    <path class="line" d="M 1150 885 L 1170 885 Q 1190 885 1190 905 L 1190 950 Q 1190 970 1170 970 L 30 970 Q 10 970 10 950 L 10 905 Q 10 885 30 885 L 80 885"></path>
+
+    <path class="line" d="M 600 1090 L 600 1130 L 320 1130"></path>
+    <line class="line" x1="320" y1="1145" x2="370" y2="1145"></line>
+    <line class="line" x1="630" y1="1145" x2="680" y2="1145"></line>
+    <line class="line" x1="860" y1="1145" x2="910" y2="1145"></line>
+</svg>

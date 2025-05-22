@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="markdownProcessingDiagram" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1200 950">
+    <defs>
+        <marker id="arrowhead-md" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto" markerUnits="strokeWidth">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#6b7280" />
+        </marker>
+        <style type="text/css">
+            .node rect {
+            stroke-width: 1.5;
+            rx: 6;
+            ry: 6;
+            transition: filter 0.2s ease-in-out;
+            }
+            .node text {
+            font-size: 11px;
+            font-family: 'Inter', sans-serif;
+            dominant-baseline: middle;
+            text-anchor: middle;
+            fill: #1f2937;
+            pointer-events: none;
+            }
+            .node .subtext {
+            font-size: 9px;
+            fill: #4b5563;
+            }
+            .line {
+            stroke: #6b7280;
+            stroke-width: 1;
+            marker-end: url(#arrowhead-md);
+            fill: none;
+            }
+            .group-box {
+            fill: rgba(254, 226, 226, 0.3); /* Light Red transparent */
+            stroke: #fca5a5; /* Light Red border */
+            stroke-width: 1px;
+            stroke-dasharray: 4, 2;
+            rx: 8;
+            ry: 8;
+            }
+            .loop-box {
+            fill: rgba(243, 244, 246, 0.5);
+            stroke: #d1d5db;
+            stroke-width: 1px;
+            stroke-dasharray: 3 3;
+            rx: 5;
+            ry: 5;
+            }
+            .group-label {
+            font-size: 13px;
+            font-weight: bold;
+            font-family: 'Inter', sans-serif;
+            fill: #b91c1c; /* Darker Red */
+            text-anchor: middle;
+            }
+            .loop-label {
+            font-size: 12px;
+            font-family: 'Inter', sans-serif;
+            fill: #374151;
+            text-anchor: middle;
+            }
+
+            /* Node Colors */
+            .entry-point rect { fill: #fee2e2; stroke: #fecaca; } /* Lighter Red */
+            .parsing rect { fill: #ffedd5; stroke: #fed7aa; }    /* Light Orange */
+            .ast-processing rect { fill: #dbeafe; stroke: #bfdbfe; } /* Light Blue */
+            .data-struct rect { fill: #e0e7ff; stroke: #c7d2fe; } /* Light Indigo */
+            .translation-node rect { fill: #fffbeb; stroke: #fef3c7; } /* Light Yellow */
+            .rendering rect { fill: #d1fae5; stroke: #a7f3d0; } /* Light Green */
+
+            .icon {
+            font-size: 14px;
+            }
+        </style>
+    </defs>
+
+    <rect class="group-box" x="10" y="10" width="1180" height="450"></rect>
+    <text class="group-label" x="600" y="35">MarkdownFormatter.PreProcess</text>
+
+    <rect class="group-box" x="10" y="510" width="1180" height="400"></rect>
+    <text class="group-label" x="600" y="535">MarkdownFormatter.PostProcess</text>
+
+    <rect class="loop-box" x="40" y="150" width="1120" height="150"/>
+    <text class="loop-label" x="600" y="170">遍历 AST 节点 (递归)</text>
+
+    <rect class="loop-box" x="40" y="650" width="1120" height="120"/>
+    <text class="loop-label" x="600" y="670">遍历已翻译片段, 更新 AST</text>
+
+
+    <g class="node entry-point" transform="translate(50, 70)">
+        <rect width="200" height="50"></rect>
+        <text x="100" y="25">MarkdownFormatter.PreProcess</text>
+        <text x="100" y="40" class="subtext">(content: []byte)</text>
+    </g>
+    <g class="node parsing" transform="translate(300, 70)">
+        <rect width="220" height="50"></rect>
+        <text x="110" y="18"><tspan class="icon">🌳</tspan> 解析 Markdown 为 AST</text>
+        <text x="110" y="35" class="subtext">goldmark.Parser.Parse()</text>
+    </g>
+    <g class="node data-struct" transform="translate(590, 70)">
+        <rect width="220" height="50"></rect>
+        <text x="110" y="18">创建 OriginalStructure</text>
+        <text x="110" y="35" class="subtext">(存储AST根节点, 节点映射)</text>
+    </g>
+
+    <g class="node ast-processing" transform="translate(80, 210)">
+        <rect width="220" height="60"></rect>
+        <text x="110" y="25">识别文本节点 (Text)</text>
+        <text x="110" y="42" class="subtext">代码块(FencedCodeBlock)等</text>
+    </g>
+    <g class="node ast-processing" transform="translate(350, 210)">
+        <rect width="200" height="50"></rect>
+        <text x="100" y="18">提取文本内容</text>
+        <text x="100" y="35" class="subtext">生成 SegmentToTranslate</text>
+    </g>
+    <g class="node data-struct" transform="translate(600, 210)">
+        <rect width="240" height="60"></rect>
+        <text x="120" y="25">记录AST节点指针/ID</text>
+        <text x="120" y="42" class="subtext">到 OriginalStructure</text>
+    </g>
+    <g class="node ast-processing" transform="translate(890, 210)">
+        <rect width="200" height="40"></rect>
+        <text x="100" y="20">收集所有 Segments</text>
+    </g>
+
+    <g class="node entry-point" transform="translate(480, 350)">
+        <rect width="240" height="60"></rect>
+        <text x="120" y="25">返回: allSegmentsToTranslate,</text>
+        <text x="120" y="42" class="subtext">markdownOriginalStructure</text>
+    </g>
+
+    <g class="node translation-node" transform="translate(480, 470)">
+        <rect width="240" height="40"></rect>
+        <text x="120" y="20">translator.Translate(allSegments)</text>
+    </g>
+
+    <g class="node entry-point" transform="translate(50, 570)">
+        <rect width="220" height="60"></rect>
+        <text x="110" y="25">MarkdownFormatter.PostProcess</text>
+        <text x="110" y="42" class="subtext">(translatedSegments, ...)</text>
+    </g>
+    <g class="node data-struct" transform="translate(340, 570)">
+        <rect width="220" height="50"></rect>
+        <text x="110" y="18">获取 AST 根节点</text>
+        <text x="110" y="35" class="subtext">从 markdownOriginalStructure</text>
+    </g>
+
+    <g class="node ast-processing" transform="translate(200, 700)">
+        <rect width="280" height="60"></rect>
+        <text x="140" y="25">根据ID和OriginalStructure信息</text>
+        <text x="140" y="42" class="subtext">定位到 AST 中的文本节点</text>
+    </g>
+    <g class="node ast-processing" transform="translate(530, 700)">
+        <rect width="240" height="50"></rect>
+        <text x="120" y="18">更新 AST 节点内容</text>
+        <text x="120" y="35" class="subtext">使用 translatedText</text>
+    </g>
+
+    <g class="node rendering" transform="translate(480, 820)">
+        <rect width="240" height="50"></rect>
+        <text x="120" y="18"><tspan class="icon">✍️</tspan> 渲染 AST 为 Markdown</text>
+        <text x="120" y="35" class="subtext">goldmark.Renderer.Render()</text>
+    </g>
+    <g class="node entry-point" transform="translate(800, 820)">
+        <rect width="220" height="40"></rect>
+        <text x="110" y="20">返回: 翻译后的MD []byte</text>
+    </g>
+
+
+    <line class="line" x1="250" y1="95" x2="300" y2="95"></line>
+    <line class="line" x1="520" y1="95" x2="590" y2="95"></line>
+    <path class="line" d="M 810 95 Q 890 95, 890 160 L 190 160"></path> <line class="line" x1="300" y1="230" x2="350" y2="230"></line>
+    <line class="line" x1="550" y1="230" x2="600" y2="230"></line>
+    <line class="line" x1="840" y1="230" x2="890" y2="230"></line>
+    <path class="line" d="M 1090 230 L 1130 230 Q 1150 230 1150 250 L 1150 270 Q 1150 290 1130 290 L 70 290 Q 50 290 50 270 L 50 250 Q 50 230 70 230 L 80 230"></path> <path class="line" d="M 600 300 L 600 350"></path> <path class="line" d="M 600 410 L 600 470"></path> <line class="line" x1="270" y1="600" x2="340" y2="600"></line> <path class="line" d="M 560 595 Q 600 595, 600 660 L 340 660"></path> <line class="line" x1="480" y1="720" x2="530" y2="720"></line> <path class="line" d="M 770 725 L 800 725 Q 820 725 820 700 L 820 680 Q 820 660 800 660 L 200 660"></path> <path class="line" d="M 600 770 L 600 820 L 480 820"></path> <line class="line" x1="720" y1="840" x2="800" y2="840"></line> </svg>

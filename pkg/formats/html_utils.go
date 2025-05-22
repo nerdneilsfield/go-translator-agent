@@ -2,11 +2,14 @@ package formats
 
 import (
 	"fmt"
+
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/dlclark/regexp2"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 	"go.uber.org/zap"
 )
@@ -363,13 +366,13 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 
 			var textsToTranslate []string
 			originalTextsForGroup := make(map[int]string)
-
 			for i, node := range currentGroupData {
-				nodeMarker := fmt.Sprintf("@@NODE_%d@@", i)
+				startMarker := fmt.Sprintf("@@NODE_START_%d@@", i)
+				endMarker := fmt.Sprintf("@@NODE_END_%d@@", i)
 				originalTextsForGroup[i] = node.Text
-				textsToTranslate = append(textsToTranslate, nodeMarker+"\\n"+node.Text)
+				textsToTranslate = append(textsToTranslate, startMarker+"\n"+node.Text+"\n"+endMarker)
 			}
-			groupText := strings.Join(textsToTranslate, "\\n\\n")
+			groupText := strings.Join(textsToTranslate, "\n\n")
 
 			if strings.TrimSpace(groupText) == "" && len(textsToTranslate) == 0 {
 				logger.Debug("跳过翻译空组", zap.Int("groupIndex", gIdx))
@@ -391,25 +394,81 @@ func TranslateHTMLWithGoQuery(htmlStr string, t translator.Translator, logger *z
 			}
 
 			// 解析翻译结果，提取每个节点的翻译
-			translatedParts := strings.Split(translatedText, "\\n\\n")
+			//translatedParts := strings.Split(translatedText, "\n\n")
 			currentGroupTranslations := make(map[int]string)
-			for _, part := range translatedParts {
-				for i := range currentGroupData {
-					nodeMarker := fmt.Sprintf("@@NODE_%d@@", i)
-					if strings.Contains(part, nodeMarker) {
-						translatedContent := strings.Replace(part, nodeMarker, "", 1)
-						translatedContent = strings.TrimSpace(strings.Replace(translatedContent, "\\n", "", 1))
-						if translatedContent != "" {
-							currentGroupTranslations[i] = translatedContent
-						}
-						break
+			// 正则表达式：
+			// (?s) 允许 . 匹配换行符
+			// @@NODE_START_(\d+)@@ 匹配开始标记并捕获数字索引 (group 1)
+			// \n 匹配开始标记后的换行符
+			// (.*?) 懒惰匹配翻译内容，直到遇到下一个模式 (group 2)
+			// \n 匹配结束标记前的换行符
+			// @@NODE_END_\1@@ 使用反向引用 \1确保结束标记的数字与开始标记的数字一致
+			re2, err := regexp2.Compile(`@@NODE_START_(\d+)@@\n(.*?)\n@@NODE_END_\1@@`, regexp2.Singleline)
+			if err != nil {
+				logger.Panic("regexp2编译失败", zap.Error(err)) // 或者返回错误
+				return                                          // or panic
+			}
+
+			var m *regexp2.Match
+			m, err = re2.FindStringMatch(translatedText) // 找到第一个匹配
+			if err != nil {
+				logger.Error("regexp2 查找匹配时出错", zap.Error(err))
+				// 根据错误类型决定是否继续或返回
+			}
+			// matches 是一个 [][]string，每个元素是：
+			// [ 完整匹配的字符串, 捕获的数字N, 捕获的翻译内容 ]
+
+			for m != nil { // 循环直到没有更多匹配
+				groups := m.Groups()
+				if len(groups) == 3 { // Group 0 是完整匹配, Group 1 是第一个捕获组, Group 2 是第二个
+					nodeIndexStr := groups[1].Capture.String()
+					rawContent := groups[2].Capture.String()
+
+					// --- 从这里开始是你之前的 rawContent 处理逻辑 ---
+					processedContent := rawContent
+					if strings.HasPrefix(processedContent, "\n") {
+						processedContent = processedContent[len("\n"):]
 					}
+					if strings.HasSuffix(processedContent, "\n") {
+						processedContent = processedContent[:len(processedContent)-len("\n")]
+					}
+					translation := strings.TrimSpace(processedContent)
+					// --- rawContent 处理逻辑结束 ---
+
+					nodeIndex, errAtoi := strconv.Atoi(nodeIndexStr)
+					if errAtoi != nil {
+						logger.Warn("无法从标记解析节点索引", zap.String("indexStr", nodeIndexStr), zap.Error(errAtoi))
+					} else {
+						if nodeIndex >= 0 && nodeIndex < len(currentGroupData) {
+							if _, exists := currentGroupTranslations[nodeIndex]; !exists {
+								currentGroupTranslations[nodeIndex] = translation
+							} else {
+								logger.Warn("节点索引已被翻译（regexp2）", zap.Int("nodeIndex", nodeIndex))
+							}
+						} else {
+							logger.Warn("解析到的节点索引超出当前组范围（regexp2）", zap.Int("nodeIndex", nodeIndex))
+						}
+					}
+				} else {
+					logger.Warn("regexp2 匹配结果的捕获组数量不符合预期", zap.Int("groupsCount", len(groups)))
+				}
+
+				m, err = re2.FindNextMatch(m) // 查找下一个匹配
+				if err != nil {
+					logger.Error("regexp2 查找下一个匹配时出错", zap.Error(err))
+					break // 出错则停止查找
 				}
 			}
 
 			// 确保所有节点都有翻译，如果没有则使用原文
-			for i := range currentGroupData {
+			for i, _ := range currentGroupData { // 获取原始文本以便使用
 				if _, ok := currentGroupTranslations[i]; !ok {
+					logger.Warn("节点未在翻译结果中找到，使用原文", zap.String("nodeMarker", fmt.Sprintf("@@NODE_%d@@", i)), zap.String("originalText", originalTextsForGroup[i]))
+					currentGroupTranslations[i] = originalTextsForGroup[i]
+				} else if currentGroupTranslations[i] == "" && strings.TrimSpace(originalTextsForGroup[i]) != "" {
+					// 如果翻译结果是空字符串，但原文不为空，也使用原文（或者根据需求定义行为）
+					// 这种情况也可能发生在LLM对某些内容（如纯粹的名称/代码）返回空翻译时
+					logger.Warn("节点翻译结果为空，原文非空，使用原文", zap.String("nodeMarker", fmt.Sprintf("@@NODE_%d@@", i)), zap.String("originalText", originalTextsForGroup[i]))
 					currentGroupTranslations[i] = originalTextsForGroup[i]
 				}
 			}
