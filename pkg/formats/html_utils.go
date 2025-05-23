@@ -3,7 +3,6 @@ package formats
 import (
 	"fmt"
 	"path/filepath"
-
 	"regexp"
 	"strconv"
 	"strings"

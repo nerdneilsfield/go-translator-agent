@@ -9,10 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nerdneilsfield/go-translator-agent/internal/test"
-
 	"github.com/dlclark/regexp2"
 	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
+	"github.com/nerdneilsfield/go-translator-agent/internal/test"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/formats"
 )
 
