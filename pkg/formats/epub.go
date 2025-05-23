@@ -18,6 +18,7 @@ import (
 // EPUBProcessor 是EPUB电子书的处理器
 type EPUBProcessor struct {
 	BaseProcessor
+	HTMLTranslator *GoQueryHTMLTranslator
 }
 
 // NewEPUBProcessor 创建一个新的EPUB处理器
@@ -30,6 +31,8 @@ func NewEPUBProcessor(t translator.Translator, predefinedTranslations *config.Pr
 		}
 	}
 
+	htmlTranslator := NewGoQueryHTMLTranslator(t, zapLogger)
+
 	p := &EPUBProcessor{
 		BaseProcessor: BaseProcessor{
 			Translator:             t,
@@ -38,6 +41,7 @@ func NewEPUBProcessor(t translator.Translator, predefinedTranslations *config.Pr
 			progressBar:            progressBar,
 			logger:                 zapLogger,
 		},
+		HTMLTranslator: htmlTranslator,
 	}
 	p.logger.Debug("Loading predefined translations", zap.Int("count", len(predefinedTranslations.Translations)))
 	return p, nil
@@ -145,7 +149,7 @@ func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
 
 			// 翻译文件内容
 			originalContent := string(data)
-			translated, err := p.TranslateText(originalContent) // TranslateText 内部已使用 HtmlConcurrency
+			translated, err := p.TranslateText(originalContent, fPath) // TranslateText 内部已使用 HtmlConcurrency
 			if err != nil {
 				p.logger.Error("翻译HTML文件失败", zap.String("文件", fPath), zap.Error(err))
 				translationErrors <- fmt.Errorf("翻译HTML文件失败 %s: %w", fPath, err)
@@ -214,8 +218,8 @@ func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
 }
 
 // TranslateText 翻译EPUB内容
-func (p *EPUBProcessor) TranslateText(text string) (string, error) {
-	translated, err := TranslateHTMLWithGoQuery(text, p.Translator, p.logger)
+func (p *EPUBProcessor) TranslateText(text string, filePath string) (string, error) {
+	translated, err := p.HTMLTranslator.Translate(text, filePath)
 	if err != nil {
 		return "", err
 	}

@@ -98,8 +98,6 @@ func (m *MockTranslator) InitTranslator() {
 
 // Translate 模拟翻译文本
 func (m *MockTranslator) Translate(text string, retryFailedParts bool) (string, error) {
-	args := m.Called(text, retryFailedParts)
-
 	// 如果有预定义的结果，返回预定义的结果
 	if result, ok := m.predefinedResults[text]; ok {
 		return result, nil
@@ -115,35 +113,38 @@ func (m *MockTranslator) Translate(text string, retryFailedParts bool) (string, 
 		parts := strings.Split(text, "\n\n")
 		var results []string
 		for _, p := range parts {
-			marker := ""
-			body := p
-			if idx := strings.Index(p, "@@NODE_"); idx != -1 {
-				lines := strings.SplitN(p, "\n", 2)
-				marker = lines[0]
-				if len(lines) > 1 {
-					body = lines[1]
-				} else {
-					body = ""
-				}
-			}
+			// 解析@@NODE_START_N@@标记
+			if strings.Contains(p, "@@NODE_START_") && strings.Contains(p, "@@NODE_END_") {
+				// 找到开始和结束标记
+				lines := strings.Split(p, "\n")
+				if len(lines) >= 3 {
+					startMarker := lines[0]
+					endMarker := lines[len(lines)-1]
 
-			translated := "这是翻译后的文本"
-			if result, ok := m.predefinedResults[body]; ok {
-				translated = result
-			} else {
-				// 尝试按子串替换预定义结果
-				for k, v := range m.predefinedResults {
-					if strings.Contains(body, k) {
-						translated = strings.ReplaceAll(body, k, v)
-						break
+					// 提取中间的内容
+					content := strings.Join(lines[1:len(lines)-1], "\n")
+
+					// 翻译内容
+					translated := "[翻译]" + content + "[翻译]"
+					if result, ok := m.predefinedResults[content]; ok {
+						translated = result
+					} else {
+						// 尝试按子串替换预定义结果
+						for k, v := range m.predefinedResults {
+							if strings.Contains(content, k) {
+								translated = strings.ReplaceAll(content, k, v)
+								break
+							}
+						}
 					}
-				}
-			}
 
-			if marker != "" {
-				results = append(results, marker+"\n"+translated)
+					// 重构完整的标记
+					results = append(results, startMarker+"\n"+translated+"\n"+endMarker)
+				} else {
+					results = append(results, p)
+				}
 			} else {
-				results = append(results, translated)
+				results = append(results, p)
 			}
 		}
 		return strings.Join(results, "\n\n"), nil
@@ -155,21 +156,16 @@ func (m *MockTranslator) Translate(text string, retryFailedParts bool) (string, 
 		var translatedParagraphs []string
 		for i, p := range paragraphs {
 			if strings.Contains(p, "Paragraph") || strings.Contains(p, "段落") {
-				translatedParagraphs = append(translatedParagraphs, fmt.Sprintf("段落%d", i+1))
+				translatedParagraphs = append(translatedParagraphs, fmt.Sprintf("[翻译]段落%d[翻译]", i+1))
 			} else {
-				translatedParagraphs = append(translatedParagraphs, fmt.Sprintf("这是翻译后的文本 %d", i+1))
+				translatedParagraphs = append(translatedParagraphs, fmt.Sprintf("[翻译]这是翻译后的文本 %d[翻译]", i+1))
 			}
 		}
 		return strings.Join(translatedParagraphs, "\n\n"), nil
 	}
 
-	// 如果没有预定义的结果，返回模拟的结果
-	if args.Get(0) != nil {
-		return args.String(0), args.Error(1)
-	}
-
-	// 默认返回"这是翻译后的文本"
-	return "这是翻译后的文本", nil
+	// 默认返回带翻译标记的文本
+	return "[翻译]" + text + "[翻译]", nil
 }
 
 // Finish 实现翻译器的Finish方法
@@ -248,7 +244,8 @@ func (m *MockTranslator) TranslateFile(inputPath, outputPath string) error {
 		if loggerProvider, ok := m.logger.(interface{ GetZapLogger() *zap.Logger }); ok {
 			zapLogger = loggerProvider.GetZapLogger()
 		}
-		translatedContent, err = formats.TranslateHTMLWithGoQuery(string(content), m, zapLogger)
+		htmlTranslator := formats.NewGoQueryHTMLTranslator(m, zapLogger)
+		translatedContent, err = htmlTranslator.Translate(string(content), "test_file.html")
 		if err != nil {
 			return fmt.Errorf("翻译HTML/XML文件失败: %w", err)
 		}

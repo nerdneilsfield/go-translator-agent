@@ -65,6 +65,7 @@ type Config struct {
 	PreserveMath            bool                     `mapstructure:"preserve_math"`             // 保留数学公式
 	TranslateFigureCaptions bool                     `mapstructure:"translate_figure_captions"` // 翻译图表标题
 	RetryFailedParts        bool                     `mapstructure:"retry_failed_parts"`        // 重试失败的部分
+	MaxRetries              int                      `mapstructure:"max_retries"`               // 最大重试次数
 	PostProcessMarkdown     bool                     `mapstructure:"post_process_markdown"`     // 翻译后对 Markdown 进行后处理
 	FixMathFormulas         bool                     `mapstructure:"fix_math_formulas"`         // 修复数学公式
 	FixTableFormat          bool                     `mapstructure:"fix_table_format"`          // 修复表格格式
@@ -123,6 +124,10 @@ func LoadConfig(configPath string) (*Config, error) {
 		config.CacheDir = filepath.Join(tmpDir, "translator-cache")
 	}
 
+	if config.MaxRetries == 0 {
+		config.MaxRetries = 3
+	}
+
 	return &config, nil
 }
 
@@ -177,6 +182,7 @@ func NewDefaultConfig() *Config {
 		PreserveMath:            false,
 		TranslateFigureCaptions: false,
 		RetryFailedParts:        false,
+		MaxRetries:              3,
 		PostProcessMarkdown:     true,
 		FixMathFormulas:         false,
 		FixTableFormat:          false,
@@ -350,6 +356,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("preserve_math", false)
 	v.SetDefault("translate_figure_captions", false)
 	v.SetDefault("retry_failed_parts", false)
+	v.SetDefault("max_retries", 3)
 	v.SetDefault("post_process_markdown", false)
 	v.SetDefault("fix_math_formulas", false)
 	v.SetDefault("fix_table_format", false)
@@ -385,6 +392,7 @@ func structToMap(config *Config) map[string]interface{} {
 		"preserve_math":             config.PreserveMath,
 		"translate_figure_captions": config.TranslateFigureCaptions,
 		"retry_failed_parts":        config.RetryFailedParts,
+		"max_retries":               config.MaxRetries,
 		"post_process_markdown":     config.PostProcessMarkdown,
 		"fix_math_formulas":         config.FixMathFormulas,
 		"fix_table_format":          config.FixTableFormat,

@@ -14,7 +14,8 @@ import (
 // HTMLProcessor 是HTML文件的处理器
 type HTMLProcessor struct {
 	BaseProcessor
-	replacements []ReplacementInfo
+	HTMLTranslator *GoQueryHTMLTranslator
+	replacements   []ReplacementInfo
 }
 
 // NewHTMLProcessor 创建一个新的HTML处理器
@@ -34,7 +35,8 @@ func NewHTMLProcessor(t translator.Translator, predefinedTranslations *config.Pr
 			progressBar:            progressBar,
 			logger:                 zapLogger,
 		},
-		replacements: []ReplacementInfo{},
+		HTMLTranslator: NewGoQueryHTMLTranslator(t, zapLogger),
+		replacements:   []ReplacementInfo{},
 	}, nil
 }
 
@@ -59,7 +61,7 @@ func (p *HTMLProcessor) TranslateFile(inputPath, outputPath string) error {
 	}
 
 	// 翻译文本
-	translated, err := p.TranslateText(protectedText)
+	translated, err := p.TranslateText(protectedText, inputPath)
 	if err != nil {
 		return fmt.Errorf("翻译HTML文件失败: %w", err)
 	}
@@ -94,9 +96,9 @@ func (p *HTMLProcessor) TranslateFile(inputPath, outputPath string) error {
 }
 
 // TranslateText 翻译HTML内容
-func (p *HTMLProcessor) TranslateText(text string) (string, error) {
+func (p *HTMLProcessor) TranslateText(text string, filePath string) (string, error) {
 	// 使用goquery库翻译HTML
-	translated, err := TranslateHTMLWithGoQuery(text, p.Translator, p.logger)
+	translated, err := p.HTMLTranslator.Translate(text, filePath)
 	if err != nil {
 		p.logger.Warn("使用goquery翻译HTML失败", zap.Error(err))
 		return "", err

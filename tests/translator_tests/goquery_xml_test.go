@@ -85,7 +85,8 @@ func TestGoQueryXMLTranslation(t *testing.T) {
 	mockTrans := test.NewMockTranslator(cfg, newLogger)
 	mockTrans.On("Translate", mock.Anything, mock.Anything).Return("这是翻译后的文本", nil)
 
-	translated, err := formats.TranslateHTMLWithGoQuery(xmlContent, mockTrans, newLogger.GetZapLogger())
+	goqueryTranslator := formats.NewGoQueryHTMLTranslator(mockTrans, newLogger.GetZapLogger())
+	translated, err := goqueryTranslator.Translate(xmlContent, "test_file.xml")
 	assert.NoError(t, err)
 	assert.Contains(t, translated, "这是翻译后的文本")
 	assert.NotEmpty(t, translated)
@@ -106,7 +107,8 @@ func TestComplexXMLTranslation(t *testing.T) {
 	mockTrans := test.NewMockTranslator(cfg, newLogger)
 	mockTrans.On("Translate", mock.Anything, mock.Anything).Return("这是翻译后的文本", nil)
 
-	translated, err := formats.TranslateHTMLWithGoQuery(xmlContent, mockTrans, newLogger.GetZapLogger())
+	goqueryTranslator := formats.NewGoQueryHTMLTranslator(mockTrans, newLogger.GetZapLogger())
+	translated, err := goqueryTranslator.Translate(xmlContent, "test_file.xml")
 	assert.NoError(t, err)
 	assert.Contains(t, translated, "这是翻译后的文本")
 	assert.NotEmpty(t, translated)

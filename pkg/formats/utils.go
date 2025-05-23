@@ -25,6 +25,51 @@ type NodeToTranslate struct {
 	Content string // 原始内容
 }
 
+// IntSet 整数集合，用于去重
+type IntSet struct {
+	items map[int]struct{}
+}
+
+// NewIntSet 创建新的整数集合
+func NewIntSet() *IntSet {
+	return &IntSet{items: make(map[int]struct{})}
+}
+
+// Add 添加元素到集合
+func (s *IntSet) Add(item int) {
+	s.items[item] = struct{}{}
+}
+
+// Contains 检查元素是否在集合中
+func (s *IntSet) Contains(item int) bool {
+	_, exists := s.items[item]
+	return exists
+}
+
+// ToSlice 转换为有序切片
+func (s *IntSet) ToSlice() []int {
+	result := make([]int, 0, len(s.items))
+	for item := range s.items {
+		result = append(result, item)
+	}
+
+	// 排序
+	for i := 0; i < len(result)-1; i++ {
+		for j := i + 1; j < len(result); j++ {
+			if result[i] > result[j] {
+				result[i], result[j] = result[j], result[i]
+			}
+		}
+	}
+
+	return result
+}
+
+// Size 返回集合大小
+func (s *IntSet) Size() int {
+	return len(s.items)
+}
+
 // 如果有多余的 \n\n\n 换行符替换成 \n\n 递归进行
 func RemoveRedundantNewlines(text string) string {
 	for {
@@ -467,4 +512,27 @@ func groupTextNodes(nodes []*html.Node, limit int) [][]*html.Node {
 	}
 
 	return groups
+}
+
+func snippet(s string) string {
+	const seg = 20
+	if len(s) <= seg*3 {
+		return s
+	}
+	start := s[:seg]
+	midIdx := len(s) / 2
+	midStart := midIdx - seg/2
+	if midStart < seg {
+		midStart = seg
+	}
+	mid := s[midStart : midStart+seg]
+	end := s[len(s)-seg:]
+	return start + " ... " + mid + " ... " + end
+}
+
+func snippetWithLength(s string, length int) string {
+	if len(s) <= length*3 {
+		return s
+	}
+	return s[:length] + " ... " + s[len(s)-length:]
 }

@@ -343,7 +343,7 @@ func (t *Impl) shouldUseCache() bool {
 // refreshCache 刷新缓存
 func (t *Impl) refreshCache() error {
 	if t.forceCacheRefresh {
-		t.logger.Info("正在刷新缓存")
+		t.logger.Debug("正在刷新缓存")
 		return t.cache.Clear()
 	}
 	return nil
@@ -434,7 +434,7 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 	skipReflectionAndImprovement := stepSet.Reflection.ModelName == "none" && stepSet.Improvement.ModelName == "none"
 
 	if skipReflectionAndImprovement {
-		t.logger.Info("步骤2和步骤3都设置为none，将只执行初始翻译")
+		t.logger.Debug("步骤2和步骤3都设置为none，将只执行初始翻译")
 	}
 
 	// 如果文本较短且低于快速模式阈值，或者步骤2和步骤3都设置为"none"，跳过反思和改进步骤
@@ -507,7 +507,7 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 		}
 
 		// 记录翻译结果的摘要
-		t.logger.Info("翻译完成（快速模式）",
+		t.logger.Debug("翻译完成（快速模式）",
 			zap.String("原文摘要", snippet(text)),
 			zap.String("译文摘要", snippet(result)),
 			zap.Int("原文长度", len(text)),
@@ -595,7 +595,7 @@ func (t *Impl) Translate(text string, retryFailedParts bool) (string, error) {
 
 	// 检查步骤2（反思）的模型是否为"none"
 	if stepSet.Reflection.ModelName == "none" {
-		t.logger.Info("步骤2（反思）的模型设置为none，跳过反思和改进步骤")
+		t.logger.Debug("步骤2（反思）的模型设置为none，跳过反思和改进步骤")
 
 		// 将初始翻译结果作为最终结果缓存
 		if t.shouldUseCache() {
@@ -845,13 +845,13 @@ Please provide only the translation of the text below, strictly adhering to all 
 func (t *Impl) reflection(sourceText, translation string) (string, error) {
 	// 如果反思模型为nil（设置为"none"），则跳过反思步骤
 	if t.activeSteps.ReflectionModel == nil {
-		t.logger.Info("反思模型设置为none，跳过反思步骤")
+		t.logger.Debug("反思模型设置为none，跳过反思步骤")
 		return "", nil
 	}
 
 	// 如果反思模型类型为 raw，直接返回空字符串
 	if t.activeSteps.ReflectionModel.Type() == "raw" {
-		t.logger.Info("反思模型设置为raw，跳过反思步骤")
+		t.logger.Debug("反思模型设置为raw，跳过反思步骤")
 		return "", nil
 	}
 
@@ -956,13 +956,13 @@ Output only a list of constructive suggestions, each addressing a specific aspec
 func (t *Impl) improvement(sourceText, translation, reflection string) (string, error) {
 	// 如果改进模型为nil（设置为"none"），则跳过改进步骤
 	if t.activeSteps.ImprovementModel == nil {
-		t.logger.Info("改进模型设置为none，跳过改进步骤")
+		t.logger.Debug("改进模型设置为none，跳过改进步骤")
 		return translation, nil
 	}
 
 	// 如果改进模型类型为 raw，直接返回原翻译
 	if t.activeSteps.ImprovementModel.Type() == "raw" {
-		t.logger.Info("改进模型设置为raw，跳过改进步骤")
+		t.logger.Debug("改进模型设置为raw，跳过改进步骤")
 		return translation, nil
 	}
 

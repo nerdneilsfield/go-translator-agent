@@ -28,8 +28,8 @@ type Processor interface {
 	// TranslateFile 翻译文件内容并写入输出文件
 	TranslateFile(inputPath, outputPath string) error
 
-	// TranslateText 翻译文本内容并保留格式
-	TranslateText(text string) (string, error)
+	//// TranslateText 翻译文本内容并保留格式
+	//TranslateText(text string) (string, error)
 
 	// GetName 返回处理器的名称
 	GetName() string

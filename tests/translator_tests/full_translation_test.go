@@ -166,7 +166,8 @@ func TestFullTranslationWorkflow(t *testing.T) {
 		assert.NoError(t, err)
 
 		// 使用goquery翻译HTML
-		translated, err := formats.TranslateHTMLWithGoQuery(htmlContent, mockTrans, appLogger.GetZapLogger())
+		goqueryTranslator := formats.NewGoQueryHTMLTranslator(mockTrans, appLogger.GetZapLogger())
+		translated, err := goqueryTranslator.Translate(htmlContent, "test_file.html")
 		assert.NoError(t, err)
 
 		// 写入翻译结果
