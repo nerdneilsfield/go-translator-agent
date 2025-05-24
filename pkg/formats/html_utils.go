@@ -10,52 +10,56 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/dlclark/regexp2"
+	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 	"go.uber.org/zap"
 )
 
-// GoQueryNodeFormatInfo 保存节点的原始格式信息
+// GoQueryNodeFormatInfo 保存节点的原始格式信息/GoQueryNodeFormatInfo stores the original format information of a node
 type GoQueryNodeFormatInfo struct {
-	LeadingWhitespace  string
-	TrailingWhitespace string
-	OriginalHTML       string // 用于保存原始HTML结构
+	LeadingWhitespace  string // 前导空白字符/Leading whitespace characters
+	TrailingWhitespace string // 尾部空白字符/Trailing whitespace characters
+	OriginalHTML       string // 用于保存原始HTML结构/Used to store the original HTML structure
 }
 
+// GoQueryTextNodeInfo 表示单个可翻译文本节点的信息/GoQueryTextNodeInfo represents information of a single translatable text node
 type GoQueryTextNodeInfo struct {
-	Selection      *goquery.Selection
-	Text           string
-	TranslatedText string
-	Path           string
-	Format         GoQueryNodeFormatInfo
-	IsAttribute    bool
-	AttributeName  string
-	GlobalID       int
-	ContextBefore  string
-	ContextAfter   string
+	Selection      *goquery.Selection    // goquery节点选择器/Goquery node selector
+	Text           string                // 原始文本/Original text
+	TranslatedText string                // 翻译后的文本/Translated text
+	Path           string                // 节点在DOM中的路径/Node's path in the DOM
+	Format         GoQueryNodeFormatInfo // 格式信息/Format information
+	IsAttribute    bool                  // 是否为属性文本/Whether this is attribute text
+	AttributeName  string                // 属性名/Attribute name
+	GlobalID       int                   // 全局唯一ID/Globally unique ID
+	ContextBefore  string                // 上下文前文/Context before
+	ContextAfter   string                // 上下文后文/Context after
 }
 
+// GoQueryTextNodeGroup 表示一组可翻译文本节点/GoQueryTextNodeGroup represents a group of translatable text nodes
 type GoQueryTextNodeGroup []GoQueryTextNodeInfo
 
+// GoQueryHTMLTranslator 用于基于goquery实现的HTML翻译/GoQueryHTMLTranslator is used for HTML translation based on goquery
 type GoQueryHTMLTranslator struct {
-	translator      translator.Translator
-	fileName        string
-	logger          *zap.Logger
-	originalHTML    string
-	translatedHTML  string
-	shortFileName   string
-	chunkSize       int
-	concurrency     int
-	enableRetry     bool
-	maxRetries      int
-	nodeExtractRegx *regexp2.Regexp
-	nodeCount       int
+	translator      translator.Translator // 翻译器/Translator
+	fileName        string                // 当前处理的文件名/Current file name being processed
+	logger          *zap.Logger           // 日志对象/Logger
+	originalHTML    string                // 原始HTML/Original HTML
+	shortFileName   string                // 文件短名/Short file name
+	chunkSize       int                   // 分块大小/Chunk size
+	concurrency     int                   // 并发度/Concurrency
+	enableRetry     bool                  // 是否启用重试/Whether to enable retry
+	maxRetries      int                   // 最大重试次数/Maximum retries
+	nodeExtractRegx *regexp2.Regexp       // 节点提取正则表达式/Regular expression for node extraction
+	nodeCount       int                   // 节点数量/Node count
 }
 
+// NewGoQueryHTMLTranslator 创建一个新的GoQueryHTMLTranslator实例/Create a new instance of GoQueryHTMLTranslator
 func NewGoQueryHTMLTranslator(t translator.Translator, logger *zap.Logger) *GoQueryHTMLTranslator {
-	// 获取配置
+	// 获取配置/Get configuration
 	agentConfig := t.GetConfig()
 	chunkSize := 6000
-	concurrency := 1 // 默认为1，即不进行文件内并行
+	concurrency := 1 // 默认为1，即不进行文件内并行/Default is 1, meaning no concurrency within the file
 	enableRetry := false
 	maxRetries := 3
 	if agentConfig != nil {
@@ -76,24 +80,24 @@ func NewGoQueryHTMLTranslator(t translator.Translator, logger *zap.Logger) *GoQu
 			chunkSize = agentConfig.MinSplitSize
 		}
 
-		logger.Debug("Chunk Size 被设置为", zap.Int("chunk_size", chunkSize))
+		logger.Debug("Chunk Size 被设置为/Chunk size set", zap.Int("chunk_size", chunkSize))
 
-		// 使用 HtmlConcurrency 控制单个HTML文件内部的并发
+		// 使用 HtmlConcurrency 控制单个HTML文件内部的并发/Use HtmlConcurrency to control concurrency within a single HTML file
 		if agentConfig.HtmlConcurrency > 0 {
 			concurrency = agentConfig.HtmlConcurrency
 		} else {
-			logger.Debug("HtmlConcurrency未配置或为0，单个HTML文件内节点翻译将串行执行。", zap.Int("resolved_concurrency", concurrency))
+			logger.Debug("HtmlConcurrency未配置或为0，单个HTML文件内节点翻译将串行执行。/HtmlConcurrency is not configured or set to 0, node translation within a single HTML file will be executed sequentially.", zap.Int("resolved_concurrency", concurrency))
 		}
 		enableRetry = t.GetConfig().RetryFailedParts
 		maxRetries = t.GetConfig().MaxRetries
 	}
-	// 正则表达式：
-	// (?s) 允许 . 匹配换行符
-	// @@NODE_START_(\d+)@@ 匹配开始标记并捕获数字索引 (group 1)
-	// \n 匹配开始标记后的换行符
-	// (.*?) 懒惰匹配翻译内容，直到遇到下一个模式 (group 2)
-	// \n 匹配结束标记前的换行符
-	// @@NODE_END_\1@@ 使用反向引用 \1确保结束标记的数字与开始标记的数字一致
+	// 正则表达式：/Regular expression:
+	// (?s) 允许 . 匹配换行符/(?s) allows . to match newline characters
+	// @@NODE_START_(\d+)@@ 匹配开始标记并捕获数字索引 (group 1)/@@NODE_START_(\d+)@@ matches start tag and captures numeric index (group 1)
+	// \n 匹配开始标记后的换行符/\n matches newline after start tag
+	// (.*?) 懒惰匹配翻译内容，直到遇到下一个模式 (group 2)/(.*?) lazily matches translation content until next pattern (group 2)
+	// \n 匹配结束标记前的换行符/\n matches newline before end tag
+	// @@NODE_END_\1@@ 使用反向引用 \1确保结束标记的数字与开始标记的数字一致/@@NODE_END_\1@@ uses backreference \1 to ensure the numeric index matches
 	pattern := `(?s)@@NODE_START_(\d+)@@\r?\n(.*?)\r?\n@@NODE_END_\1@@`
 	re := regexp2.MustCompile(pattern, 0)
 	return &GoQueryHTMLTranslator{
@@ -107,10 +111,10 @@ func NewGoQueryHTMLTranslator(t translator.Translator, logger *zap.Logger) *GoQu
 	}
 }
 
-// replaceTextPreservingStructure 尝试替换文本内容，同时保留HTML结构
-// 这个函数会尝试智能地将翻译后的文本分配到原始HTML结构中的文本节点
+// replaceTextPreservingStructure 尝试替换文本内容，同时保留HTML结构/replaceTextPreservingStructure tries to replace text content while preserving HTML structure
+// 这个函数会尝试智能地将翻译后的文本分配到原始HTML结构中的文本节点/This function attempts to smartly distribute translated text into the original HTML structure's text nodes
 func (t *GoQueryHTMLTranslator) replaceTextPreservingStructure(selection *goquery.Selection, translatedText string) {
-	// 收集所有文本节点
+	// 收集所有文本节点/Collect all text nodes
 	var textNodes []*goquery.Selection
 	selection.Contents().Each(func(_ int, s *goquery.Selection) {
 		if goquery.NodeName(s) == "#text" {
@@ -118,41 +122,41 @@ func (t *GoQueryHTMLTranslator) replaceTextPreservingStructure(selection *goquer
 				textNodes = append(textNodes, s)
 			}
 		} else {
-			// 递归处理子元素
+			// 递归处理子元素/Recursively process child elements
 			t.replaceTextPreservingStructure(s, "")
 		}
 	})
 
-	// 如果没有文本节点或没有提供翻译文本，直接返回
+	// 如果没有文本节点或没有提供翻译文本，直接返回/Return directly if there are no text nodes or no translated text is provided
 	if len(textNodes) == 0 || translatedText == "" {
 		return
 	}
 
-	// 如果只有一个文本节点，直接替换
+	// 如果只有一个文本节点，直接替换/If there is only one text node, replace it directly
 	if len(textNodes) == 1 {
 		textNodes[0].ReplaceWithHtml(translatedText)
 		return
 	}
 
-	// 如果有多个文本节点，尝试智能分配翻译文本
-	// 这里使用一个简单的启发式方法：按照原始文本长度的比例分配翻译文本
+	// 如果有多个文本节点，尝试智能分配翻译文本/If there are multiple text nodes, try to allocate translated text intelligently
+	// 这里使用一个简单的启发式方法：按照原始文本长度的比例分配翻译文本/Use a simple heuristic: allocate translated text according to the proportion of original text length
 	totalOriginalLength := 0
 	for _, node := range textNodes {
 		totalOriginalLength += len(strings.TrimSpace(node.Text()))
 	}
 
-	// 如果原始文本总长度为0，无法按比例分配，直接返回
+	// 如果原始文本总长度为0，无法按比例分配，直接返回/If total original text length is 0, can't allocate proportionally, return directly
 	if totalOriginalLength == 0 {
 		return
 	}
 
-	// 按比例分配翻译文本
+	// 按比例分配翻译文本/Distribute translated text proportionally
 	translatedWords := strings.Split(translatedText, " ")
 	if len(translatedWords) == 0 {
 		return
 	}
 
-	// 计算每个节点应该分配的单词数
+	// 计算每个节点应该分配的单词数/Calculate number of words to allocate to each node
 	wordsPerNode := make([]int, len(textNodes))
 	for i, node := range textNodes {
 		nodeTextLength := len(strings.TrimSpace(node.Text()))
@@ -160,14 +164,14 @@ func (t *GoQueryHTMLTranslator) replaceTextPreservingStructure(selection *goquer
 		wordsPerNode[i] = int(ratio * float64(len(translatedWords)))
 	}
 
-	// 确保所有单词都被分配
+	// 确保所有单词都被分配/Ensure all words are allocated
 	totalAllocated := 0
 	for _, count := range wordsPerNode {
 		totalAllocated += count
 	}
 	remaining := len(translatedWords) - totalAllocated
 	if remaining > 0 {
-		// 将剩余的单词分配给最长的文本节点
+		// 将剩余的单词分配给最长的文本节点/Allocate remaining words to the longest text node
 		maxLengthIndex := 0
 		maxLength := 0
 		for i, node := range textNodes {
@@ -180,7 +184,7 @@ func (t *GoQueryHTMLTranslator) replaceTextPreservingStructure(selection *goquer
 		wordsPerNode[maxLengthIndex] += remaining
 	}
 
-	// 分配翻译文本到各个节点
+	// 分配翻译文本到各个节点/Allocate translated text to each node
 	startIndex := 0
 	for i, node := range textNodes {
 		endIndex := startIndex + wordsPerNode[i]
@@ -195,7 +199,7 @@ func (t *GoQueryHTMLTranslator) replaceTextPreservingStructure(selection *goquer
 	}
 }
 
-// containsOnlyHTMLElements 检查一个节点是否只包含HTML元素，没有文本内容
+// containsOnlyHTMLElements 检查一个节点是否只包含HTML元素，没有文本内容/containsOnlyHTMLElements checks whether a node contains only HTML elements and no text content
 func (t *GoQueryHTMLTranslator) containsOnlyHTMLElements(s *goquery.Selection) bool {
 	hasText := false
 	s.Contents().Each(func(_ int, child *goquery.Selection) {
@@ -209,21 +213,21 @@ func (t *GoQueryHTMLTranslator) containsOnlyHTMLElements(s *goquery.Selection) b
 	return !hasText
 }
 
+// processHTML 处理HTML字符串，保护特殊内容块并提取声明/processHTML processes the HTML string, protects special content blocks, and extracts declarations
 func (t *GoQueryHTMLTranslator) processHTML(htmlStr string) (*goquery.Document, map[string]string, string, string, error) {
 	var initialDoc *goquery.Document
-	var protectedContent map[string]string
-	protectedContent = make(map[string]string)
+	protectedContent := make(map[string]string)
 	var xmlDecl string
 	var doctypeDecl string
 
-	// 保存XML声明和DOCTYPE，因为goquery可能会移除它们
+	// 保存XML声明和DOCTYPE，因为goquery可能会移除它们/Save XML declaration and DOCTYPE because goquery may remove them
 	hasXMLDeclaration := strings.Contains(htmlStr, "<?xml")
 	if hasXMLDeclaration {
 		xmlDeclRegex := regexp.MustCompile(`<\?xml[^>]*\?>`)
 		if match := xmlDeclRegex.FindString(htmlStr); match != "" {
 			xmlDecl = match
-			// t.logger.Debug("找到XML声明", zap.String("declaration", xmlDecl))
-			htmlStr = strings.Replace(htmlStr, xmlDecl, "", 1) //移除一次，避免影响解析
+			// t.logger.Debug("找到XML声明/Found XML declaration", zap.String("declaration", xmlDecl))
+			htmlStr = strings.Replace(htmlStr, xmlDecl, "", 1) //移除一次，避免影响解析/Remove once to avoid affecting parsing
 		}
 	}
 
@@ -232,29 +236,29 @@ func (t *GoQueryHTMLTranslator) processHTML(htmlStr string) (*goquery.Document, 
 		doctypeRegex := regexp.MustCompile(`(?i)<!DOCTYPE[^>]*>`)
 		if match := doctypeRegex.FindString(htmlStr); match != "" {
 			doctypeDecl = match
-			// t.logger.Debug("找到DOCTYPE声明", zap.String("doctype", doctypeDecl))
-			htmlStr = strings.Replace(htmlStr, doctypeDecl, "", 1) //移除一次
+			// t.logger.Debug("找到DOCTYPE声明/Found DOCTYPE", zap.String("doctype", doctypeDecl))
+			htmlStr = strings.Replace(htmlStr, doctypeDecl, "", 1) //移除一次/Remove once
 		}
 	}
 
-	t.logger.Debug("文档声明处理完成",
+	t.logger.Debug("文档声明处理完成/Document declaration processing complete",
 		zap.Bool("hasXMLDeclaration", hasXMLDeclaration),
 		zap.Bool("hasDOCTYPE", hasDOCTYPE),
 		zap.String("fileName", t.shortFileName),
 		zap.String("preservedXmlDecl", xmlDecl),
 		zap.String("preservedDoctype", doctypeDecl))
 
-	// 使用goquery解析HTML
+	// 使用goquery解析HTML/Use goquery to parse HTML
 	initialDoc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlStr))
 	if err != nil {
-		return initialDoc, protectedContent, xmlDecl, doctypeDecl, fmt.Errorf("解析HTML失败: %w", err)
+		return initialDoc, protectedContent, xmlDecl, doctypeDecl, fmt.Errorf("解析HTML失败/Failed to parse HTML: %w", err)
 	}
 
-	// 重要：在同一个文档实例上进行内容保护，而不是重新创建文档
-	// 这样可以确保后续获取的Selection对象仍然有效
+	// 重要：在同一个文档实例上进行内容保护，而不是重新创建文档/Important: Protect content in the same document instance instead of recreating the document
+	// 这样可以确保后续获取的Selection对象仍然有效/This ensures that subsequent Selection objects are still valid
 	placeholderIndex := 0
 
-	// 保护script标签
+	// 保护script标签/Protect script tags
 	initialDoc.Find("script").Each(func(i int, s *goquery.Selection) {
 		if html, err := s.Html(); err == nil {
 			placeholder := fmt.Sprintf("@@PROTECTED_%d@@", placeholderIndex)
@@ -265,7 +269,7 @@ func (t *GoQueryHTMLTranslator) processHTML(htmlStr string) (*goquery.Document, 
 		}
 	})
 
-	// 保护style标签
+	// 保护style标签/Protect style tags
 	initialDoc.Find("style").Each(func(i int, s *goquery.Selection) {
 		if html, err := s.Html(); err == nil {
 			placeholder := fmt.Sprintf("@@PROTECTED_%d@@", placeholderIndex)
@@ -276,7 +280,7 @@ func (t *GoQueryHTMLTranslator) processHTML(htmlStr string) (*goquery.Document, 
 		}
 	})
 
-	// 保护pre标签
+	// 保护pre标签/Protect pre tags
 	initialDoc.Find("pre").Each(func(i int, s *goquery.Selection) {
 		if html, err := goquery.OuterHtml(s); err == nil {
 			placeholder := fmt.Sprintf("@@PROTECTED_%d@@", placeholderIndex)
@@ -286,7 +290,7 @@ func (t *GoQueryHTMLTranslator) processHTML(htmlStr string) (*goquery.Document, 
 		}
 	})
 
-	// 保护code标签
+	// 保护code标签/Protect code tags
 	initialDoc.Find("code").Each(func(i int, s *goquery.Selection) {
 		if html, err := goquery.OuterHtml(s); err == nil {
 			placeholder := fmt.Sprintf("@@PROTECTED_%d@@", placeholderIndex)
@@ -296,21 +300,21 @@ func (t *GoQueryHTMLTranslator) processHTML(htmlStr string) (*goquery.Document, 
 		}
 	})
 
-	// 保护页面锚点标签（如 <a class="page" id="p59"/>）
-	// 这些标签对电子书导航至关重要，必须保持原始位置和格式
+	// 保护页面锚点标签（如 <a class="page" id="p59"/>）/Protect page anchor tags (such as <a class="page" id="p59"/>)
+	// 这些标签对电子书导航至关重要，必须保持原始位置和格式/These tags are crucial for ebook navigation and must retain original position and format
 	initialDoc.Find("a.page").Each(func(i int, s *goquery.Selection) {
 		if html, err := goquery.OuterHtml(s); err == nil {
 			placeholder := fmt.Sprintf("@@PROTECTED_%d@@", placeholderIndex)
 			protectedContent[placeholder] = html
 			s.ReplaceWithHtml(placeholder)
 			placeholderIndex++
-			// t.logger.Debug("保护页面锚点标签", zap.String("html", html), zap.String("placeholder", placeholder), zap.String("fileName", t.shortFileName))
+			// t.logger.Debug("保护页面锚点标签/Protect page anchor tag", zap.String("html", html), zap.String("placeholder", placeholder), zap.String("fileName", t.shortFileName))
 		}
 	})
 
-	// 保护其他重要的锚点标签（如带有特定class的导航锚点）
+	// 保护其他重要的锚点标签（如带有特定class的导航锚点）/Protect other important anchor tags (such as navigation anchors with specific class)
 	initialDoc.Find("a[class*='xref'], a[class*='anchor'], a[id]").Each(func(i int, s *goquery.Selection) {
-		// 检查是否为空的锚点标签（只有ID或class，没有文本内容）
+		// 检查是否为空的锚点标签（只有ID或class，没有文本内容）/Check if this is an empty anchor tag (only ID or class, no text content)
 		text := strings.TrimSpace(s.Text())
 		if text == "" {
 			if html, err := goquery.OuterHtml(s); err == nil {
@@ -318,21 +322,21 @@ func (t *GoQueryHTMLTranslator) processHTML(htmlStr string) (*goquery.Document, 
 				protectedContent[placeholder] = html
 				s.ReplaceWithHtml(placeholder)
 				placeholderIndex++
-				// t.logger.Debug("保护空锚点标签", zap.String("html", html), zap.String("placeholder", placeholder), zap.String("fileName", t.shortFileName))
+				// t.logger.Debug("保护空锚点标签/Protect empty anchor tag", zap.String("html", html), zap.String("placeholder", placeholder), zap.String("fileName", t.shortFileName))
 			}
 		}
 	})
 
-	// TODO: 暂时跳过HTML注释保护，因为goquery处理注释节点比较复杂
-	// 注释通常不包含需要翻译的内容，我们可以稍后用更安全的方式处理
-	// 如果确实需要保护注释，可以考虑在字符串级别处理，而不是DOM级别
+	// TODO: 暂时跳过HTML注释保护，因为goquery处理注释节点比较复杂/TODO: Skip HTML comment protection for now, as goquery handles comment nodes in a complex way
+	// 注释通常不包含需要翻译的内容，我们可以稍后用更安全的方式处理/Comments usually do not contain content that needs to be translated, can handle more safely later
+	// 如果确实需要保护注释，可以考虑在字符串级别处理，而不是DOM级别/If protection is needed, consider handling at string level, not DOM level
 
-	t.logger.Debug("保护了内容块", zap.Int("count", len(protectedContent)))
+	t.logger.Debug("保护了内容块/Protected content blocks", zap.Int("count", len(protectedContent)))
 
 	return initialDoc, protectedContent, xmlDecl, doctypeDecl, nil
 }
 
-// 辅助函数：获取元素的属性字符串
+// getAttributesString 辅助函数：获取元素的属性字符串/getAttributesString is a helper function: get the attribute string of an element
 func getAttributesString(s *goquery.Selection) string {
 	if s.Length() == 0 {
 		return ""
@@ -349,6 +353,8 @@ func getAttributesString(s *goquery.Selection) string {
 	return ""
 }
 
+// extractTextNodes 收集所有可翻译的文本节点和属性/Extract all translatable text nodes and attributes
+// 返回值包括所有可翻译节点的信息、节点ID到原始文本的映射、以及错误信息/Returns all translatable node info, a mapping from node ID to original text, and error info
 func (t *GoQueryHTMLTranslator) extractTextNodes(doc *goquery.Document) ([]GoQueryTextNodeInfo, map[int]string, error) {
 	var textNodes []GoQueryTextNodeInfo
 	var globalIDCounter int = 0
@@ -359,7 +365,7 @@ func (t *GoQueryHTMLTranslator) extractTextNodes(doc *goquery.Document) ([]GoQue
 	processNode = func(s *goquery.Selection, currentPath string, parentTranslates bool) {
 		nodeName := goquery.NodeName(s)
 
-		// Elements that are fundamentally not for content translation take precedence
+		// 跳过不需要翻译的元素/Skip elements that should not be translated
 		for _, skip := range skipSelectors {
 			if nodeName == skip {
 				return
@@ -369,19 +375,18 @@ func (t *GoQueryHTMLTranslator) extractTextNodes(doc *goquery.Document) ([]GoQue
 			return
 		}
 
-		// Check if this node has a translate attribute
+		// 检查节点的 translate 属性/Check the node's translate attribute
 		currentNodeTranslates := parentTranslates
 		if translateAttr, exists := s.Attr("translate"); exists {
 			attrValLower := strings.ToLower(translateAttr)
 			if attrValLower == "no" || attrValLower == "false" {
 				currentNodeTranslates = false
 			} else if attrValLower == "yes" || attrValLower == "true" {
-				// Explicitly set to yes, can override a parent's "no"
 				currentNodeTranslates = true
 			}
 		}
 
-		// Process attributes only if the element itself is considered translatable
+		// 仅在节点可翻译时处理属性/Process attributes only if node is translatable
 		if currentNodeTranslates {
 			attrs := s.Get(0).Attr
 			for _, attr := range attrs {
@@ -401,11 +406,11 @@ func (t *GoQueryHTMLTranslator) extractTextNodes(doc *goquery.Document) ([]GoQue
 			}
 		}
 
-		// Process child nodes
+		// 处理子节点/Process child nodes
 		s.Contents().Each(func(_ int, child *goquery.Selection) {
 			childNodeName := goquery.NodeName(child)
 			if childNodeName == "#text" {
-				// Text nodes are translated only if their direct parent element is translatable
+				// 仅当父节点可翻译时翻译文本节点/Text nodes are translated only if their direct parent is translatable
 				if currentNodeTranslates {
 					text := child.Text()
 					trimmedText := strings.TrimSpace(text)
@@ -426,18 +431,19 @@ func (t *GoQueryHTMLTranslator) extractTextNodes(doc *goquery.Document) ([]GoQue
 						globalIDCounter = globalIDCounter + 1
 					}
 				}
-			} else if child.Is("*") { // Element node
-				// Translatability of child is determined by its own 'translate' attr
-				// and this current node's translatability (passed as parentTranslates for the child)
+			} else if child.Is("*") {
+				// 递归处理子元素，子元素的可翻译性由自身 translate 属性和父节点共同决定/Recursively process child elements, child's translatability is determined by itself and parent
 				processNode(child, fmt.Sprintf("%s/%s", currentPath, childNodeName), currentNodeTranslates)
 			}
 		})
 	}
 
+	// 处理 body 下的所有直接子元素/Process all direct children of body
 	doc.Find("body").Children().Each(func(i int, s *goquery.Selection) {
 		processNode(s, "body/"+goquery.NodeName(s), true)
 	})
-	if len(textNodes) == 0 { // 尝试 head > title
+	// 如果未找到任何节点，则尝试 head > title/If no node found, try head > title
+	if len(textNodes) == 0 {
 		doc.Find("head > title").Each(func(i int, s *goquery.Selection) {
 			processNode(s, "head/title", true)
 		})
@@ -445,11 +451,23 @@ func (t *GoQueryHTMLTranslator) extractTextNodes(doc *goquery.Document) ([]GoQue
 
 	t.nodeCount = len(textNodes)
 
-	t.logger.Debug("收集到的可翻译节点数量", zap.Int("count", len(textNodes)), zap.String("fileName", t.shortFileName))
+	t.logger.Debug("收集到的可翻译节点数量/Collected translatable node count", zap.Int("count", len(textNodes)), zap.String("fileName", t.shortFileName))
 
 	return textNodes, allOriginalTexts, nil
 }
 
+// ExampleExtractTextNodes 展示如何使用 extractTextNodes 函数/Show how to use extractTextNodes function
+func ExampleGoQueryHTMLTranslator_extractTextNodes() {
+	html := `<html><body><p>Hello <b>world</b></p></body></html>`
+	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
+	translator := &GoQueryHTMLTranslator{}
+	nodes, originalTexts, err := translator.extractTextNodes(doc)
+	fmt.Println(len(nodes) > 0, len(originalTexts) > 0, err == nil)
+	// Output: true true true
+}
+
+// groupNodes 按照设定的 chunkSize 对文本节点进行分组/Group text nodes according to the set chunkSize
+// 返回节点组切片/Returns a slice of node groups
 func (t *GoQueryHTMLTranslator) groupNodes(textNodes []GoQueryTextNodeInfo) []GoQueryTextNodeGroup {
 	var groups []GoQueryTextNodeGroup
 	var currentGroup []GoQueryTextNodeInfo
@@ -469,63 +487,75 @@ func (t *GoQueryHTMLTranslator) groupNodes(textNodes []GoQueryTextNodeInfo) []Go
 		groups = append(groups, currentGroup)
 	}
 
-	t.logger.Debug("分组后的节点数量", zap.Int("groups", len(groups)))
+	t.logger.Debug("分组后的节点数量/Grouped node count", zap.Int("groups", len(groups)))
 	return groups
 }
 
+// ExampleGroupNodes 展示如何使用 groupNodes 将节点分组/Show how to use groupNodes to group nodes
+func ExampleGoQueryHTMLTranslator_groupNodes() {
+	nodes := []GoQueryTextNodeInfo{
+		{Text: "A"}, {Text: "B"}, {Text: "C"}, {Text: "D"},
+	}
+	translator := &GoQueryHTMLTranslator{chunkSize: 2}
+	groups := translator.groupNodes(nodes)
+	fmt.Println(len(groups))
+	// Output: 4
+}
+
+// parseGroupTranslation 解析分组翻译结果，将翻译内容按节点ID分配/Parse group translation result and assign translation contents by node ID
+// 返回节点ID到翻译文本的映射和错误信息/Returns a map from node ID to translation text and error info
 func (t *GoQueryHTMLTranslator) parseGroupTranslation(groupTranslatedText string, validNodeIDs []int) (map[int]string, error) {
 	nodeIDWithTranslation := make(map[int]string)
 
-	// 创建有效节点ID的快速查找map
+	// 创建有效节点ID的快速查找map/Create a fast lookup map for valid node IDs
 	validIDsMap := make(map[int]bool)
 	for _, id := range validNodeIDs {
 		validIDsMap[id] = true
 	}
 
-	// 调试信息：记录收到的翻译文本
-	// t.logger.Debug("解析翻译结果",
+	// 调试信息/Debug info: 记录收到的翻译文本/Log received translation text
+	// t.logger.Debug("解析翻译结果/Parse translation result",
 	// 	zap.Int("textLength", len(groupTranslatedText)),
 	// 	zap.Ints("validNodeIDs", validNodeIDs),
 	// 	zap.String("textSnippet", snippet(groupTranslatedText)))
 
 	var m *regexp2.Match
-	m, err := t.nodeExtractRegx.FindStringMatch(groupTranslatedText) // 找到第一个匹配
+	m, err := t.nodeExtractRegx.FindStringMatch(groupTranslatedText) // 找到第一个匹配/Find first match
 	if err != nil {
-		t.logger.Error("regexp2 查找匹配时出错", zap.Error(err), zap.String("fileName", t.shortFileName))
-		return nodeIDWithTranslation, fmt.Errorf("regexp2 查找匹配时出错: %w", err)
+		t.logger.Error("regexp2 查找匹配时出错/Error occurred while finding match with regexp2", zap.Error(err), zap.String("fileName", t.shortFileName))
+		return nodeIDWithTranslation, fmt.Errorf("regexp2 查找匹配时出错/Error occurred while finding match: %w", err)
 	}
-	// matches 是一个 [][]string，每个元素是：
-	// [ 完整匹配的字符串, 捕获的数字N, 捕获的翻译内容 ]
+	// matches 是一个 [][]string，每个元素是：[ 完整匹配, 捕获的数字N, 捕获的翻译内容 ]
+	// matches is a [][]string, each element: [full match, captured number N, captured translation content]
 
 	detectedNodeCount := 0
 
 	if m == nil {
-		t.logger.Debug("没有找到匹配", zap.String("fileName", t.shortFileName))
+		t.logger.Debug("没有找到匹配/No match found", zap.String("fileName", t.shortFileName))
 		return nodeIDWithTranslation, nil
 	}
 
-	for m != nil { // 循环直到没有更多匹配
+	for m != nil {
 		groups := m.Groups()
-		if len(groups) == 3 { // Group 0 是完整匹配, Group 1 是第一个捕获组, Group 2 是第二个
+		if len(groups) == 3 { // Group 0 是完整匹配/Group 0 is the full match, Group 1 is the first capture, Group 2 is the second
 			nodeIndexStr := groups[1].Capture.String()
 			rawContent := groups[2].Capture.String()
 
-			// --- 从这里开始是你之前的 rawContent 处理逻辑 ---
+			// 处理 rawContent/Process rawContent
 			processedContent := strings.TrimSpace(rawContent)
 			translation := strings.TrimSpace(processedContent)
-			// --- rawContent 处理逻辑结束 ---
 
 			nodeIndex, errAtoi := strconv.Atoi(nodeIndexStr)
 			if errAtoi != nil {
-				t.logger.Warn("无法从标记解析节点索引", zap.String("indexStr", nodeIndexStr), zap.Error(errAtoi), zap.String("fileName", t.shortFileName))
+				t.logger.Warn("无法从标记解析节点索引/Failed to parse node index from marker", zap.String("indexStr", nodeIndexStr), zap.Error(errAtoi), zap.String("fileName", t.shortFileName))
 			} else {
-				// 使用validIDsMap而不是全局范围检查
+				// 仅在节点索引有效时赋值/Assign only if node index is valid
 				if validIDsMap[nodeIndex] {
-					//t.logger.Debug("检测到的节点", zap.Int("nodeIndex", nodeIndex), zap.String("translation", translation))
+					//t.logger.Debug("检测到的节点/Detected node", zap.Int("nodeIndex", nodeIndex), zap.String("translation", translation))
 					nodeIDWithTranslation[nodeIndex] = translation
 					detectedNodeCount++
 				} else {
-					t.logger.Warn("解析到的节点索引不在当前组的有效范围内",
+					t.logger.Warn("解析到的节点索引不在当前组的有效范围内/Parsed node index is out of valid range",
 						zap.Int("nodeIndex", nodeIndex),
 						zap.Ints("validNodeIDs", validNodeIDs),
 						zap.String("nodeIndexStr", nodeIndexStr),
@@ -534,28 +564,41 @@ func (t *GoQueryHTMLTranslator) parseGroupTranslation(groupTranslatedText string
 				}
 			}
 		} else {
-			t.logger.Warn("regexp2 匹配结果的捕获组数量不符合预期", zap.Int("groupsCount", len(groups)), zap.String("fileName", t.shortFileName))
+			t.logger.Warn("regexp2 匹配结果的捕获组数量不符合预期/regexp2 match result group count is not as expected", zap.Int("groupsCount", len(groups)), zap.String("fileName", t.shortFileName))
 		}
 
-		m, err = t.nodeExtractRegx.FindNextMatch(m) // 查找下一个匹配
+		m, err = t.nodeExtractRegx.FindNextMatch(m) // 查找下一个匹配/Find next match
 		if err != nil {
-			t.logger.Error("regexp2 查找下一个匹配时出错", zap.Error(err))
-			break // 出错则停止查找
+			t.logger.Error("regexp2 查找下一个匹配时出错/Error occurred while finding next match with regexp2", zap.Error(err))
+			break // 出错则停止/Stop on error
 		}
 	}
-	t.logger.Debug("检测到的节点数量", zap.Int("detectedNodeCount", detectedNodeCount), zap.String("fileName", t.shortFileName))
+	// t.logger.Debug("检测到的节点数量/Detected node count", zap.Int("detectedNodeCount", detectedNodeCount), zap.String("fileName", t.shortFileName))
 	return nodeIDWithTranslation, nil
 }
 
+// ExampleParseGroupTranslation 展示如何使用 parseGroupTranslation 解析翻译结果/Show how to use parseGroupTranslation to parse translation results
+func ExampleGoQueryHTMLTranslator_parseGroupTranslation() {
+	translator := &GoQueryHTMLTranslator{
+		nodeExtractRegx: regexp2.MustCompile(`@@NODE_(\d+)@@(.*?)@@END_NODE@@`, regexp2.RE2),
+	}
+	groupText := "@@NODE_1@@hello@@END_NODE@@@@NODE_2@@world@@END_NODE@@"
+	validIDs := []int{1, 2}
+	result, err := translator.parseGroupTranslation(groupText, validIDs)
+	fmt.Println(result[1], result[2], err == nil)
+	// Output: hello world true
+}
+
+// translateGroup 翻译节点组，将翻译结果绑定到对应节点上/translateGroup translates a group of nodes and binds the translation results to the corresponding nodes
 func (t *GoQueryHTMLTranslator) translateGroup(nodeGroup GoQueryTextNodeGroup, textNodes []GoQueryTextNodeInfo) (GoQueryTextNodeGroup, []error) {
 	var errors []error
 
-	// 调试信息：显示当前组的节点ID范围
+	// 调试信息：显示当前组的节点ID范围/Debug info: show node ID range of the current group
 	var nodeIDs []int
 	for _, node := range nodeGroup {
 		nodeIDs = append(nodeIDs, node.GlobalID)
 	}
-	// t.logger.Debug("开始翻译节点组",
+	// t.logger.Debug("开始翻译节点组/Start translating node group",
 	// 	zap.Ints("nodeIDs", nodeIDs),
 	// 	zap.Int("nodeCount", t.nodeCount),
 	// 	zap.Int("groupSize", len(nodeGroup)))
@@ -576,29 +619,29 @@ func (t *GoQueryHTMLTranslator) translateGroup(nodeGroup GoQueryTextNodeGroup, t
 	groupText = strings.TrimSpace(groupText)
 	textsToTranslate = groupText
 
-	// t.logger.Debug("开始翻译HTML文本", zap.Int("textLength", len(textsToTranslate)))
+	// t.logger.Debug("开始翻译HTML文本/Start translating HTML text", zap.Int("textLength", len(textsToTranslate)))
 	translatedText, err := t.translator.Translate(textsToTranslate, t.enableRetry)
 	if err != nil {
 		errors = append(errors, err)
-		t.logger.Warn("翻译HTML节点组失败", zap.Error(err))
+		t.logger.Warn("翻译HTML节点组失败/Failed to translate HTML node group", zap.Error(err))
 		return returnNodeGroup, errors
 	}
 
-	// 把翻译结果绑定到 Node 上面去
+	// 把翻译结果绑定到 Node 上面去/Bind translation results to Node
 
 	nodeIDWithTranslation, err := t.parseGroupTranslation(translatedText, nodeIDs)
 	if err != nil {
-		t.logger.Error("解析翻译结果失败", zap.Error(err))
+		t.logger.Error("解析翻译结果失败/Failed to parse translation results", zap.Error(err))
 	}
 
-	// 验证翻译结果的完整性
+	// 验证翻译结果的完整性/Verify the completeness of translation results
 	processedNodes := 0
 	missingNodes := []int{}
 	for _, node := range nodeGroup {
 		if translation, exists := nodeIDWithTranslation[node.GlobalID]; exists {
 			if translation == textNodes[node.GlobalID].Text {
-				// 即使翻译结果与原文相同，也要设置TranslatedText
-				// 这样可以确保节点被标记为"已处理"
+				// 即使翻译结果与原文相同，也要设置TranslatedText/Set TranslatedText even if the translation is the same as the original
+				// 这样可以确保节点被标记为"已处理"/This ensures the node is marked as "processed"
 				returnNodeGroup[node.GlobalID].TranslatedText = translation
 			} else {
 				returnNodeGroup[node.GlobalID].TranslatedText = translation
@@ -610,13 +653,13 @@ func (t *GoQueryHTMLTranslator) translateGroup(nodeGroup GoQueryTextNodeGroup, t
 	}
 
 	if len(missingNodes) > 0 {
-		t.logger.Warn("某些节点没有被翻译器处理",
+		t.logger.Warn("某些节点没有被翻译器处理/Some nodes were not handled by the translator",
 			zap.Ints("missingNodeIDs", missingNodes),
 			zap.Int("processedNodes", processedNodes),
 			zap.Int("totalNodes", len(nodeGroup)))
 	}
 
-	// t.logger.Debug("节点组翻译完成",
+	// t.logger.Debug("节点组翻译完成/Node group translation completed",
 	// 	zap.Int("processedNodes", processedNodes),
 	// 	zap.Int("totalNodes", len(nodeGroup)),
 	// 	zap.Int("missingNodes", len(missingNodes)))
@@ -624,6 +667,24 @@ func (t *GoQueryHTMLTranslator) translateGroup(nodeGroup GoQueryTextNodeGroup, t
 	return returnNodeGroup, errors
 }
 
+// ExampleGoQueryHTMLTranslator_translateGroup 展示 translateGroup 的用法/Example of using translateGroup
+// func ExampleGoQueryHTMLTranslator_translateGroup() {
+// 	translator := translator.NewRawTranslator(nil, nil, nil)
+// 	goQueryHTMLTranslator := NewGoQueryHTMLTranslator(translator, nil)
+// 	nodeGroup := GoQueryTextNodeGroup{
+// 		{GlobalID: 0, Text: "Hello"},
+// 		{GlobalID: 1, Text: "World"},
+// 	}
+// 	textNodes := []GoQueryTextNodeInfo{
+// 		{GlobalID: 0, Text: "Hello"},
+// 		{GlobalID: 1, Text: "World"},
+// 	}
+// 	result, errs := translator.translateGroup(nodeGroup, textNodes)
+// 	fmt.Println(result[0].TranslatedText, result[1].TranslatedText, len(errs) == 0)
+// 	// Output: Hello World true
+// }
+
+// collectFailedNodes 收集未被翻译的节点ID/collectFailedNodes collects the IDs of nodes that were not translated
 func (t *GoQueryHTMLTranslator) collectFailedNodes(nodeGroup GoQueryTextNodeGroup) []int {
 	var failedGroup GoQueryTextNodeGroup
 	for _, node := range nodeGroup {
@@ -638,28 +699,42 @@ func (t *GoQueryHTMLTranslator) collectFailedNodes(nodeGroup GoQueryTextNodeGrou
 	return failedNodeIDs
 }
 
+// ExampleGoQueryHTMLTranslator_collectFailedNodes 展示 collectFailedNodes 的用法/Example of using collectFailedNodes
+func ExampleGoQueryHTMLTranslator_collectFailedNodes() {
+	translator := &GoQueryHTMLTranslator{}
+	nodeGroup := GoQueryTextNodeGroup{
+		{GlobalID: 0, TranslatedText: ""},
+		{GlobalID: 1, TranslatedText: "翻译内容/Translated"},
+		{GlobalID: 2, TranslatedText: ""},
+	}
+	failedIDs := translator.collectFailedNodes(nodeGroup)
+	fmt.Println(failedIDs)
+	// Output: [0 2]
+}
+
+// groupFailedNodes 将失败节点及其上下文分组/groupFailedNodes groups failed nodes and their context
 func (t *GoQueryHTMLTranslator) groupFailedNodes(totalNodes GoQueryTextNodeGroup, failedNodeIDs []int) []GoQueryTextNodeGroup {
-	// 使用IntSet来去重
+	// 使用IntSet来去重/Use IntSet to deduplicate
 	nodeSet := NewIntSet()
 
-	// 为每个失败的节点添加上下文（前一个、当前、后一个）
+	// 为每个失败的节点添加上下文（前一个、当前、后一个）/Add context for each failed node (previous, current, next)
 	for _, nodeID := range failedNodeIDs {
-		// 添加前一个节点（如果存在）
+		// 添加前一个节点（如果存在）/Add previous node if exists
 		if nodeID > 0 {
 			nodeSet.Add(nodeID - 1)
 		}
-		// 添加当前失败的节点
+		// 添加当前失败的节点/Add current failed node
 		nodeSet.Add(nodeID)
-		// 添加后一个节点（如果存在）
+		// 添加后一个节点（如果存在）/Add next node if exists
 		if nodeID < len(totalNodes)-1 {
 			nodeSet.Add(nodeID + 1)
 		}
 	}
 
-	// 获取去重并排序后的节点ID
+	// 获取去重并排序后的节点ID/Get deduplicated and sorted node IDs
 	uniqueNodeIDs := nodeSet.ToSlice()
 
-	// 构建失败节点及其上下文的数组
+	// 构建失败节点及其上下文的数组/Build array of failed nodes and their context
 	var failedNodeWithContext GoQueryTextNodeGroup
 	for _, nodeID := range uniqueNodeIDs {
 		if nodeID >= 0 && nodeID < len(totalNodes) {
@@ -667,21 +742,38 @@ func (t *GoQueryHTMLTranslator) groupFailedNodes(totalNodes GoQueryTextNodeGroup
 		}
 	}
 
-	// t.logger.Debug("重试节点去重统计",
-	// 	zap.Int("原始失败节点数", len(failedNodeIDs)),
-	// 	zap.Int("加上下文后总节点数", len(failedNodeWithContext)),
-	// 	zap.Int("set大小", nodeSet.Size()),
-	// 	zap.Ints("失败节点IDs", failedNodeIDs),
-	// 	zap.Ints("去重后节点IDs", uniqueNodeIDs))
+	// t.logger.Debug("重试节点去重统计/Retry node deduplication statistics",
+	// 	zap.Int("原始失败节点数/Original failed node count", len(failedNodeIDs)),
+	// 	zap.Int("加上下文后总节点数/Total nodes after adding context", len(failedNodeWithContext)),
+	// 	zap.Int("set大小/Set size", nodeSet.Size()),
+	// 	zap.Ints("失败节点IDs/Failed node IDs", failedNodeIDs),
+	// 	zap.Ints("去重后节点IDs/Deduplicated node IDs", uniqueNodeIDs))
 
 	return t.groupNodes(failedNodeWithContext)
 }
 
-func (t *GoQueryHTMLTranslator) resortNodes(nodeGroup GoQueryTextNodeGroup, len int) GoQueryTextNodeGroup {
-	newNodeGroup := make(GoQueryTextNodeGroup, len)
+// ExampleGoQueryHTMLTranslator_groupFailedNodes 展示 groupFailedNodes 的用法/Example of using groupFailedNodes
+func ExampleGoQueryHTMLTranslator_groupFailedNodes() {
+	translator := &GoQueryHTMLTranslator{}
+	totalNodes := GoQueryTextNodeGroup{
+		{GlobalID: 0}, {GlobalID: 1}, {GlobalID: 2}, {GlobalID: 3}, {GlobalID: 4},
+	}
+	failedNodeIDs := []int{2}
+	groups := translator.groupFailedNodes(totalNodes, failedNodeIDs)
+	for _, group := range groups {
+		for _, node := range group {
+			fmt.Print(node.GlobalID, " ")
+		}
+	}
+	// Output: 1 2 3
+}
+
+// resortNodes 按 GlobalID 对节点组重新排序，并返回新的节点组/resortNodes reorders the node group by GlobalID and returns a new node group
+func (t *GoQueryHTMLTranslator) resortNodes(nodeGroup GoQueryTextNodeGroup, length int) GoQueryTextNodeGroup {
+	newNodeGroup := make(GoQueryTextNodeGroup, length)
 	for _, node := range nodeGroup {
-		if node.GlobalID >= len {
-			t.logger.Warn("节点ID超出范围", zap.Int("nodeID", node.GlobalID), zap.Int("len", len))
+		if node.GlobalID >= length {
+			t.logger.Warn("节点ID超出范围/Node ID out of range", zap.Int("nodeID", node.GlobalID), zap.Int("len", length))
 			continue
 		}
 		newNodeGroup[node.GlobalID] = node
@@ -689,20 +781,80 @@ func (t *GoQueryHTMLTranslator) resortNodes(nodeGroup GoQueryTextNodeGroup, len 
 	return newNodeGroup
 }
 
+// ExampleGoQueryHTMLTranslator_resortNodes 展示 resortNodes 的用法/Example of using resortNodes
+func ExampleGoQueryHTMLTranslator_resortNodes() {
+	translator := &GoQueryHTMLTranslator{}
+	nodeGroup := GoQueryTextNodeGroup{
+		{GlobalID: 2, Text: "C"},
+		{GlobalID: 0, Text: "A"},
+		{GlobalID: 1, Text: "B"},
+	}
+	resorted := translator.resortNodes(nodeGroup, 3)
+	for _, node := range resorted {
+		fmt.Print(node.Text, " ")
+	}
+	// Output: A B C
+}
+
+// updateNodes 根据新节点组更新原始节点组的翻译文本/Update the translation text in the original node group with values from the new node group.
+// 该方法会遍历 newNodeGroup，将其中每个节点的 TranslatedText 替换到 originalNodeGroup 中对应 GlobalID 的节点上。/This method iterates over newNodeGroup and updates the TranslatedText field for the node with the same GlobalID in originalNodeGroup.
 func (t *GoQueryHTMLTranslator) updateNodes(originalNodeGroup GoQueryTextNodeGroup, newNodeGroup GoQueryTextNodeGroup) GoQueryTextNodeGroup {
 	for _, node := range newNodeGroup {
+		// 将新节点组中的翻译文本赋值到原始节点组的对应节点/Assign translated text from the new node group to the corresponding node in the original group
 		originalNodeGroup[node.GlobalID].TranslatedText = node.TranslatedText
 	}
 	return originalNodeGroup
 }
 
+// ExampleGoQueryHTMLTranslator_updateNodes 展示 updateNodes 的典型用法/Example of using updateNodes.
+func ExampleGoQueryHTMLTranslator_updateNodes() {
+	translator := &GoQueryHTMLTranslator{}
+	original := GoQueryTextNodeGroup{
+		{GlobalID: 0, TranslatedText: ""},
+		{GlobalID: 1, TranslatedText: ""},
+	}
+	newNodes := GoQueryTextNodeGroup{
+		{GlobalID: 0, TranslatedText: "你好/Hello"},
+		{GlobalID: 1, TranslatedText: "世界/World"},
+	}
+	updated := translator.updateNodes(original, newNodes)
+	for _, node := range updated {
+		fmt.Print(node.TranslatedText, " ")
+	}
+	// Output: 你好/Hello 世界/World
+}
+
+// updateNodesWithFailedIDs 仅根据失败节点ID更新原始节点组/Update the original node group only for nodes with failed IDs.
+// 只处理在 failedNodeIDs 中指定的节点，如果 newNodeGroup 中该节点的 TranslatedText 非空，则将其写入 originalNodeGroup。/Only processes nodes specified in failedNodeIDs; if TranslatedText in newNodeGroup is non-empty, it is written to originalNodeGroup.
 func (t *GoQueryHTMLTranslator) updateNodesWithFailedIDs(originalNodeGroup GoQueryTextNodeGroup, newNodeGroup GoQueryTextNodeGroup, failedNodeIDs []int) GoQueryTextNodeGroup {
 	for _, failedNodeID := range failedNodeIDs {
+		// 检查ID有效并且新节点组有翻译文本/Check ID validity and presence of translated text in new group
 		if failedNodeID < len(newNodeGroup) && newNodeGroup[failedNodeID].TranslatedText != "" {
 			originalNodeGroup[failedNodeID].TranslatedText = newNodeGroup[failedNodeID].TranslatedText
 		}
 	}
 	return originalNodeGroup
+}
+
+// ExampleGoQueryHTMLTranslator_updateNodesWithFailedIDs 展示 updateNodesWithFailedIDs 的典型用法/Example of using updateNodesWithFailedIDs.
+func ExampleGoQueryHTMLTranslator_updateNodesWithFailedIDs() {
+	translator := &GoQueryHTMLTranslator{}
+	original := GoQueryTextNodeGroup{
+		{GlobalID: 0, TranslatedText: ""},
+		{GlobalID: 1, TranslatedText: ""},
+		{GlobalID: 2, TranslatedText: ""},
+	}
+	newNodes := GoQueryTextNodeGroup{
+		{GlobalID: 0, TranslatedText: ""},
+		{GlobalID: 1, TranslatedText: "成功/Success"},
+		{GlobalID: 2, TranslatedText: ""},
+	}
+	failedIDs := []int{1}
+	updated := translator.updateNodesWithFailedIDs(original, newNodes, failedIDs)
+	for _, node := range updated {
+		fmt.Print(node.TranslatedText, " ")
+	}
+	// Output:  成功/Success
 }
 
 func (t *GoQueryHTMLTranslator) applyTranslations(doc *goquery.Document, translatedNodes GoQueryTextNodeGroup) (*goquery.Document, error) {
@@ -732,7 +884,7 @@ func (t *GoQueryHTMLTranslator) applyTranslations(doc *goquery.Document, transla
 	// 	zap.Int("nodesWithoutTranslation", nodesWithoutTranslation),
 	// 	zap.Int("nodesWithNilSelection", nodesWithNilSelection))
 
-	for i, nodeInfo := range translatedNodes {
+	for _, nodeInfo := range translatedNodes {
 		if nodeInfo.Selection == nil {
 			// t.logger.Warn("跳过节点，因为其Selection为nil",
 			// 	zap.Int("node_index_in_group", i),
@@ -855,53 +1007,69 @@ func (t *GoQueryHTMLTranslator) applyTranslations(doc *goquery.Document, transla
 	return doc, nil
 }
 
-// cleanGoqueryWrapper 辅助函数 (你可能需要根据实际情况调整或完善)
-// 它的目的是尝试移除 goquery 可能为 XML 片段添加的多余的 html/body 包装
+// cleanGoqueryWrapper 尝试移除 goquery 可能为 XML 片段添加的多余的 html/body 包装/Try to remove extra html/body wrappers that goquery may add for XML fragments.
+// 根据原始输入判断是否应还原为片段内容，主要用于格式化和输出友好的 HTML/XML 片段/Restore to fragment content if the original input looks like a fragment.
+// 如果无法识别为片段，则返回 goquery 生成（可能已规范化）的 HTML/If unable to identify as a fragment, returns the goquery-generated (possibly normalized) HTML.
 func (t *GoQueryHTMLTranslator) cleanGoqueryWrapper(htmlStr string, originalFullHTMLString string) string {
-	// 这是一个复杂的启发式过程，可能需要根据你的具体 XML 结构进行调整
-	// 目标：如果原始输入是XML片段，但goquery将其包装在html/body中，尝试还原。
+	// 这是一个复杂的启发式过程，可能需要根据你的具体 XML 结构进行调整/This is a heuristic process and may need adjustments for your XML structure.
+	// 目标：如果原始输入是XML片段，但goquery将其包装在html/body中，尝试还原/Goal: If the original input is an XML fragment but goquery wraps it in html/body, try to restore.
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlStr))
 	if err != nil {
-		t.logger.Warn("cleanGoqueryWrapper: 解析htmlStr失败", zap.Error(err), zap.String("html_snippet", snippet(htmlStr)))
-		return htmlStr // 解析失败，返回原样
+		// cleanGoqueryWrapper: 解析htmlStr失败/warning for failed parsing htmlStr
+		t.logger.Warn("cleanGoqueryWrapper: 解析htmlStr失败/cleanGoqueryWrapper: failed to parse htmlStr", zap.Error(err), zap.String("html_snippet", snippet(htmlStr)))
+		return htmlStr // 解析失败，返回原样/Parsing failed, return as is.
 	}
 
-	// 如果原始字符串本身就不像一个完整的HTML文档
+	// 判断原始字符串是否像片段/Determine whether the original string looks like a fragment
 	isLikelyFragment := !strings.Contains(strings.ToLower(originalFullHTMLString), "<html") &&
 		!strings.Contains(strings.ToLower(originalFullHTMLString), "<body")
 
 	bodySelection := doc.Find("body")
 	if bodySelection.Length() > 0 {
-		// 检查 body 是否是 goquery 添加的唯一顶层元素 (在 html > body 结构中)
-		// 并且原始输入看起来像片段
-		if isLikelyFragment && bodySelection.Parent().Is("html") && bodySelection.Parent().Children().Length() == 1 { // body是html唯一的孩子
+		// 检查 body 是否是 goquery 添加的唯一顶层元素 (在 html > body 结构中)/Check if body is the only top-level element added by goquery (html > body structure)
+		// 并且原始输入看起来像片段/And the original input seems like a fragment
+		if isLikelyFragment && bodySelection.Parent().Is("html") && bodySelection.Parent().Children().Length() == 1 { // body是html唯一的孩子/body is the only child of html
 			if bodyHtml, err := bodySelection.Html(); err == nil {
-				t.logger.Debug("cleanGoqueryWrapper: 原始输入像片段，且body是html唯一子元素，返回body内容", zap.String("body_html_snippet", snippet(bodyHtml)))
+				// cleanGoqueryWrapper: 原始输入像片段，且body是html唯一子元素，返回body内容/Input looks like a fragment and body is the only child of html, return body content
+				t.logger.Debug("cleanGoqueryWrapper: 原始输入像片段，且body是html唯一子元素，返回body内容/cleanGoqueryWrapper: input looks like a fragment and body is the only child, returning body content", zap.String("body_html_snippet", snippet(bodyHtml)))
 				return bodyHtml
 			}
 		}
-		// 另一种情况：如果body内容本身看起来就是多个XML元素或者纯文本
+		// 另一种情况：如果body内容本身看起来就是多个XML元素或者纯文本/Another case: if body content looks like multiple XML elements or plain text
 		children := bodySelection.Children()
 		if children.Length() > 1 || (children.Length() == 0 && strings.TrimSpace(bodySelection.Text()) != "") {
 			if bodyHtml, err := bodySelection.Html(); err == nil {
-				t.logger.Debug("cleanGoqueryWrapper: body包含多个子元素或纯文本，返回body内容", zap.String("body_html_snippet", snippet(bodyHtml)))
+				// cleanGoqueryWrapper: body包含多个子元素或纯文本，返回body内容/body contains multiple children or plain text, return body content
+				t.logger.Debug("cleanGoqueryWrapper: body包含多个子元素或纯文本，返回body内容/cleanGoqueryWrapper: body contains multiple children or plain text, returning body content", zap.String("body_html_snippet", snippet(bodyHtml)))
 				return bodyHtml
 			}
 		}
-		// 如果body只有一个子元素，且这个子元素不是html/head/body，也可能是有效的XML片段
+		// 如果body只有一个子元素，且这个子元素不是html/head/body，也可能是有效的XML片段/If body has one child, and it's not html/head/body, it may be a valid XML fragment
 		if children.Length() == 1 && children.Filter("html,head,body").Length() == 0 {
 			if bodyHtml, err := bodySelection.Html(); err == nil {
-				t.logger.Debug("cleanGoqueryWrapper: body只有一个有效子元素，返回body内容", zap.String("body_html_snippet", snippet(bodyHtml)))
+				// cleanGoqueryWrapper: body只有一个有效子元素，返回body内容/body has only one valid child, return body content
+				t.logger.Debug("cleanGoqueryWrapper: body只有一个有效子元素，返回body内容/cleanGoqueryWrapper: body has only one valid child, returning body content", zap.String("body_html_snippet", snippet(bodyHtml)))
 				return bodyHtml
 			}
 		}
 	}
 
-	// 如果以上启发式方法都不适用，或者解析/获取body内容失败，
-	// 返回由 doc.Html() 生成的（可能已被goquery规范化的）完整HTML。
-	// 这意味着对于某些复杂的XML结构，可能仍然会保留html/body包装。
-	t.logger.Debug("cleanGoqueryWrapper: 未应用特定清理规则，返回goquery生成的HTML", zap.String("html_snippet", snippet(htmlStr)))
+	// 如果以上启发式方法都不适用，或者解析/获取body内容失败/If none of the above heuristics apply or failed to get body content
+	// 返回由 doc.Html() 生成的（可能已被goquery规范化的）完整HTML/Return the complete HTML generated by doc.Html() (possibly normalized by goquery)
+	// 这意味着对于某些复杂的XML结构，可能仍然会保留html/body包装/For some complex XML, html/body wrappers may still be kept
+	t.logger.Debug("cleanGoqueryWrapper: 未应用特定清理规则，返回goquery生成的HTML/cleanGoqueryWrapper: no specific cleanup rule applied, returning goquery-generated HTML", zap.String("html_snippet", snippet(htmlStr)))
 	return htmlStr
+}
+
+// ExampleGoQueryHTMLTranslator_cleanGoqueryWrapper 展示 cleanGoqueryWrapper 的典型用法/ExampleGoQueryHTMLTranslator_cleanGoqueryWrapper demonstrates typical usage of cleanGoqueryWrapper.
+func ExampleGoQueryHTMLTranslator_cleanGoqueryWrapper() {
+	translator := &GoQueryHTMLTranslator{}
+	// 案例1：原始内容为XML片段/Case 1: original content is an XML fragment
+	original := `<div>foo</div><span>bar</span>`
+	htmlWrapped := `<html><body><div>foo</div><span>bar</span></body></html>`
+	cleaned := translator.cleanGoqueryWrapper(htmlWrapped, original)
+	fmt.Println(strings.TrimSpace(cleaned))
+	// Output: <div>foo</div><span>bar</span>
 }
 
 func (t *GoQueryHTMLTranslator) postprocessHTML(doc *goquery.Document, protectedContent map[string]string, xmlDecl string, doctypeDecl string, originalFullHTMLString string) (string, error) {
@@ -952,56 +1120,58 @@ func (t *GoQueryHTMLTranslator) postprocessHTML(doc *goquery.Document, protected
 	return finalOutputBuilder.String(), nil
 }
 
+// debugPrintGroup 打印 GoQueryTextNodeGroup 的节点详情，便于调试/Prints details of GoQueryTextNodeGroup nodes for debugging.
 func (t *GoQueryHTMLTranslator) debugPrintGroup(group GoQueryTextNodeGroup) {
 	for nodeIdx, node := range group {
 		if (nodeIdx)%5 == 0 {
 			t.logger.Debug("--------")
-			t.logger.Debug("节点详情",
+			t.logger.Debug("节点详情/Node Details",
 				zap.Int("globalID", node.GlobalID),
 				zap.String("path", node.Path),
-				zap.String("originalText", snippet(node.Text)),
-				zap.String("translatedText", snippet(node.TranslatedText)))
+				zap.String("originalText/原文片段", snippet(node.Text)),
+				zap.String("translatedText/翻译片段", snippet(node.TranslatedText)))
 		}
 	}
 }
 
-// TranslateHTMLWithGoQuery 使用goquery库翻译HTML文档，更好地保留HTML结构
+// Translate 翻译 HTML 文档，使用 goquery 保留 HTML 结构/Translate HTML document, preserving structure with goquery.
 func (t *GoQueryHTMLTranslator) Translate(htmlStr string, fileName string) (string, error) {
-
+	// 保存原始 HTML 和文件名/Store original HTML and file names
 	t.originalHTML = htmlStr
 	t.fileName = fileName
 	t.shortFileName = filepath.Base(fileName)
 
+	// 预处理 HTML，获取文档和声明/Preprocess HTML, obtain document and declarations
 	initialDoc, protectedContent, xmlDeclaration, doctypeDeclaration, err := t.processHTML(htmlStr)
 	if err != nil {
-		t.logger.Error("预处理HTML失败", zap.Error(err), zap.String("fileName", t.shortFileName))
+		t.logger.Error("预处理HTML失败/Failed to preprocess HTML", zap.Error(err), zap.String("fileName/文件名", t.shortFileName))
 		return "", err
 	}
 
+	// 提取文本节点/Extract text nodes
 	textNodes, _, err := t.extractTextNodes(initialDoc)
-
 	if err != nil {
-		t.logger.Error("提取文本节点失败", zap.Error(err), zap.String("fileName", t.shortFileName))
+		t.logger.Error("提取文本节点失败/Failed to extract text nodes", zap.Error(err), zap.String("fileName/文件名", t.shortFileName))
 		return "", err
 	}
 
 	if len(textNodes) == 0 {
-		// 没有可翻译内容，直接进行后处理并返回
+		// 没有可翻译内容，直接后处理/No translatable content, postprocess and return
 		finalHTML, err := t.postprocessHTML(initialDoc, protectedContent, xmlDeclaration, doctypeDeclaration, htmlStr)
 		if err != nil {
-			t.logger.Error("没有可翻译内容时后处理HTML失败", zap.Error(err), zap.String("fileName", t.shortFileName))
+			t.logger.Error("没有可翻译内容时后处理HTML失败/Postprocessing failed when no translatable content", zap.Error(err), zap.String("fileName/文件名", t.shortFileName))
 			return "", err
 		}
-		t.logger.Warn("没有可翻译内容，直接返回后处理结果", zap.String("fileName", t.shortFileName))
+		t.logger.Warn("没有可翻译内容，直接返回后处理结果/No translatable content, directly returning postprocessed result", zap.String("fileName/文件名", t.shortFileName))
 		return finalHTML, nil
 	}
 
+	// 对节点分组/Group nodes
 	groups := t.groupNodes(textNodes)
 
-	// 并行翻译各个组
+	// 并行翻译各个组/Translate groups in parallel
 	var wg sync.WaitGroup
-
-	// 创建信号量控制并发
+	// 创建信号量控制并发/Create semaphore for concurrency control
 	sem := make(chan struct{}, t.concurrency)
 
 	var translatedNodeGroup GoQueryTextNodeGroup
@@ -1014,38 +1184,29 @@ func (t *GoQueryHTMLTranslator) Translate(htmlStr string, fileName string) (stri
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
+			// 翻译当前分组/Translate current group
 			wgTranslatedNodeGroup, errors := t.translateGroup(currentGroupData, translatedNodeGroup)
 			translatorGroupMergeMux.Lock()
-			// t.logger.Debug("----go routine----翻译后的节点", zap.Int("groupIndex", gIdx))
-			// t.debugPrintGroup(wgTranslatedNodeGroup)
-			// 安全地更新当前组中的节点，确保从正确的位置获取翻译文本
+			// 安全地合并翻译结果/Safely merge translation results
 			for _, node := range currentGroupData {
 				nodeGlobalID := node.GlobalID
 				if nodeGlobalID >= 0 && nodeGlobalID < len(wgTranslatedNodeGroup) {
-					// 从返回的结果中获取对应节点的翻译文本
 					translatedText := wgTranslatedNodeGroup[nodeGlobalID].TranslatedText
 					if translatedText != "" {
-						// 只有当翻译文本非空时才更新
 						translatedNodeGroup[nodeGlobalID].TranslatedText = translatedText
-						// t.logger.Debug("成功合并翻译结果",
-						// 	zap.Int("groupIndex", gIdx),
-						// 	zap.Int("nodeGlobalID", nodeGlobalID),
-						// 	zap.String("originalSnippet", snippet(node.Text)),
-						// 	zap.String("translatedSnippet", snippet(translatedText)),
-						// 	zap.String("fileName", t.shortFileName))
 					} else {
-						t.logger.Warn("节点翻译结果为空，跳过合并",
-							zap.Int("groupIndex", gIdx),
-							zap.Int("nodeGlobalID", nodeGlobalID),
-							zap.String("originalSnippet", snippet(node.Text)),
-							zap.String("fileName", t.shortFileName))
+						t.logger.Warn("节点翻译结果为空，跳过合并/Node translation result empty, skipping merge",
+							zap.Int("groupIndex/分组序号", gIdx),
+							zap.Int("nodeGlobalID/节点ID", nodeGlobalID),
+							zap.String("originalSnippet/原文片段", snippet(node.Text)),
+							zap.String("fileName/文件名", t.shortFileName))
 					}
 				} else {
-					t.logger.Error("节点索引超出范围，无法合并翻译结果",
-						zap.Int("groupIndex", gIdx),
-						zap.Int("nodeGlobalID", nodeGlobalID),
-						zap.Int("returnedGroupLength", len(wgTranslatedNodeGroup)),
-						zap.String("fileName", t.shortFileName))
+					t.logger.Error("节点索引超出范围，无法合并翻译结果/Node index out of range, cannot merge translation result",
+						zap.Int("groupIndex/分组序号", gIdx),
+						zap.Int("nodeGlobalID/节点ID", nodeGlobalID),
+						zap.Int("returnedGroupLength/返回分组长度", len(wgTranslatedNodeGroup)),
+						zap.String("fileName/文件名", t.shortFileName))
 				}
 			}
 			returnErrors = append(returnErrors, errors...)
@@ -1055,15 +1216,14 @@ func (t *GoQueryHTMLTranslator) Translate(htmlStr string, fileName string) (stri
 	wg.Wait()
 
 	if len(translatedNodeGroup) != len(textNodes) {
-		t.logger.Fatal("翻译后的节点数量与原始节点数量不一致", zap.Int("original", len(textNodes)), zap.Int("translated", len(translatedNodeGroup)), zap.String("fileName", t.shortFileName))
+		t.logger.Fatal("翻译后的节点数量与原始节点数量不一致/Translated node count does not match original", zap.Int("original/原始数量", len(textNodes)), zap.Int("translated/翻译数量", len(translatedNodeGroup)), zap.String("fileName/文件名", t.shortFileName))
 		return htmlStr, nil
 	}
-	// t.logger.Debug("第一步翻译后的节点")
-	// t.debugPrintGroup(translatedNodeGroup)
 
+	// 收集未翻译节点/Collect untranslated node IDs
 	untranslatedNodeIds := t.collectFailedNodes(translatedNodeGroup)
 
-	// 不断重试失败的节点
+	// 不断重试失败的节点/Retry failed nodes until max retries reached
 	retriesCount := 0
 	for {
 		retriesCount++
@@ -1073,38 +1233,31 @@ func (t *GoQueryHTMLTranslator) Translate(htmlStr string, fileName string) (stri
 		if len(untranslatedNodeIds) == 0 {
 			break
 		}
-		t.logger.Warn("进行重试失败的节点", zap.Int("重试次数", retriesCount), zap.Int("失败节点数", len(untranslatedNodeIds)), zap.String("fileName", t.shortFileName))
+		t.logger.Warn("进行重试失败的节点/Retrying failed nodes", zap.Int("重试次数/Retry count", retriesCount), zap.Int("失败节点数/Failed node count", len(untranslatedNodeIds)), zap.String("fileName/文件名", t.shortFileName))
 		translatedNodeGroup = t.resortNodes(translatedNodeGroup, len(textNodes))
 		untranslatedNodeGroups := t.groupFailedNodes(translatedNodeGroup, untranslatedNodeIds)
 		for _, group := range untranslatedNodeGroups {
 			reTranslatedNodeGroup, errors := t.translateGroup(group, translatedNodeGroup)
-			// 采用和主翻译逻辑相同的安全合并策略
+			// 合并重试翻译结果/Merge retry translation results
 			for _, node := range group {
 				nodeGlobalID := node.GlobalID
 				if nodeGlobalID >= 0 && nodeGlobalID < len(reTranslatedNodeGroup) {
-					// 从返回的结果中获取对应节点的翻译文本
 					translatedText := reTranslatedNodeGroup[nodeGlobalID].TranslatedText
 					if translatedText != "" {
-						// 只有当翻译文本非空时才更新
 						translatedNodeGroup[nodeGlobalID].TranslatedText = translatedText
-						// t.logger.Debug("成功合并重试翻译结果",
-						// 	zap.Int("retry", retriesCount),
-						// 	zap.Int("nodeGlobalID", nodeGlobalID),
-						// 	zap.String("originalSnippet", snippet(node.Text)),
-						// 	zap.String("translatedSnippet", snippet(translatedText)))
 					} else {
-						t.logger.Warn("重试节点翻译结果为空，跳过合并",
-							zap.Int("retry", retriesCount),
-							zap.Int("nodeGlobalID", nodeGlobalID),
-							zap.String("originalSnippet", snippet(node.Text)),
-							zap.String("fileName", t.shortFileName))
+						t.logger.Warn("重试节点翻译结果为空，跳过合并/Retry node translation result empty, skipping merge",
+							zap.Int("retry/重试次数", retriesCount),
+							zap.Int("nodeGlobalID/节点ID", nodeGlobalID),
+							zap.String("originalSnippet/原文片段", snippet(node.Text)),
+							zap.String("fileName/文件名", t.shortFileName))
 					}
 				} else {
-					t.logger.Error("重试节点索引超出范围，无法合并翻译结果",
-						zap.Int("retry", retriesCount),
-						zap.Int("nodeGlobalID", nodeGlobalID),
-						zap.Int("returnedGroupLength", len(reTranslatedNodeGroup)),
-						zap.String("fileName", t.shortFileName))
+					t.logger.Error("重试节点索引超出范围，无法合并翻译结果/Retry node index out of range, cannot merge translation result",
+						zap.Int("retry/重试次数", retriesCount),
+						zap.Int("nodeGlobalID/节点ID", nodeGlobalID),
+						zap.Int("returnedGroupLength/返回分组长度", len(reTranslatedNodeGroup)),
+						zap.String("fileName/文件名", t.shortFileName))
 				}
 			}
 			returnErrors = append(returnErrors, errors...)
@@ -1113,31 +1266,31 @@ func (t *GoQueryHTMLTranslator) Translate(htmlStr string, fileName string) (stri
 	}
 
 	if len(untranslatedNodeIds) != 0 {
-		t.logger.Error("依然有节点未翻译", zap.Int("失败节点数", len(untranslatedNodeIds)), zap.String("典型失败节点: ", translatedNodeGroup[untranslatedNodeIds[0]].Text), zap.String("fileName", t.shortFileName))
+		t.logger.Error("依然有节点未翻译/There are still untranslated nodes", zap.Int("失败节点数/Failed node count", len(untranslatedNodeIds)), zap.String("典型失败节点/Typical failed node", translatedNodeGroup[untranslatedNodeIds[0]].Text), zap.String("fileName/文件名", t.shortFileName))
 	}
 
-	// t.logger.Debug("应用翻译到文档前", zap.Int("translatedNodeGroup", len(translatedNodeGroup)))
-	// t.debugPrintGroup(translatedNodeGroup)
-
+	// 应用翻译到文档/Apply translations to document
 	afterDoc, err := t.applyTranslations(initialDoc, translatedNodeGroup)
 	if err != nil {
-		t.logger.Error("应用翻译到文档失败", zap.Error(err), zap.Int("TranslatedNodeGroup", len(translatedNodeGroup)), zap.String("fileName", t.shortFileName))
+		t.logger.Error("应用翻译到文档失败/Failed to apply translations to document", zap.Error(err), zap.Int("TranslatedNodeGroup/翻译节点数", len(translatedNodeGroup)), zap.String("fileName/文件名", t.shortFileName))
 		return "", err
 	}
 
-	t.logger.Debug("应用翻译到文档成功", zap.Int("translatedNodeGroup", len(translatedNodeGroup)), zap.String("fileName", t.shortFileName))
+	t.logger.Debug("应用翻译到文档成功/Successfully applied translations to document", zap.Int("translatedNodeGroup/翻译节点数", len(translatedNodeGroup)), zap.String("fileName/文件名", t.shortFileName))
 
+	// 后处理生成最终 HTML/Postprocess to generate final HTML
 	finalHTML, err := t.postprocessHTML(afterDoc, protectedContent, xmlDeclaration, doctypeDeclaration, htmlStr)
 	if err != nil {
-		t.logger.Error("后处理HTML失败", zap.Error(err), zap.String("fileName", t.shortFileName))
+		t.logger.Error("后处理HTML失败/Failed to postprocess HTML", zap.Error(err), zap.String("fileName/文件名", t.shortFileName))
 		return "", err
 	}
 
-	t.logger.Debug("后处理HTML成功", zap.String("finalHTML", snippetWithLength(finalHTML, 300)), zap.String("fileName", t.shortFileName))
+	t.logger.Debug("后处理HTML成功/Postprocessed HTML successfully", zap.String("finalHTML/最终HTML片段", snippetWithLength(finalHTML, 300)), zap.String("fileName/文件名", t.shortFileName))
 
 	return finalHTML, nil
 }
 
+// shouldTranslateAttr 判断属性名是否应被翻译/Determine if an attribute should be translated based on its name.
 func shouldTranslateAttr(attrName string) bool {
 	switch strings.ToLower(attrName) {
 	case "title", "alt", "label", "aria-label", "placeholder", "summary":
@@ -1146,14 +1299,32 @@ func shouldTranslateAttr(attrName string) bool {
 	return false
 }
 
-// IsSVGElement 检查节点是否为SVG元素 (SVG内容通常不翻译)
+// IsSVGElement 检查节点是否为 SVG 元素（SVG 内容通常不翻译）/Check if a node is an SVG element (SVG content usually not translated).
 func IsSVGElement(s *goquery.Selection) bool {
 	if goquery.NodeName(s) == "svg" {
 		return true
 	}
-	// 还可以检查父节点是否为SVG，以处理SVG内部的元素
+	// 也检查父节点是否为 SVG，以处理 SVG 内部的元素/Also check parent nodes for SVG to handle elements inside SVG.
 	if s.ParentsFiltered("svg").Length() > 0 {
 		return true
 	}
 	return false
+}
+
+// ExampleGoQueryHTMLTranslator_Translate 展示 Translate 方法的典型用法/Showcases typical usage of the Translate method.
+func ExampleGoQueryHTMLTranslator_Translate() {
+	translator := &GoQueryHTMLTranslator{
+		logger:      logger.NewLogger(true), // 需实现 NewLogger() 返回符合 logger 接口的对象/Implement NewLogger() to return a logger object.
+		concurrency: 2,                      // 并发数/Concurrency level.
+		maxRetries:  2,                      // 最大重试次数/Max retry count.
+	}
+	html := `<div title="hello">Hello <span>world</span></div>`
+	res, err := translator.Translate(html, "example.html")
+	if err != nil {
+		fmt.Println("Error:", err)
+	} else {
+		fmt.Println(strings.TrimSpace(res))
+	}
+	// Output:
+	// <div title="hello">Hello <span>world</span></div>
 }
