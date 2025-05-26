@@ -514,6 +514,15 @@ func groupTextNodes(nodes []*html.Node, limit int) [][]*html.Node {
 	return groups
 }
 
+// 辅助：获取 map 的所有 key
+func keysOf(m map[int]TextNode) []int {
+	keys := make([]int, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func snippet(s string) string {
 	const seg = 20
 	if len(s) <= seg*3 {
@@ -535,4 +544,14 @@ func snippetWithLength(s string, length int) string {
 		return s
 	}
 	return s[:length] + " ... " + s[len(s)-length:]
+}
+
+// a template function to check if an item is in a list
+func inList[T comparable](list []T, item T) bool {
+	for _, v := range list {
+		if v == item {
+			return true
+		}
+	}
+	return false
 }

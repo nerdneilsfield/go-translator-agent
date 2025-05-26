@@ -460,8 +460,8 @@ func (t *GoQueryHTMLTranslator) extractTextNodes(doc *goquery.Document) ([]GoQue
 func ExampleGoQueryHTMLTranslator_extractTextNodes() {
 	html := `<html><body><p>Hello <b>world</b></p></body></html>`
 	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
-	translator := &GoQueryHTMLTranslator{}
-	nodes, originalTexts, err := translator.extractTextNodes(doc)
+	translator_ := &GoQueryHTMLTranslator{}
+	nodes, originalTexts, err := translator_.extractTextNodes(doc)
 	fmt.Println(len(nodes) > 0, len(originalTexts) > 0, err == nil)
 	// Output: true true true
 }
