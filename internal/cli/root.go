@@ -162,9 +162,8 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			var t translator.Translator
 			if useAdapter() {
 				log.Info("使用新的翻译适配器")
-				// 创建一个实现 logger.Logger 接口的日志器
-				loggerInterface := logger.NewZapLogger(debugMode)
-				t, err = adapter.NewTranslatorAdapter(cfg, loggerInterface)
+				// 使用默认适配器工厂
+				t, err = adapter.CreateDefaultTranslatorAdapter(cfg)
 				if err != nil {
 					log.Error("创建翻译适配器失败", zap.Error(err))
 					os.Exit(1)
