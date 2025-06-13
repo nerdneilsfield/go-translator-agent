@@ -125,133 +125,146 @@ func TestEPUBProcessor(t *testing.T) {
 	epubData := createTestEPUB(t)
 	ctx := context.Background()
 
-	// 创建处理器
-	processor, err := NewProcessor(document.ProcessorOptions{
-		ChunkSize:    1000,
-		ChunkOverlap: 50,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, processor)
+	// 测试两种模式
+	modes := []struct {
+		name string
+		mode ProcessingMode
+	}{
+		{"MarkdownMode", ModeMarkdown},
+		{"NativeMode", ModeNative},
+	}
 
-	// 测试解析
-	t.Run("Parse", func(t *testing.T) {
-		reader := bytes.NewReader(epubData)
-		doc, err := processor.Parse(ctx, reader)
-		require.NoError(t, err)
-		require.NotNil(t, doc)
+	for _, tc := range modes {
+		t.Run(tc.name, func(t *testing.T) {
+			// 创建指定模式的处理器
+			processor, err := ProcessorWithMode(tc.mode, document.ProcessorOptions{
+				ChunkSize:    1000,
+				ChunkOverlap: 50,
+			})
+			require.NoError(t, err)
+			require.NotNil(t, processor)
 
-		// 验证文档格式
-		assert.Equal(t, document.FormatEPUB, doc.Format)
-
-		// 验证元数据
-		assert.Equal(t, "Test Book", doc.Metadata.Title)
-		assert.Equal(t, "Test Author", doc.Metadata.Author)
-		assert.Equal(t, "en", doc.Metadata.Language)
-
-		// 验证提取了内容
-		assert.NotEmpty(t, doc.Blocks)
-
-		// 验证提取了关键文本
-		allContent := strings.Join(getAllBlockContents(doc.Blocks), " ")
-		assert.Contains(t, allContent, "Chapter One")
-		assert.Contains(t, allContent, "Chapter Two")
-		assert.Contains(t, allContent, "first paragraph")
-
-		// 验证 EPUB 文件结构被保存
-		epubFiles, ok := doc.Metadata.CustomFields["epub_files"].(map[string][]byte)
-		require.True(t, ok)
-		assert.NotEmpty(t, epubFiles)
-		assert.Contains(t, epubFiles, "OEBPS/chapter1.xhtml")
-		assert.Contains(t, epubFiles, "OEBPS/chapter2.xhtml")
-		assert.Contains(t, epubFiles, "OEBPS/style.css")
-	})
-
-	// 测试处理（翻译）
-	t.Run("Process", func(t *testing.T) {
-		reader := bytes.NewReader(epubData)
-		doc, err := processor.Parse(ctx, reader)
-		require.NoError(t, err)
-
-		// 模拟翻译函数
-		translateFunc := func(ctx context.Context, text string) (string, error) {
-			// 简单的替换翻译
-			translated := strings.ReplaceAll(text, "Chapter", "章节")
-			translated = strings.ReplaceAll(translated, "paragraph", "段落")
-			translated = strings.ReplaceAll(translated, "item", "项目")
-			return translated, nil
-		}
-
-		processedDoc, err := processor.Process(ctx, doc, translateFunc)
-		require.NoError(t, err)
-		require.NotNil(t, processedDoc)
-
-		// 验证翻译生效
-		epubFiles, ok := processedDoc.Metadata.CustomFields["epub_files"].(map[string][]byte)
-		require.True(t, ok)
-
-		// 检查 chapter1.xhtml 是否被翻译
-		chapter1Content := string(epubFiles["OEBPS/chapter1.xhtml"])
-		assert.Contains(t, chapter1Content, "章节")
-		assert.Contains(t, chapter1Content, "段落")
-
-		// 检查 chapter2.xhtml 是否被翻译
-		chapter2Content := string(epubFiles["OEBPS/chapter2.xhtml"])
-		assert.Contains(t, chapter2Content, "章节")
-		assert.Contains(t, chapter2Content, "项目")
-	})
-
-	// 测试渲染
-	t.Run("Render", func(t *testing.T) {
-		reader := bytes.NewReader(epubData)
-		doc, err := processor.Parse(ctx, reader)
-		require.NoError(t, err)
-
-		// 翻译
-		translateFunc := func(ctx context.Context, text string) (string, error) {
-			return "[TRANSLATED] " + text, nil
-		}
-		processedDoc, err := processor.Process(ctx, doc, translateFunc)
-		require.NoError(t, err)
-
-		// 渲染
-		var output bytes.Buffer
-		err = processor.Render(ctx, processedDoc, &output)
-		require.NoError(t, err)
-
-		// 验证输出是有效的 ZIP 文件
-		outputData := output.Bytes()
-		assert.NotEmpty(t, outputData)
-
-		// 验证可以作为 ZIP 文件打开
-		zipReader, err := zip.NewReader(bytes.NewReader(outputData), int64(len(outputData)))
-		require.NoError(t, err)
-
-		// 验证文件结构保持完整
-		fileNames := make([]string, 0)
-		for _, file := range zipReader.File {
-			fileNames = append(fileNames, file.Name)
-		}
-		assert.Contains(t, fileNames, "mimetype")
-		assert.Contains(t, fileNames, "OEBPS/content.opf")
-		assert.Contains(t, fileNames, "OEBPS/chapter1.xhtml")
-		assert.Contains(t, fileNames, "OEBPS/chapter2.xhtml")
-		assert.Contains(t, fileNames, "OEBPS/style.css")
-
-		// 验证翻译的内容在输出中
-		for _, file := range zipReader.File {
-			if strings.HasSuffix(file.Name, ".xhtml") {
-				reader, err := file.Open()
+			// 测试解析
+			t.Run("Parse", func(t *testing.T) {
+				reader := bytes.NewReader(epubData)
+				doc, err := processor.Parse(ctx, reader)
 				require.NoError(t, err)
-				defer reader.Close()
+				require.NotNil(t, doc)
 
-				data, err := io.ReadAll(reader)
+				// 验证文档格式
+				assert.Equal(t, document.FormatEPUB, doc.Format)
+
+				// 验证元数据
+				assert.Equal(t, "Test Book", doc.Metadata.Title)
+				assert.Equal(t, "Test Author", doc.Metadata.Author)
+				assert.Equal(t, "en", doc.Metadata.Language)
+
+				// 验证提取了内容
+				assert.NotEmpty(t, doc.Blocks)
+
+				// 验证提取了关键文本
+				allContent := strings.Join(getAllBlockContents(doc.Blocks), " ")
+				assert.Contains(t, allContent, "Chapter One")
+				assert.Contains(t, allContent, "Chapter Two")
+				assert.Contains(t, allContent, "first paragraph")
+
+				// 验证 EPUB 文件结构被保存
+				epubFiles, ok := doc.Metadata.CustomFields["epub_files"].(map[string][]byte)
+				require.True(t, ok)
+				assert.NotEmpty(t, epubFiles)
+				assert.Contains(t, epubFiles, "OEBPS/chapter1.xhtml")
+				assert.Contains(t, epubFiles, "OEBPS/chapter2.xhtml")
+				assert.Contains(t, epubFiles, "OEBPS/style.css")
+			})
+
+			// 测试处理（翻译）
+			t.Run("Process", func(t *testing.T) {
+				reader := bytes.NewReader(epubData)
+				doc, err := processor.Parse(ctx, reader)
 				require.NoError(t, err)
 
-				content := string(data)
-				assert.Contains(t, content, "[TRANSLATED]")
-			}
-		}
-	})
+				// 模拟翻译函数
+				translateFunc := func(ctx context.Context, text string) (string, error) {
+					// 简单的替换翻译
+					translated := strings.ReplaceAll(text, "Chapter", "章节")
+					translated = strings.ReplaceAll(translated, "paragraph", "段落")
+					translated = strings.ReplaceAll(translated, "item", "项目")
+					return translated, nil
+				}
+
+				processedDoc, err := processor.Process(ctx, doc, translateFunc)
+				require.NoError(t, err)
+				require.NotNil(t, processedDoc)
+
+				// 验证翻译生效
+				epubFiles, ok := processedDoc.Metadata.CustomFields["epub_files"].(map[string][]byte)
+				require.True(t, ok)
+
+				// 检查 chapter1.xhtml 是否被翻译
+				chapter1Content := string(epubFiles["OEBPS/chapter1.xhtml"])
+				assert.Contains(t, chapter1Content, "章节")
+				assert.Contains(t, chapter1Content, "段落")
+
+				// 检查 chapter2.xhtml 是否被翻译
+				chapter2Content := string(epubFiles["OEBPS/chapter2.xhtml"])
+				assert.Contains(t, chapter2Content, "章节")
+				assert.Contains(t, chapter2Content, "项目")
+			})
+
+			// 测试渲染
+			t.Run("Render", func(t *testing.T) {
+				reader := bytes.NewReader(epubData)
+				doc, err := processor.Parse(ctx, reader)
+				require.NoError(t, err)
+
+				// 翻译
+				translateFunc := func(ctx context.Context, text string) (string, error) {
+					return "[TRANSLATED] " + text, nil
+				}
+				processedDoc, err := processor.Process(ctx, doc, translateFunc)
+				require.NoError(t, err)
+
+				// 渲染
+				var output bytes.Buffer
+				err = processor.Render(ctx, processedDoc, &output)
+				require.NoError(t, err)
+
+				// 验证输出是有效的 ZIP 文件
+				outputData := output.Bytes()
+				assert.NotEmpty(t, outputData)
+
+				// 验证可以作为 ZIP 文件打开
+				zipReader, err := zip.NewReader(bytes.NewReader(outputData), int64(len(outputData)))
+				require.NoError(t, err)
+
+				// 验证文件结构保持完整
+				fileNames := make([]string, 0)
+				for _, file := range zipReader.File {
+					fileNames = append(fileNames, file.Name)
+				}
+				assert.Contains(t, fileNames, "mimetype")
+				assert.Contains(t, fileNames, "OEBPS/content.opf")
+				assert.Contains(t, fileNames, "OEBPS/chapter1.xhtml")
+				assert.Contains(t, fileNames, "OEBPS/chapter2.xhtml")
+				assert.Contains(t, fileNames, "OEBPS/style.css")
+
+				// 验证翻译的内容在输出中
+				for _, file := range zipReader.File {
+					if strings.HasSuffix(file.Name, ".xhtml") {
+						reader, err := file.Open()
+						require.NoError(t, err)
+						defer reader.Close()
+
+						data, err := io.ReadAll(reader)
+						require.NoError(t, err)
+
+						content := string(data)
+						assert.Contains(t, content, "[TRANSLATED]")
+					}
+				}
+			})
+		})
+	}
 }
 
 // getAllBlockContents 获取所有块的内容

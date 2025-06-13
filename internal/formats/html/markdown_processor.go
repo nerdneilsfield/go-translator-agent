@@ -198,7 +198,12 @@ func simpleMarkdownToHTML(markdown string) string {
 			continue
 		}
 		
-		// 标题
+		// 标题 - 处理可能被翻译的标题（如 "[TRANSLATED] # Title"）
+		headingMatch := false
+		headingContent := ""
+		headingLevel := 0
+		
+		// 尝试匹配标准 Markdown 标题
 		if strings.HasPrefix(trimmed, "#") {
 			level := 0
 			for _, r := range trimmed {
@@ -209,10 +214,27 @@ func simpleMarkdownToHTML(markdown string) string {
 				}
 			}
 			if level > 0 && level <= 6 {
-				content := strings.TrimSpace(trimmed[level:])
-				result.WriteString(fmt.Sprintf("<h%d>%s</h%d>\n", level, content, level))
-				continue
+				headingMatch = true
+				headingLevel = level
+				headingContent = strings.TrimSpace(trimmed[level:])
 			}
+		} else {
+			// 检查是否包含 Markdown 标题（可能在翻译后的文本中）
+			for i := 1; i <= 6; i++ {
+				prefix := strings.Repeat("#", i) + " "
+				if idx := strings.Index(line, prefix); idx >= 0 {
+					headingMatch = true
+					headingLevel = i
+					// 提取标题内容，去掉 # 和前面的内容
+					headingContent = strings.TrimSpace(line[idx+len(prefix):])
+					break
+				}
+			}
+		}
+		
+		if headingMatch {
+			result.WriteString(fmt.Sprintf("<h%d>%s</h%d>\n", headingLevel, processInlineMarkdown(headingContent), headingLevel))
+			continue
 		}
 		
 		// 列表

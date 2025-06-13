@@ -54,18 +54,19 @@ func (p *Processor) Process(ctx context.Context, doc *document.Document, transla
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	errors := make([]error, 0)
+	
+	// 预分配块数组以保持顺序
+	processedDoc.Blocks = make([]document.Block, len(doc.Blocks))
 
-	for _, block := range doc.Blocks {
+	for i, block := range doc.Blocks {
 		if !block.IsTranslatable() {
 			// 不可翻译的块直接复制
-			mu.Lock()
-			processedDoc.Blocks = append(processedDoc.Blocks, block)
-			mu.Unlock()
+			processedDoc.Blocks[i] = block
 			continue
 		}
 
 		wg.Add(1)
-		go func(b document.Block) {
+		go func(idx int, b document.Block) {
 			defer wg.Done()
 
 			// 翻译块内容
@@ -85,10 +86,9 @@ func (p *Processor) Process(ctx context.Context, doc *document.Document, transla
 				Metadata:     b.GetMetadata(),
 			}
 
-			mu.Lock()
-			processedDoc.Blocks = append(processedDoc.Blocks, newBlock)
-			mu.Unlock()
-		}(block)
+			// 使用索引来保持顺序
+			processedDoc.Blocks[idx] = newBlock
+		}(i, block)
 	}
 
 	wg.Wait()

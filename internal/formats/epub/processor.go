@@ -12,16 +12,50 @@ import (
 	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
 )
 
+// ProcessingMode EPUB 处理模式
+type ProcessingMode string
+
+const (
+	// ModeMarkdown 通过 Markdown 转换模式（对应 HTML 的 Markdown 模式）
+	ModeMarkdown ProcessingMode = "markdown"
+	// ModeNative 原生处理模式（对应 HTML 的原生模式）
+	ModeNative ProcessingMode = "native"
+	// ModeAuto 自动选择模式
+	ModeAuto ProcessingMode = "auto"
+)
+
 // Processor EPUB 格式处理器
 type Processor struct {
 	*base.Processor
 	htmlProcessor document.Processor
+	mode          ProcessingMode
 }
 
 // NewProcessor 创建 EPUB 处理器
 func NewProcessor(opts document.ProcessorOptions) (*Processor, error) {
-	// 使用 Markdown 模式的 HTML 处理器
-	htmlProcessor, err := html.ProcessorWithMode(html.ModeMarkdown, opts)
+	// 从选项中获取处理模式
+	mode := ModeAuto
+	if opts.Metadata != nil {
+		if m, ok := opts.Metadata["epub_mode"].(string); ok {
+			mode = ProcessingMode(m)
+		}
+	}
+	
+	// 根据模式创建对应的 HTML 处理器
+	var htmlMode html.ProcessingMode
+	switch mode {
+	case ModeMarkdown:
+		htmlMode = html.ModeMarkdown
+	case ModeNative:
+		htmlMode = html.ModeNative
+	case ModeAuto:
+		// 默认使用 Markdown 模式
+		htmlMode = html.ModeMarkdown
+		mode = ModeMarkdown
+	}
+	
+	// 创建 HTML 处理器
+	htmlProcessor, err := html.ProcessorWithMode(htmlMode, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTML processor: %w", err)
 	}
@@ -35,6 +69,7 @@ func NewProcessor(opts document.ProcessorOptions) (*Processor, error) {
 	return &Processor{
 		Processor:     baseProcessor,
 		htmlProcessor: htmlProcessor,
+		mode:          mode,
 	}, nil
 }
 
@@ -120,4 +155,15 @@ func Factory(opts document.ProcessorOptions) (document.Processor, error) {
 // init 注册 EPUB 处理器
 func init() {
 	document.Register(document.FormatEPUB, Factory)
+}
+
+// ProcessorWithMode 创建指定模式的 EPUB 处理器
+func ProcessorWithMode(mode ProcessingMode, opts document.ProcessorOptions) (document.Processor, error) {
+	// 设置模式到选项中
+	if opts.Metadata == nil {
+		opts.Metadata = make(map[string]interface{})
+	}
+	opts.Metadata["epub_mode"] = string(mode)
+	
+	return Factory(opts)
 }
