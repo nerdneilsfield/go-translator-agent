@@ -29,6 +29,9 @@ type Config struct {
 	// 缓存配置
 	EnableCache bool   `json:"enable_cache"`
 	CacheDir    string `json:"cache_dir"`
+	
+	// 元数据
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // StepConfig 翻译步骤配置
@@ -181,3 +184,12 @@ Feedback:
 
 Please provide an improved translation that addresses the feedback.`
 )
+
+// StepSetConfig 步骤集配置
+type StepSetConfig struct {
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	Initial     StepConfig `json:"initial"`
+	Reflection  StepConfig `json:"reflection"`
+	Improvement StepConfig `json:"improvement"`
+}

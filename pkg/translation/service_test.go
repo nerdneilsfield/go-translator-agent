@@ -103,24 +103,28 @@ func NewMockCache() *MockCache {
 	}
 }
 
-func (m *MockCache) Get(ctx context.Context, key string) (string, bool, error) {
+func (m *MockCache) Get(key string) (string, bool) {
 	val, ok := m.data[key]
-	return val, ok, nil
+	return val, ok
 }
 
-func (m *MockCache) Set(ctx context.Context, key string, value string) error {
+func (m *MockCache) Set(key string, value string) error {
 	m.data[key] = value
 	return nil
 }
 
-func (m *MockCache) Delete(ctx context.Context, key string) error {
+func (m *MockCache) Delete(key string) error {
 	delete(m.data, key)
 	return nil
 }
 
-func (m *MockCache) Clear(ctx context.Context) error {
+func (m *MockCache) Clear() error {
 	m.data = make(map[string]string)
 	return nil
+}
+
+func (m *MockCache) Stats() translation.CacheStats {
+	return translation.CacheStats{}
 }
 
 // TestNewService 测试创建服务
@@ -237,7 +241,7 @@ func TestTranslate(t *testing.T) {
 			name: "with metadata",
 			req: &translation.Request{
 				Text: "Test translation",
-				Metadata: map[string]string{
+				Metadata: map[string]interface{}{
 					"source": "test",
 					"id":     "123",
 				},

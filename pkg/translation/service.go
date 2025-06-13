@@ -116,7 +116,7 @@ func (s *service) Translate(ctx context.Context, req *Request) (*Response, error
 	resp := &Response{
 		SourceLanguage: s.config.SourceLanguage,
 		TargetLanguage: s.config.TargetLanguage,
-		Metadata:       make(map[string]string),
+		Metadata:       make(map[string]interface{}),
 	}
 
 	// 覆盖语言设置（如果请求中指定）

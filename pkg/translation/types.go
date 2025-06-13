@@ -15,11 +15,20 @@ type Request struct {
 	// TargetLanguage 目标语言（可选，覆盖默认配置）
 	TargetLanguage string `json:"target_language,omitempty"`
 
+	// Model 使用的模型
+	Model string `json:"model,omitempty"`
+
+	// Temperature 温度参数
+	Temperature float32 `json:"temperature,omitempty"`
+
+	// MaxTokens 最大令牌数
+	MaxTokens int `json:"max_tokens,omitempty"`
+
 	// Options 额外选项
 	Options map[string]interface{} `json:"options,omitempty"`
 
 	// Metadata 元数据
-	Metadata map[string]string `json:"metadata,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // Response 翻译响应
@@ -33,6 +42,9 @@ type Response struct {
 	// TargetLanguage 目标语言
 	TargetLanguage string `json:"target_language"`
 
+	// Usage 使用情况
+	Usage Usage `json:"usage,omitempty"`
+
 	// Steps 各步骤的结果
 	Steps []StepResult `json:"steps,omitempty"`
 
@@ -40,7 +52,7 @@ type Response struct {
 	Metrics *TranslationMetrics `json:"metrics,omitempty"`
 
 	// Metadata 元数据
-	Metadata map[string]string `json:"metadata,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // StepResult 步骤结果
@@ -212,4 +224,10 @@ type Progress struct {
 	Completed int    `json:"completed"`
 	Current   string `json:"current"`
 	Percent   float64 `json:"percent"`
+}
+
+// Usage 使用情况
+type Usage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
 }

@@ -79,16 +79,28 @@ type TranslationProvider interface {
 // Cache 缓存接口
 type Cache interface {
 	// Get 获取缓存
-	Get(ctx context.Context, key string) (string, bool, error)
+	Get(key string) (string, bool)
 
 	// Set 设置缓存
-	Set(ctx context.Context, key string, value string) error
+	Set(key string, value string) error
 
 	// Delete 删除缓存
-	Delete(ctx context.Context, key string) error
+	Delete(key string) error
 
 	// Clear 清除所有缓存
-	Clear(ctx context.Context) error
+	Clear() error
+
+	// Stats 获取缓存统计信息
+	Stats() CacheStats
+}
+
+// Provider 翻译提供者接口
+type Provider interface {
+	// Name 返回提供者名称
+	Name() string
+	
+	// Translate 执行翻译
+	Translate(ctx context.Context, req *Request) (*Response, error)
 }
 
 // MetricsCollector 指标收集器接口
@@ -134,4 +146,11 @@ type Chunker interface {
 type ChunkConfig struct {
 	Size    int // 块大小
 	Overlap int // 重叠大小
+}
+
+// CacheStats 缓存统计信息
+type CacheStats struct {
+	Hits   int64
+	Misses int64
+	Size   int64
 }

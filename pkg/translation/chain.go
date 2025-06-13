@@ -204,7 +204,7 @@ func (s *step) executeWithProvider(ctx context.Context, input StepInput) (*StepO
 	// 检查缓存
 	cacheKey := s.getCacheKeyForProvider(input)
 	if s.cache != nil {
-		if cached, found, err := s.cache.Get(ctx, cacheKey); err == nil && found {
+		if cached, found := s.cache.Get(cacheKey); found {
 			return &StepOutput{
 				Text:  cached,
 				Model: s.provider.GetName(),
@@ -242,7 +242,7 @@ func (s *step) executeWithProvider(ctx context.Context, input StepInput) (*StepO
 	
 	// 缓存结果
 	if s.cache != nil {
-		_ = s.cache.Set(ctx, cacheKey, output.Text)
+		_ = s.cache.Set(cacheKey, output.Text)
 	}
 	
 	return output, nil
@@ -256,7 +256,7 @@ func (s *step) executeWithLLM(ctx context.Context, input StepInput) (*StepOutput
 	// 检查缓存
 	if s.cache != nil {
 		cacheKey := s.getCacheKey(prompt)
-		if cached, found, err := s.cache.Get(ctx, cacheKey); err == nil && found {
+		if cached, found := s.cache.Get(cacheKey); found {
 			return &StepOutput{
 				Text:  cached,
 				Model: s.config.Model,
@@ -306,7 +306,7 @@ func (s *step) executeWithLLM(ctx context.Context, input StepInput) (*StepOutput
 	// 缓存结果
 	if s.cache != nil {
 		cacheKey := s.getCacheKey(prompt)
-		_ = s.cache.Set(ctx, cacheKey, output.Text)
+		_ = s.cache.Set(cacheKey, output.Text)
 	}
 	
 	return output, nil
