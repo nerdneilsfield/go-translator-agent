@@ -29,23 +29,76 @@ func ConvertConfig(cfg *config.Config) (*translation.Config, error) {
 
 	// 转换翻译步骤
 	if cfg.ActiveStepSet != "" {
-		// 如果指定了步骤集但没有找到，返回错误
-		if len(cfg.StepSets) == 0 {
+		// 优先检查新格式的步骤集
+		if cfg.StepSetsV2 != nil {
+			if stepSetV2, exists := cfg.StepSetsV2[cfg.ActiveStepSet]; exists {
+				translationConfig.Steps = convertStepSetV2(stepSetV2, cfg)
+				return translationConfig, nil
+			}
+		}
+		
+		// 检查旧格式的步骤集
+		if len(cfg.StepSets) == 0 && (cfg.StepSetsV2 == nil || len(cfg.StepSetsV2) == 0) {
 			return nil, fmt.Errorf("no step sets defined")
 		}
 		
-		stepSet, exists := cfg.StepSets[cfg.ActiveStepSet]
-		if !exists {
+		if stepSet, exists := cfg.StepSets[cfg.ActiveStepSet]; exists {
+			translationConfig.Steps = convertStepSet(stepSet, cfg)
+		} else {
 			return nil, fmt.Errorf("step set %s not found", cfg.ActiveStepSet)
 		}
-
-		translationConfig.Steps = convertStepSet(stepSet, cfg)
 	} else {
 		// 使用默认三步配置
 		translationConfig.Steps = createDefaultSteps(cfg)
 	}
 
 	return translationConfig, nil
+}
+
+// convertStepSetV2 转换新格式的步骤集配置
+func convertStepSetV2(stepSet config.StepSetConfigV2, cfg *config.Config) []translation.StepConfig {
+	steps := make([]translation.StepConfig, 0, len(stepSet.Steps))
+
+	for _, step := range stepSet.Steps {
+		stepConfig := translation.StepConfig{
+			Name:        step.Name,
+			Provider:    step.Provider,
+			Model:       step.ModelName,
+			Temperature: float32(step.Temperature),
+			MaxTokens:   step.MaxTokens,
+			Timeout:     time.Duration(step.Timeout) * time.Second,
+			Prompt:      step.Prompt,
+			SystemRole:  step.SystemRole,
+			Variables:   step.Variables,
+		}
+
+		// 如果没有指定提供商，从模型名称推断
+		if stepConfig.Provider == "" {
+			modelConfig := getModelConfig(step.ModelName, cfg)
+			stepConfig.Provider = determineProviderFromModel(step.ModelName, modelConfig)
+		}
+
+		// 如果没有设置超时，使用默认值
+		if stepConfig.Timeout == 0 {
+			stepConfig.Timeout = time.Duration(cfg.TranslationTimeout) * time.Second
+		}
+
+		// 如果没有设置最大令牌数，使用默认值
+		if stepConfig.MaxTokens == 0 {
+			stepConfig.MaxTokens = 4096
+		}
+
+		// 合并基础变量
+		if stepConfig.Variables == nil {
+			stepConfig.Variables = make(map[string]string)
+		}
+		stepConfig.Variables["source"] = cfg.SourceLang
+		stepConfig.Variables["target"] = cfg.TargetLang
+
+		steps = append(steps, stepConfig)
+	}
+
+	return steps
 }
 
 // convertStepSet 转换步骤集配置
@@ -206,6 +259,16 @@ func inferProviderFromModel(model string) string {
 	default:
 		return "openai" // 默认使用 OpenAI
 	}
+}
+
+// InferProviderFromModel 导出的推断函数（用于测试）
+func InferProviderFromModel(model string) string {
+	return inferProviderFromModel(model)
+}
+
+// ConvertStepSetV2 导出的转换函数（用于测试）
+func ConvertStepSetV2(stepSet config.StepSetConfigV2, cfg *config.Config) []translation.StepConfig {
+	return convertStepSetV2(stepSet, cfg)
 }
 
 // getModelConfig 获取模型配置

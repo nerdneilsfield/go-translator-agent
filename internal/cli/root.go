@@ -288,8 +288,25 @@ func handleListCommands(cmd *cobra.Command, args []string, log *zap.Logger) {
 
 	if listStepSets {
 		fmt.Println("可用的步骤集:")
-		for _, ss := range cfg.StepSets {
-			fmt.Printf("  - %s: %s\n", ss.ID, ss.Description)
+		
+		// 显示新格式的步骤集
+		if cfg.StepSetsV2 != nil && len(cfg.StepSetsV2) > 0 {
+			fmt.Println("\n新格式步骤集（支持多提供商）:")
+			for _, ss := range cfg.StepSetsV2 {
+				fmt.Printf("  - %s: %s\n", ss.ID, ss.Description)
+				for i, step := range ss.Steps {
+					fmt.Printf("      步骤 %d: %s (提供商: %s, 模型: %s)\n", 
+						i+1, step.Name, step.Provider, step.ModelName)
+				}
+			}
+		}
+		
+		// 显示旧格式的步骤集
+		if len(cfg.StepSets) > 0 {
+			fmt.Println("\n传统步骤集:")
+			for _, ss := range cfg.StepSets {
+				fmt.Printf("  - %s: %s\n", ss.ID, ss.Description)
+			}
 		}
 		return
 	}

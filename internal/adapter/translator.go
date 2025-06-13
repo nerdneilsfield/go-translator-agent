@@ -97,9 +97,15 @@ func (t *TranslatorAdapter) Translate(text string, retryFailedParts bool) (strin
 		return "", err
 	}
 
+	// 检查并处理推理模型的输出
+	translatedText := resp.Text
+	if t.shouldRemoveReasoning() {
+		translatedText = t.removeReasoningFromResult(translatedText)
+	}
+
 	// 记录统计信息（暂时禁用，需要正确的 zap fields）
 
-	return resp.Text, nil
+	return translatedText, nil
 }
 
 // GetLogger 返回日志记录器
@@ -147,5 +153,92 @@ func (t *TranslatorAdapter) Finish() {
 	}
 	
 	// 标记进度为完成（进度跟踪器没有该方法）
+}
+
+// shouldRemoveReasoning 检查是否需要移除推理过程
+func (t *TranslatorAdapter) shouldRemoveReasoning() bool {
+	// 检查当前活动的步骤集中是否有任何推理模型
+	if t.config.ActiveStepSet == "" {
+		return false
+	}
+
+	// 检查新格式步骤集
+	if stepSetV2, exists := t.config.StepSetsV2[t.config.ActiveStepSet]; exists {
+		for _, step := range stepSetV2.Steps {
+			if modelConfig, ok := t.config.ModelConfigs[step.ModelName]; ok {
+				if modelConfig.IsReasoning {
+					return true
+				}
+			}
+		}
+	}
+
+	// 检查旧格式步骤集
+	if stepSet, exists := t.config.StepSets[t.config.ActiveStepSet]; exists {
+		modelsToCheck := []string{
+			stepSet.InitialTranslation.ModelName,
+			stepSet.Reflection.ModelName,
+			stepSet.Improvement.ModelName,
+		}
+		for _, modelName := range modelsToCheck {
+			if modelName != "" && modelName != "none" {
+				if modelConfig, ok := t.config.ModelConfigs[modelName]; ok {
+					if modelConfig.IsReasoning {
+						return true
+					}
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+// removeReasoningFromResult 从结果中移除推理过程
+func (t *TranslatorAdapter) removeReasoningFromResult(content string) string {
+	// 收集所有可能的推理标记
+	var allTags []string
+	tagsMap := make(map[string]bool)
+
+	// 从步骤集中收集模型的推理标记
+	if stepSetV2, exists := t.config.StepSetsV2[t.config.ActiveStepSet]; exists {
+		for _, step := range stepSetV2.Steps {
+			if modelConfig, ok := t.config.ModelConfigs[step.ModelName]; ok {
+				if modelConfig.IsReasoning && len(modelConfig.ReasoningTags) > 0 {
+					for _, tag := range modelConfig.ReasoningTags {
+						if !tagsMap[tag] {
+							allTags = append(allTags, tag)
+							tagsMap[tag] = true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if stepSet, exists := t.config.StepSets[t.config.ActiveStepSet]; exists {
+		modelsToCheck := []string{
+			stepSet.InitialTranslation.ModelName,
+			stepSet.Reflection.ModelName,
+			stepSet.Improvement.ModelName,
+		}
+		for _, modelName := range modelsToCheck {
+			if modelName != "" && modelName != "none" {
+				if modelConfig, ok := t.config.ModelConfigs[modelName]; ok {
+					if modelConfig.IsReasoning && len(modelConfig.ReasoningTags) > 0 {
+						for _, tag := range modelConfig.ReasoningTags {
+							if !tagsMap[tag] {
+								allTags = append(allTags, tag)
+								tagsMap[tag] = true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 使用收集到的标记移除推理过程
+	return translation.RemoveReasoningProcess(content, allTags)
 }
 

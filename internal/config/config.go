@@ -9,17 +9,19 @@ import (
 
 // ModelConfig 保存模型配置
 type ModelConfig struct {
-	Name             string  `mapstructure:"name"`
-	ModelID          string  `mapstructure:"model_id"`
-	APIType          string  `mapstructure:"api_type"`
-	BaseURL          string  `mapstructure:"base_url"`
-	Key              string  `mapstructure:"key"`
-	MaxOutputTokens  int     `mapstructure:"max_output_tokens"`
-	MaxInputTokens   int     `mapstructure:"max_input_tokens"`
-	Temperature      float64 `mapstructure:"temperature"`
-	InputTokenPrice  float64 `mapstructure:"input_token_price"`  // 1M Token 的价格
-	OutputTokenPrice float64 `mapstructure:"output_token_price"` // 1M Token 的价格
-	PriceUnit        string  `mapstructure:"price_unit"`         // 价格单位
+	Name             string   `mapstructure:"name"`
+	ModelID          string   `mapstructure:"model_id"`
+	APIType          string   `mapstructure:"api_type"`
+	BaseURL          string   `mapstructure:"base_url"`
+	Key              string   `mapstructure:"key"`
+	MaxOutputTokens  int      `mapstructure:"max_output_tokens"`
+	MaxInputTokens   int      `mapstructure:"max_input_tokens"`
+	Temperature      float64  `mapstructure:"temperature"`
+	InputTokenPrice  float64  `mapstructure:"input_token_price"`  // 1M Token 的价格
+	OutputTokenPrice float64  `mapstructure:"output_token_price"` // 1M Token 的价格
+	PriceUnit        string   `mapstructure:"price_unit"`         // 价格单位
+	IsReasoning      bool     `mapstructure:"is_reasoning"`       // 是否是推理模型
+	ReasoningTags    []string `mapstructure:"reasoning_tags"`     // 推理过程标记（如 ["<think>", "</think>"]）
 }
 
 // StepConfig 保存步骤配置
@@ -48,6 +50,7 @@ type Config struct {
 	DefaultModelName        string                   `mapstructure:"default_model_name"`
 	ModelConfigs            map[string]ModelConfig   `mapstructure:"models"`
 	StepSets                map[string]StepSetConfig `mapstructure:"step_sets"`
+	StepSetsV2              map[string]StepSetConfigV2 `mapstructure:"step_sets_v2"` // 新格式的步骤集
 	ActiveStepSet           string                   `mapstructure:"active_step_set"`
 	MaxTokensPerChunk       int                      `mapstructure:"max_tokens_per_chunk"`
 	CacheDir                string                   `mapstructure:"cache_dir"`
@@ -167,6 +170,7 @@ func NewDefaultConfig() *Config {
 		DefaultModelName:        "gpt-3.5-turbo",
 		ModelConfigs:            DefaultModelConfigs(),
 		StepSets:                DefaultStepSets(),
+		StepSetsV2:              GetDefaultStepSetsV2(),
 		ActiveStepSet:           "basic",
 		MaxTokensPerChunk:       2000,
 		CacheDir:                "",
@@ -210,6 +214,7 @@ func DefaultModelConfigs() map[string]ModelConfig {
 			InputTokenPrice:  0.5,
 			OutputTokenPrice: 1.5,
 			PriceUnit:        "USD",
+			IsReasoning:      false,
 		},
 		"gpt-4o": {
 			Name:             "gpt-4",
@@ -223,16 +228,74 @@ func DefaultModelConfigs() map[string]ModelConfig {
 			InputTokenPrice:  2.5,
 			OutputTokenPrice: 10,
 			PriceUnit:        "USD",
+			IsReasoning:      false,
+		},
+		"o1-preview": {
+			Name:             "o1-preview",
+			ModelID:          "o1-preview",
+			APIType:          "openai",
+			BaseURL:          "",
+			Key:              "",
+			MaxOutputTokens:  32768,
+			MaxInputTokens:   128000,
+			Temperature:      1,
+			InputTokenPrice:  15,
+			OutputTokenPrice: 60,
+			PriceUnit:        "USD",
+			IsReasoning:      true,
+			// OpenAI o1 的内部推理已经被隐藏，API 不会返回
+		},
+		"o1-mini": {
+			Name:             "o1-mini",
+			ModelID:          "o1-mini",
+			APIType:          "openai",
+			BaseURL:          "",
+			Key:              "",
+			MaxOutputTokens:  65536,
+			MaxInputTokens:   128000,
+			Temperature:      1,
+			InputTokenPrice:  3,
+			OutputTokenPrice: 12,
+			PriceUnit:        "USD",
+			IsReasoning:      true,
+		},
+		"deepseek-r1": {
+			Name:             "deepseek-r1",
+			ModelID:          "deepseek-r1",
+			APIType:          "openai",
+			BaseURL:          "https://api.deepseek.com/v1",
+			Key:              "",
+			MaxOutputTokens:  8192,
+			MaxInputTokens:   32768,
+			Temperature:      0.7,
+			InputTokenPrice:  0.14,
+			OutputTokenPrice: 2.19,
+			PriceUnit:        "USD",
+			IsReasoning:      true,
+			ReasoningTags:    []string{"<think>", "</think>"},
+		},
+		"qwq-32b": {
+			Name:             "qwq-32b",
+			ModelID:          "qwq-32b-preview",
+			APIType:          "openai",
+			BaseURL:          "",
+			Key:              "",
+			MaxOutputTokens:  32768,
+			MaxInputTokens:   32768,
+			Temperature:      0.7,
+			IsReasoning:      true,
+			ReasoningTags:    []string{"<think>", "</think>"},
 		},
 		"qwen-plus": {
 			Name:            "qwen-plus",
 			ModelID:         "qwen-plus",
-			APIType:         "openai-reasoning",
+			APIType:         "openai",
 			BaseURL:         "https://dashscope.aliyuncs.com/compatible-mode/v1",
 			Key:             "",
 			MaxOutputTokens: 8192,
 			MaxInputTokens:  8192,
 			Temperature:     0.7,
+			IsReasoning:     false,
 		},
 		"claude-3-opus": {
 			Name:            "claude-3-opus",
@@ -243,6 +306,7 @@ func DefaultModelConfigs() map[string]ModelConfig {
 			MaxOutputTokens: 4096,
 			MaxInputTokens:  4096,
 			Temperature:     0.7,
+			IsReasoning:     false,
 		},
 		"claude-3-sonnet": {
 			Name:            "claude-3-sonnet",
@@ -253,6 +317,7 @@ func DefaultModelConfigs() map[string]ModelConfig {
 			MaxOutputTokens: 4096,
 			MaxInputTokens:  4096,
 			Temperature:     0.7,
+			IsReasoning:     false,
 		},
 		"mistral-large": {
 			Name:            "mistral-large",
@@ -263,6 +328,7 @@ func DefaultModelConfigs() map[string]ModelConfig {
 			MaxOutputTokens: 8192,
 			MaxInputTokens:  8192,
 			Temperature:     0.7,
+			IsReasoning:     false,
 		},
 	}
 }
@@ -366,6 +432,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("usd_rmb_rate", 7.4)
 	v.SetDefault("keep_intermediate_files", false)
 	v.SetDefault("save_debug_info", false)
+	
+	// 设置默认的新格式步骤集
+	v.SetDefault("step_sets_v2", GetDefaultStepSetsV2())
 }
 
 // structToMap 将结构体转换为map
@@ -377,6 +446,7 @@ func structToMap(config *Config) map[string]interface{} {
 		"default_model_name":        config.DefaultModelName,
 		"models":                    config.ModelConfigs,
 		"step_sets":                 config.StepSets,
+		"step_sets_v2":              config.StepSetsV2,
 		"active_step_set":           config.ActiveStepSet,
 		"max_tokens_per_chunk":      config.MaxTokensPerChunk,
 		"cache_dir":                 config.CacheDir,
