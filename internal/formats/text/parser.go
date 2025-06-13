@@ -258,9 +258,10 @@ func endsWithSentence(text string) bool {
 		return false
 	}
 	
-	lastChar := text[len(text)-1]
-	return lastChar == '.' || lastChar == '!' || lastChar == '?' ||
-		lastChar == '。' || lastChar == '！' || lastChar == '？'
+	runes := []rune(text)
+	lastRune := runes[len(runes)-1]
+	return lastRune == '.' || lastRune == '!' || lastRune == '?' ||
+		lastRune == '。' || lastRune == '！' || lastRune == '？'
 }
 
 // generateDocumentID 生成文档ID
