@@ -8,8 +8,15 @@
 - 混合提供商支持（如 DeepL + OpenAI 组合）
 - 完整的测试和文档
 
+### ✅ 已完成（第二阶段 - Day 1-3）
+- 适配层完整实现（TranslatorAdapter、ConfigAdapter、ProviderFactory）
+- CLI 成功迁移到新架构
+- 新增 --provider 和 --stream 选项
+- 完整的测试覆盖
+
 ### 🚧 进行中（第二阶段：1月14-21日）
-- **本周重点**: 适配层实现和 CLI 迁移
+- **已完成**: Day 1-3 适配层和 CLI 迁移 ✅
+- **当前重点**: Day 4 测试和优化
 - **下周目标**: 格式处理器迁移和优化
 
 ### 📅 计划中
@@ -85,34 +92,34 @@
 
 ### Week 1: 适配层实现（1月14-17日）
 
-#### Day 1-2: 基础适配层
-- [ ] 创建 internal/adapter 包结构
-  - [ ] translator.go - 旧 Translator 接口到新 Service 接口的适配
-  - [ ] config.go - Viper 配置到 translation.Config 的转换
-  - [ ] factory.go - 根据配置创建提供商和服务
-  - [ ] errors.go - 错误类型转换
-- [ ] 实现核心适配逻辑
-  - [ ] TranslatorAdapter 实现旧接口
-  - [ ] 配置映射和验证
-  - [ ] 提供商选择逻辑
-- [ ] 单元测试
-  - [ ] 适配器行为测试
-  - [ ] 配置转换测试
-  - [ ] 错误处理测试
+#### Day 1-2: 基础适配层 ✅
+- [x] 创建 internal/adapter 包结构
+  - [x] translator.go - 旧 Translator 接口到新 Service 接口的适配
+  - [x] config.go - Viper 配置到 translation.Config 的转换
+  - [x] factory.go - 根据配置创建提供商和服务
+  - [x] errors.go - 错误类型转换
+- [x] 实现核心适配逻辑
+  - [x] TranslatorAdapter 实现旧接口
+  - [x] 配置映射和验证
+  - [x] 提供商选择逻辑
+- [x] 单元测试
+  - [x] 适配器行为测试
+  - [x] 配置转换测试
+  - [x] 错误处理测试
 
-#### Day 3: CLI 迁移
-- [ ] 更新 internal/cli/translate.go
-  - [ ] 使用新的适配器
-  - [ ] 保持命令行参数兼容
-  - [ ] 添加 --provider 选项
-  - [ ] 添加 --stream 选项（流式输出）
-- [ ] 更新配置加载逻辑
-  - [ ] 支持新旧配置格式
-  - [ ] 环境变量映射
-  - [ ] 配置验证和迁移提示
-- [ ] 集成测试
-  - [ ] CLI 命令测试
-  - [ ] 配置兼容性测试
+#### Day 3: CLI 迁移 ✅
+- [x] 更新 internal/cli/root.go
+  - [x] 使用新的适配器
+  - [x] 保持命令行参数兼容
+  - [x] 添加 --provider 选项
+  - [x] 添加 --stream 选项（流式输出）
+- [x] 更新配置加载逻辑
+  - [x] 支持新旧配置格式
+  - [x] 环境变量映射
+  - [x] 配置验证和迁移提示
+- [x] 集成测试
+  - [x] CLI 命令测试
+  - [x] 配置兼容性测试
 
 #### Day 4: 测试和优化
 - [ ] 端到端测试
@@ -357,9 +364,14 @@
 - ✅ 支持混合提供商模式
 - ✅ 创建详细的重构计划
 
-### 2025-01-14（计划）
-- [ ] 创建 internal/adapter 包结构
-- [ ] 实现 TranslatorAdapter
-- [ ] 开始配置转换器实现
+### 2025-01-14
+- ✅ 创建 internal/adapter 包结构
+- ✅ 实现 TranslatorAdapter
+- ✅ 实现配置转换器
+- ✅ 实现提供商工厂
+- ✅ 实现错误处理
+- ✅ 更新 CLI 使用新适配器
+- ✅ 添加 --provider 和 --stream 选项
+- ✅ 编写完整的测试套件
 
 （每日更新进度...）
