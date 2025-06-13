@@ -537,3 +537,148 @@ translator, err := translation.New(config,
 5. 逐步实施各阶段计划
 
 这个重构计划旨在将 go-translator-agent 提升到企业级项目标准，同时保持其易用性和灵活性。通过渐进式的迁移策略，我们可以在不影响现有用户的情况下完成整个重构过程。
+
+## 十一、最新进展更新（2025年1月13日）
+
+### 已完成的里程碑 ✅
+
+#### 1. 核心 translation 包
+- **完全独立**: 无 viper 或其他外部配置依赖
+- **接口设计**: Service、Chain、Step、LLMClient 等核心接口
+- **三步翻译**: 支持配置化的多步骤翻译流程
+- **智能分块**: 保持代码块、列表等结构完整性
+- **完整测试**: 100% 核心功能测试覆盖
+
+#### 2. 提供商生态系统
+- **Provider 接口**: 统一的提供商抽象
+- **5 个实现**:
+  ```
+  ├── OpenAI (v1: 自定义实现)
+  ├── OpenAI (v2: 官方 SDK + 流式支持) ✨
+  ├── Google Translate (100+ 语言)
+  ├── DeepL (专业翻译)
+  ├── DeepLX (免费替代)
+  └── LibreTranslate (开源方案)
+  ```
+- **混合模式**: 支持不同步骤使用不同提供商
+
+#### 3. 创新功能
+- **流式翻译**: OpenAI v2 支持实时流式输出
+- **灵活组合**: 如 DeepL 初译 + GPT-4 润色
+- **提供商注册表**: 动态注册和发现机制
+
+### 下一阶段实施计划（1月14-21日）
+
+#### 第一周：适配层和 CLI（1月14-17日）
+
+**Day 1-2: 适配层架构**
+```
+internal/
+├── adapter/
+│   ├── translator.go    # 核心适配器
+│   ├── config.go        # 配置转换器
+│   └── factory.go       # 提供商工厂
+└── app/
+    └── translator.go    # 应用层封装
+```
+
+**Day 3: CLI 迁移**
+- 保持命令行接口不变
+- 内部调用新的 translation 包
+- 添加 `--provider` 选项支持
+
+**Day 4: 集成测试**
+- 验证新旧系统行为一致
+- 性能基准对比
+
+#### 第二周：格式处理器和优化（1月18-21日）
+
+**Day 5-6: 格式处理器迁移**
+- Markdown → 新接口
+- Text → 新接口
+- EPUB/HTML → 新接口
+
+**Day 7: 缓存和监控**
+- 实现 FileCache
+- 添加 Prometheus 指标
+
+**Day 8: 文档和发布**
+- 更新用户文档
+- 创建迁移指南
+- 准备 v2.0 发布
+
+### 技术架构决策
+
+#### 1. 配置兼容性
+```yaml
+# 旧格式（继续支持）
+models:
+  default: gpt-3.5-turbo
+  steps:
+    - name: translate
+      model: gpt-4
+
+# 新格式（推荐）
+translation:
+  provider: openai  # 或 mixed
+  steps:
+    - name: initial
+      provider: deepl
+    - name: improve
+      provider: openai
+      model: gpt-4
+```
+
+#### 2. 依赖注入策略
+```go
+// 应用层使用依赖注入容器
+type App struct {
+    translator translation.Service
+    cache      cache.Cache
+    metrics    metrics.Collector
+}
+
+// 通过 Wire 或手动注入
+func NewApp(cfg *config.Config) (*App, error) {
+    // 根据配置创建依赖
+}
+```
+
+#### 3. 特性开关
+```go
+// 环境变量控制
+USE_NEW_TRANSLATOR=true  # 启用新系统
+TRANSLATOR_DEBUG=true    # 详细日志
+```
+
+### 风险缓解措施
+
+1. **回滚计划**
+   - Git 分支策略：feature/translator-v2
+   - 保留旧实现至少 3 个版本
+   - 快速切换机制
+
+2. **性能保证**
+   - 基准测试：每个 PR 必须通过
+   - 内存分析：避免额外分配
+   - 并发测试：验证线程安全
+
+3. **用户沟通**
+   - 提前发布 Beta 版本
+   - 详细的升级指南
+   - 社区反馈渠道
+
+### 成功指标
+
+- [ ] 所有现有测试通过
+- [ ] 性能提升 10%+（得益于更好的并发）
+- [ ] 零 Breaking Changes（用户端）
+- [ ] 新功能采用率 > 30%（3个月内）
+
+### 长期愿景
+
+这次重构为未来功能奠定基础：
+- **插件系统**: 用户自定义提供商
+- **Web API**: RESTful/gRPC 服务
+- **更多提供商**: Anthropic、Baidu、ChatGLM
+- **高级功能**: 术语库、翻译记忆库
