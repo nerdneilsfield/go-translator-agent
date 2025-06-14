@@ -144,50 +144,98 @@ func (s *service) Translate(ctx context.Context, req *Request) (*Response, error
 		defer s.options.progressTracker.Complete()
 	}
 
-	// 处理每个块
-	var translatedChunks []string
-	var totalTokensIn, totalTokensOut int
-	var allSteps []StepResult
+	// 并行处理每个块
+	type chunkResult struct {
+		index      int
+		output     string
+		chainResult *ChainResult
+		err        error
+	}
+
+	resultChan := make(chan chunkResult, chunkCount)
+	var wg sync.WaitGroup
+
+	// 限制并发数（对于块翻译）
+	semaphore := make(chan struct{}, s.config.MaxConcurrency)
 
 	for i, chunk := range chunks {
-		// 更新进度
-		if s.options.progressTracker != nil {
-			s.options.progressTracker.Update(i, fmt.Sprintf("Processing chunk %d/%d", i+1, chunkCount))
-		}
-		if s.options.progressCallback != nil {
-			s.options.progressCallback(&Progress{
-				Total:     chunkCount,
-				Completed: i,
-				Current:   fmt.Sprintf("chunk_%d", i+1),
-				Percent:   float64(i) / float64(chunkCount) * 100,
-			})
-		}
+		wg.Add(1)
+		go func(idx int, text string) {
+			defer wg.Done()
 
-		// 执行翻译链
-		chainResult, err := s.chain.Execute(ctx, chunk)
-		if err != nil {
-			if s.options.errorHandler != nil {
-				s.options.errorHandler(err)
-			}
+			// 获取信号量
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+
+			// 更新进度
 			if s.options.progressTracker != nil {
-				s.options.progressTracker.Error(err)
+				s.options.progressTracker.Update(idx, fmt.Sprintf("Processing chunk %d/%d", idx+1, chunkCount))
 			}
-			return nil, WrapError(err, ErrCodeChain, fmt.Sprintf("failed to process chunk %d", i+1))
-		}
+			if s.options.progressCallback != nil {
+				s.options.progressCallback(&Progress{
+					Total:     chunkCount,
+					Completed: idx,
+					Current:   fmt.Sprintf("chunk_%d", idx+1),
+					Percent:   float64(idx) / float64(chunkCount) * 100,
+				})
+			}
 
-		// 收集结果
-		translatedChunks = append(translatedChunks, chainResult.FinalOutput)
+			// 执行翻译链
+			chainResult, err := s.chain.Execute(ctx, text)
+			if err != nil {
+				if s.options.errorHandler != nil {
+					s.options.errorHandler(err)
+				}
+				if s.options.progressTracker != nil {
+					s.options.progressTracker.Error(err)
+				}
+			}
 
-		// 收集步骤信息（只记录第一个块的步骤作为示例）
-		if i == 0 {
-			allSteps = chainResult.Steps
-		}
+			resultChan <- chunkResult{
+				index:       idx,
+				output:      chainResult.FinalOutput,
+				chainResult: chainResult,
+				err:        err,
+			}
+		}(i, chunk)
+	}
 
-		// 统计 token
-		for _, step := range chainResult.Steps {
-			totalTokensIn += step.TokensIn
-			totalTokensOut += step.TokensOut
+	// 等待所有块翻译完成
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// 收集结果
+	translatedChunks := make([]string, chunkCount)
+	var totalTokensIn, totalTokensOut int
+	var allSteps []StepResult
+	var firstError error
+
+	for result := range resultChan {
+		if result.err != nil && firstError == nil {
+			firstError = result.err
 		}
+		
+		if result.err == nil {
+			translatedChunks[result.index] = result.output
+
+			// 收集步骤信息（只记录第一个块的步骤作为示例）
+			if result.index == 0 {
+				allSteps = result.chainResult.Steps
+			}
+
+			// 统计 token
+			for _, step := range result.chainResult.Steps {
+				totalTokensIn += step.TokensIn
+				totalTokensOut += step.TokensOut
+			}
+		}
+	}
+
+	// 检查是否有错误
+	if firstError != nil {
+		return nil, firstError
 	}
 
 	// 合并翻译结果
