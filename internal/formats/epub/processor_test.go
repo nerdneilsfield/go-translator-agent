@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

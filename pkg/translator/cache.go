@@ -56,7 +56,7 @@ func (c *FileCache) Get(key string) (string, bool) {
 	// 更新访问时间
 	entry.AccessedAt = time.Now()
 	updatedData, _ := json.Marshal(entry)
-	_ = os.WriteFile(filePath, updatedData, 0644)
+	_ = os.WriteFile(filePath, updatedData, 0o644)
 
 	return entry.Value, true
 }
@@ -67,7 +67,7 @@ func (c *FileCache) Set(key string, value string) error {
 	defer c.mutex.Unlock()
 
 	// 确保缓存目录存在
-	if err := os.MkdirAll(c.cacheDir, 0755); err != nil {
+	if err := os.MkdirAll(c.cacheDir, 0o755); err != nil {
 		return fmt.Errorf("创建缓存目录失败: %w", err)
 	}
 
@@ -86,7 +86,7 @@ func (c *FileCache) Set(key string, value string) error {
 
 	// 写入文件
 	filePath := filepath.Join(c.cacheDir, key+".json")
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	if err := os.WriteFile(filePath, data, 0o644); err != nil {
 		return fmt.Errorf("写入缓存文件失败: %w", err)
 	}
 

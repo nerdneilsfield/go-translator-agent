@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 )
 
 // Renderer Markdown 渲染器
@@ -29,7 +29,7 @@ func (r *Renderer) Render(ctx context.Context, doc *document.Document, output io
 	for i, block := range doc.Blocks {
 		blockContent := r.renderBlock(block)
 		result.WriteString(blockContent)
-		
+
 		// 在块之间添加适当的空行
 		if i < len(doc.Blocks)-1 {
 			nextBlock := doc.Blocks[i+1]
@@ -55,40 +55,40 @@ func (r *Renderer) renderBlock(block document.Block) string {
 	}
 
 	content := block.GetContent()
-	
+
 	switch block.GetType() {
 	case document.BlockTypeHeading:
 		// 标题已经包含了 # 符号
 		return content
-		
+
 	case document.BlockTypeCode:
 		// 代码块已经包含了 ``` 标记
 		return content
-		
+
 	case document.BlockTypeMath:
 		// 数学块已经包含了 $$ 标记
 		return content
-		
+
 	case document.BlockTypeList:
 		// 列表已经包含了正确的格式
 		return content
-		
+
 	case document.BlockTypeTable:
 		// 表格已经包含了正确的格式
 		return content
-		
+
 	case document.BlockTypeQuote:
 		// 引用已经包含了 > 标记
 		return content
-		
+
 	case document.BlockTypeImage:
 		// 图片已经包含了 ![](url) 格式
 		return content
-		
+
 	case document.BlockTypeParagraph:
 		// 段落直接返回内容
 		return content
-		
+
 	default:
 		// 其他类型直接返回内容
 		return content
@@ -99,34 +99,34 @@ func (r *Renderer) renderBlock(block document.Block) string {
 func (r *Renderer) getBlockSpacing(current, next document.Block) string {
 	// 默认使用双换行分隔段落
 	defaultSpacing := "\n\n"
-	
+
 	if current == nil || next == nil {
 		return defaultSpacing
 	}
-	
+
 	currentType := current.GetType()
 	nextType := next.GetType()
-	
+
 	// 列表项之间不需要额外空行
 	if currentType == document.BlockTypeList && nextType == document.BlockTypeList {
 		// 检查是否是同一个列表
 		nextContent := next.GetContent()
-		
+
 		// 如果下一个块是缩进的，说明是同一个列表的子项
 		if strings.HasPrefix(nextContent, "  ") || strings.HasPrefix(nextContent, "\t") {
 			return "\n"
 		}
 	}
-	
+
 	// 代码块内部已经包含了换行
 	if currentType == document.BlockTypeCode {
 		return "\n\n"
 	}
-	
+
 	// 标题前后通常需要额外的空行
 	if nextType == document.BlockTypeHeading {
 		return "\n\n"
 	}
-	
+
 	return defaultSpacing
 }

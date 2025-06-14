@@ -1137,7 +1137,6 @@ func (t *Impl) updateProgress() {
 		t.progressBar.SetTotal(int64(totalCharsForUICurr))
 	}
 	t.progressBar.Update(int64(cumulativeIntermediateCharsCurr))
-
 }
 
 // GetProgressTracker 返回数据进度跟踪器
@@ -1329,7 +1328,7 @@ func (t *Impl) SaveDebugInfo(outputPath string) error {
 		return err
 	}
 	debugPath := strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + ".json"
-	return os.WriteFile(debugPath, data, 0644)
+	return os.WriteFile(debugPath, data, 0o644)
 }
 
 func (t *Impl) finalize(summaryData *customprogress.SummaryStats) {

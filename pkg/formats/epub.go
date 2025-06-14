@@ -165,7 +165,7 @@ func (p *EPUBProcessor) TranslateFile(inputPath, outputPath string) error {
 				zap.Int("译文长度", len(translated)))
 
 			// 写入翻译后的内容
-			if err := os.WriteFile(fPath, []byte(translated), 0644); err != nil {
+			if err := os.WriteFile(fPath, []byte(translated), 0o644); err != nil {
 				p.logger.Error("写入翻译后的HTML文件失败", zap.String("文件", fPath), zap.Error(err))
 				translationErrors <- fmt.Errorf("写入翻译后的HTML文件失败 %s: %w", fPath, err)
 				return
@@ -233,7 +233,7 @@ func (p *EPUBProcessor) FormatFile(inputPath, outputPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+	if err := os.WriteFile(outputPath, data, 0o644); err != nil {
 		return err
 	}
 	if err := FormatFile(outputPath, p.logger); err != nil {
@@ -277,7 +277,7 @@ func unzipEPUB(src, dest string) error {
 			continue
 		}
 
-		if err := os.MkdirAll(filepath.Dir(fpath), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fpath), 0o755); err != nil {
 			return err
 		}
 

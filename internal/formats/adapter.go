@@ -9,13 +9,12 @@ import (
 
 	"github.com/jedib0t/go-pretty/v6/progress"
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
-	"github.com/nerdneilsfield/go-translator-agent/pkg/formats"
-	oldFormats "github.com/nerdneilsfield/go-translator-agent/pkg/formats"
-	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
-	
 	// 导入具体实现以触发注册
 	_ "github.com/nerdneilsfield/go-translator-agent/internal/formats/markdown"
 	_ "github.com/nerdneilsfield/go-translator-agent/internal/formats/text"
+	"github.com/nerdneilsfield/go-translator-agent/pkg/formats"
+	oldFormats "github.com/nerdneilsfield/go-translator-agent/pkg/formats"
+	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 )
 
 // ProcessorAdapter 将新的 formats.Processor 接口适配到旧的系统
@@ -131,7 +130,7 @@ func (a *ProcessorAdapter) GetName() string {
 // TranslateText 翻译文本（用于兼容）
 func (a *ProcessorAdapter) TranslateText(text string) (string, error) {
 	ctx := context.Background()
-	
+
 	// 创建内存中的文档
 	reader := strings.NewReader(text)
 	doc, err := a.processor.Parse(ctx, reader)

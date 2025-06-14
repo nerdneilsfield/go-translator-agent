@@ -15,7 +15,6 @@ import (
 
 // 测试HTML和XML格式的翻译
 func TestHTMLAndXMLTranslation(t *testing.T) {
-
 	// 创建模拟服务器
 	server := test.NewMockOpenAIServer(t)
 	defer server.Stop()
@@ -83,7 +82,7 @@ func TestHTMLAndXMLTranslation(t *testing.T) {
     </script>
 </body>
 </html>`
-	err2 := os.WriteFile(testFile, []byte(testContent), 0644)
+	err2 := os.WriteFile(testFile, []byte(testContent), 0o644)
 	assert.NoError(t, err2)
 
 	// 创建模拟翻译器
@@ -124,7 +123,7 @@ func TestHTMLAndXMLTranslation(t *testing.T) {
 </html>`
 		// 写入翻译后的内容到输出文件
 		outputPath := args.String(1)
-		os.WriteFile(outputPath, []byte(translatedHTML), 0644)
+		os.WriteFile(outputPath, []byte(translatedHTML), 0o644)
 	})
 
 	// 执行翻译
@@ -146,7 +145,6 @@ func TestHTMLAndXMLTranslation(t *testing.T) {
 
 // 测试HTML/XML标签处理
 func TestHTMLXMLTagHandling(t *testing.T) {
-
 	// 创建模拟服务器
 	server := test.NewMockOpenAIServer(t)
 	defer server.Stop()
@@ -206,7 +204,7 @@ func TestHTMLXMLTagHandling(t *testing.T) {
     </div>
 </body>
 </html>`
-	err2 := os.WriteFile(testFile, []byte(testContent), 0644)
+	err2 := os.WriteFile(testFile, []byte(testContent), 0o644)
 	assert.NoError(t, err2)
 
 	// 创建模拟翻译器
@@ -240,7 +238,7 @@ func TestHTMLXMLTagHandling(t *testing.T) {
 </html>`
 		// 写入翻译后的内容到输出文件
 		outputPath := args.String(1)
-		os.WriteFile(outputPath, []byte(translatedHTML), 0644)
+		os.WriteFile(outputPath, []byte(translatedHTML), 0o644)
 	})
 
 	// 执行翻译

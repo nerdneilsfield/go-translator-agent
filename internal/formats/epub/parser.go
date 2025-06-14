@@ -9,7 +9,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 )
 
 // Parser EPUB 解析器
@@ -88,7 +88,7 @@ func (p *Parser) Parse(ctx context.Context, input io.Reader) (*document.Document
 					metadata.Attributes = make(map[string]interface{})
 				}
 				metadata.Attributes["epub_file"] = file.Name
-				
+
 				doc.Blocks = append(doc.Blocks, block)
 			}
 		} else if ext == ".opf" {
@@ -116,20 +116,20 @@ func (p *Parser) CanParse(format document.Format) bool {
 // parseOPF 解析 OPF 文件以获取元数据
 func (p *Parser) parseOPF(data []byte, doc *document.Document) {
 	content := string(data)
-	
+
 	// 简单的元数据提取（可以使用 XML 解析器来改进）
 	if titleStart := strings.Index(content, "<dc:title>"); titleStart != -1 {
 		if titleEnd := strings.Index(content[titleStart:], "</dc:title>"); titleEnd != -1 {
 			doc.Metadata.Title = content[titleStart+10 : titleStart+titleEnd]
 		}
 	}
-	
+
 	if authorStart := strings.Index(content, "<dc:creator>"); authorStart != -1 {
 		if authorEnd := strings.Index(content[authorStart:], "</dc:creator>"); authorEnd != -1 {
 			doc.Metadata.Author = content[authorStart+12 : authorStart+authorEnd]
 		}
 	}
-	
+
 	if langStart := strings.Index(content, "<dc:language>"); langStart != -1 {
 		if langEnd := strings.Index(content[langStart:], "</dc:language>"); langEnd != -1 {
 			doc.Metadata.Language = content[langStart+13 : langStart+langEnd]
@@ -164,7 +164,7 @@ func getMIMEType(ext string) string {
 		".gif":   "image/gif",
 		".svg":   "image/svg+xml",
 	}
-	
+
 	if mime, ok := mimeTypes[ext]; ok {
 		return mime
 	}

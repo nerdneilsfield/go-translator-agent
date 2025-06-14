@@ -1,8 +1,8 @@
 package markdown
 
 import (
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 	"github.com/nerdneilsfield/go-translator-agent/internal/formats/base"
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
 )
 
 // Processor Markdown 处理器
@@ -15,9 +15,9 @@ func NewProcessor(opts document.ProcessorOptions) (*Processor, error) {
 	parser := NewParser()
 	renderer := NewRenderer()
 	chunker := base.NewSmartChunker()
-	
+
 	baseProcessor := base.NewProcessor(parser, renderer, chunker, opts)
-	
+
 	return &Processor{
 		Processor: baseProcessor,
 	}, nil

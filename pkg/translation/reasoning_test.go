@@ -23,7 +23,7 @@ I should consider the context...
 </think>
 
 人工智能正在改变我们的世界。`,
-			tags: []string{"<think>", "</think>"},
+			tags:     []string{"<think>", "</think>"},
 			expected: `人工智能正在改变我们的世界。`,
 		},
 		{
@@ -55,7 +55,7 @@ This is my reasoning process...
 </thinking>
 
 The translation is: 翻译结果`,
-			tags: []string{"<thinking>", "</thinking>"},
+			tags:     []string{"<thinking>", "</thinking>"},
 			expected: `The translation is: 翻译结果`,
 		},
 		{
@@ -85,9 +85,9 @@ Part 2
 Part 3`,
 		},
 		{
-			name: "Markdown代码块格式",
-			input: "```thinking\nThis is my thought process\n```\n\n翻译结果在这里。",
-			tags: nil,
+			name:     "Markdown代码块格式",
+			input:    "```thinking\nThis is my thought process\n```\n\n翻译结果在这里。",
+			tags:     nil,
 			expected: "翻译结果在这里。",
 		},
 		{
@@ -116,15 +116,15 @@ Part 3`,
 结束部分`,
 		},
 		{
-			name: "保留正常的代码块",
-			input: "这是说明文字\n\n```python\ndef hello():\n    print('Hello')\n```\n\n这是翻译结果。",
-			tags: nil,
+			name:     "保留正常的代码块",
+			input:    "这是说明文字\n\n```python\ndef hello():\n    print('Hello')\n```\n\n这是翻译结果。",
+			tags:     nil,
 			expected: "这是说明文字\n\n```python\ndef hello():\n    print('Hello')\n```\n\n这是翻译结果。",
 		},
 		{
-			name: "没有推理标签的正常文本",
-			input: "这是一段正常的翻译文本，没有任何推理过程。",
-			tags: []string{"<think>", "</think>"},
+			name:     "没有推理标签的正常文本",
+			input:    "这是一段正常的翻译文本，没有任何推理过程。",
+			tags:     []string{"<think>", "</think>"},
 			expected: "这是一段正常的翻译文本，没有任何推理过程。",
 		},
 	}
@@ -209,7 +209,7 @@ Result here`,
 Part 2
 <think>Second thought</think>
 Part 3`,
-			tags: []string{"<think>", "</think>"},
+			tags:     []string{"<think>", "</think>"},
 			expected: []string{"First thought", "Second thought"},
 		},
 		{

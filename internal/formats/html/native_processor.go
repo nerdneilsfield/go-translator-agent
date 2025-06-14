@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 	"github.com/nerdneilsfield/go-translator-agent/internal/formats/base"
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
 )
 
 // NativeProcessor 原生 HTML 处理器
@@ -19,9 +19,9 @@ func NewNativeProcessor(opts document.ProcessorOptions) (*NativeProcessor, error
 	parser := NewNativeParser()
 	renderer := NewNativeRenderer()
 	chunker := base.NewSmartChunker()
-	
+
 	baseProcessor := base.NewProcessor(parser, renderer, chunker, opts)
-	
+
 	return &NativeProcessor{
 		Processor: baseProcessor,
 	}, nil

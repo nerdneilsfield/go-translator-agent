@@ -92,7 +92,7 @@ $$
 | Cell 1   | Cell 2   |
 | Cell 3   | Cell 4   |
 `
-	err2 := os.WriteFile(testFile, []byte(testContent), 0644)
+	err2 := os.WriteFile(testFile, []byte(testContent), 0o644)
 	assert.NoError(t, err2)
 
 	// 创建模拟翻译器
@@ -175,7 +175,7 @@ This is paragraph 2.
 
 This is paragraph 3.
 `
-	err2 := os.WriteFile(testFile, []byte(testContent), 0644)
+	err2 := os.WriteFile(testFile, []byte(testContent), 0o644)
 	assert.NoError(t, err2)
 
 	// 创建模拟翻译器

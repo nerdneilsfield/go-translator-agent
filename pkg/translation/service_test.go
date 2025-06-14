@@ -36,7 +36,7 @@ func (m *MockLLMClient) Complete(ctx context.Context, req *translation.Completio
 
 func (m *MockLLMClient) Chat(ctx context.Context, req *translation.ChatRequest) (*translation.ChatResponse, error) {
 	m.calls = append(m.calls, *req)
-	
+
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -45,7 +45,7 @@ func (m *MockLLMClient) Chat(ctx context.Context, req *translation.ChatRequest) 
 	var responseText string
 	if len(req.Messages) > 1 {
 		userMessage := req.Messages[len(req.Messages)-1].Content
-		
+
 		// 简单的模拟：根据提示词内容返回不同结果
 		if contains(userMessage, "Translate") {
 			responseText = "这是翻译后的文本。"
@@ -78,9 +78,9 @@ func (m *MockLLMClient) HealthCheck(ctx context.Context) error {
 }
 
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && s[:len(substr)] == substr || 
-		   len(s) >= len(substr) && s[len(s)-len(substr):] == substr ||
-		   findSubstring(s, substr)
+	return len(s) >= len(substr) && s[:len(substr)] == substr ||
+		len(s) >= len(substr) && s[len(s)-len(substr):] == substr ||
+		findSubstring(s, substr)
 }
 
 func findSubstring(s, substr string) bool {
@@ -197,14 +197,14 @@ func TestNewService(t *testing.T) {
 // TestTranslate 测试翻译功能
 func TestTranslate(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// 创建服务
 	config := translation.DefaultConfig()
 	config.ChunkSize = 50 // 小块大小以便测试分块
-	
+
 	llmClient := NewMockLLMClient()
 	cache := NewMockCache()
-	
+
 	svc, err := translation.New(config,
 		translation.WithLLMClient(llmClient),
 		translation.WithCache(cache),
@@ -289,11 +289,11 @@ func TestTranslate(t *testing.T) {
 // TestTranslateBatch 测试批量翻译
 func TestTranslateBatch(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// 创建服务
 	config := translation.DefaultConfig()
 	config.MaxConcurrency = 2
-	
+
 	svc, err := translation.New(config,
 		translation.WithLLMClient(NewMockLLMClient()),
 	)
@@ -331,13 +331,13 @@ func TestTranslateBatch(t *testing.T) {
 // TestChainExecution 测试翻译链执行
 func TestChainExecution(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// 创建翻译链
 	chain := translation.NewChain()
-	
+
 	// 添加步骤
 	llmClient := NewMockLLMClient()
-	
+
 	steps := []translation.StepConfig{
 		{
 			Name:   "translate",
@@ -389,12 +389,12 @@ func TestChainExecution(t *testing.T) {
 // TestChunker 测试文本分块器
 func TestChunker(t *testing.T) {
 	tests := []struct {
-		name         string
-		text         string
-		chunkSize    int
-		overlap      int
-		minChunks    int
-		maxChunks    int
+		name      string
+		text      string
+		chunkSize int
+		overlap   int
+		minChunks int
+		maxChunks int
 	}{
 		{
 			name:      "small text",
@@ -426,11 +426,11 @@ func TestChunker(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			chunker := translation.NewDefaultChunker(tt.chunkSize, tt.overlap)
 			chunks := chunker.Chunk(tt.text)
-			
+
 			if len(chunks) < tt.minChunks || len(chunks) > tt.maxChunks {
 				t.Errorf("expected %d-%d chunks, got %d", tt.minChunks, tt.maxChunks, len(chunks))
 			}
-			
+
 			// 验证块大小
 			for i, chunk := range chunks {
 				if len(chunk) > tt.chunkSize*4 { // 允许一定的弹性（UTF-8字符）
@@ -459,9 +459,9 @@ func generateLongText(words int) string {
 // TestProgressTracking 测试进度跟踪
 func TestProgressTracking(t *testing.T) {
 	ctx := context.Background()
-	
+
 	progressUpdates := make([]translation.Progress, 0)
-	
+
 	// 创建服务with进度回调
 	config := translation.DefaultConfig()
 	svc, err := translation.New(config,
@@ -486,7 +486,7 @@ func TestProgressTracking(t *testing.T) {
 	if len(progressUpdates) == 0 {
 		t.Errorf("expected progress updates but got none")
 	}
-	
+
 	// 验证最后的进度是100%
 	lastProgress := progressUpdates[len(progressUpdates)-1]
 	if lastProgress.Percent != 100 {
@@ -497,14 +497,14 @@ func TestProgressTracking(t *testing.T) {
 // TestErrorHandling 测试错误处理
 func TestErrorHandling(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// 创建会失败的LLM客户端
 	llmClient := NewMockLLMClient()
 	llmClient.err = errors.New("LLM service unavailable")
-	
+
 	config := translation.DefaultConfig()
 	config.MaxRetries = 2
-	
+
 	errorHandled := false
 	svc, err := translation.New(config,
 		translation.WithLLMClient(llmClient),
@@ -520,15 +520,15 @@ func TestErrorHandling(t *testing.T) {
 	_, err = svc.Translate(ctx, &translation.Request{
 		Text: "Test text",
 	})
-	
+
 	if err == nil {
 		t.Errorf("expected error but got none")
 	}
-	
+
 	if !errorHandled {
 		t.Errorf("expected error handler to be called")
 	}
-	
+
 	// 验证错误类型
 	var transErr *translation.TranslationError
 	if errors.As(err, &transErr) {

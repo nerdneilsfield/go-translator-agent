@@ -85,7 +85,6 @@ func NewMarkdownProcessor(t translator.Translator, predefinedTranslations *confi
 
 // TranslateFile 翻译Markdown文件
 func (p *MarkdownProcessor) TranslateFile(inputPath, outputPath string) error {
-
 	if err := FormatFile(inputPath, p.logger); err != nil {
 		p.logger.Warn("格式化输入文件失败", zap.Error(err))
 	}

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 )
 
 // Renderer EPUB 渲染器

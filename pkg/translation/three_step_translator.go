@@ -34,9 +34,9 @@ func NewThreeStepTranslator(config *Config, providers map[string]Provider, stepS
 			country = c
 		}
 	}
-	
+
 	promptBuilder := NewPromptBuilder(config.SourceLanguage, config.TargetLanguage, country)
-	
+
 	// 如果配置中有保护块设置，使用它
 	preserveConfig := DefaultPreserveConfig
 	if config.Metadata != nil {
@@ -45,7 +45,7 @@ func NewThreeStepTranslator(config *Config, providers map[string]Provider, stepS
 			preserveConfig.Enabled = true
 		}
 	}
-	
+
 	return &ThreeStepTranslator{
 		config:          config,
 		providers:       providers,
@@ -62,13 +62,13 @@ func (t *ThreeStepTranslator) TranslateText(ctx context.Context, text string) (s
 	if err != nil {
 		return "", fmt.Errorf("failed to apply protection: %w", err)
 	}
-	
+
 	var translatedText string
-	
+
 	// 检查是否使用快速模式
 	fastMode := false
 	fastModeThreshold := 100
-	
+
 	// 从元数据中提取快速模式配置
 	if t.config.Metadata != nil {
 		if fm, ok := t.config.Metadata["fast_mode"].(bool); ok {
@@ -78,21 +78,21 @@ func (t *ThreeStepTranslator) TranslateText(ctx context.Context, text string) (s
 			fastModeThreshold = fmt
 		}
 	}
-	
+
 	if fastMode || len(text) < fastModeThreshold {
 		translatedText, err = t.translateDirect(ctx, protectedText)
 	} else {
 		// 使用三步翻译流程
 		translatedText, err = t.translateThreeStep(ctx, protectedText)
 	}
-	
+
 	if err != nil {
 		return "", err
 	}
-	
+
 	// 还原保护块
 	restoredText := t.preserveManager.Restore(translatedText)
-	
+
 	return restoredText, nil
 }
 
@@ -103,10 +103,10 @@ func (t *ThreeStepTranslator) translateDirect(ctx context.Context, text string) 
 	if !ok {
 		return "", fmt.Errorf("provider not found: %s", t.stepSet.Initial.Provider)
 	}
-	
+
 	// 构建提示词
 	prompt := t.promptBuilder.BuildDirectTranslationPrompt(text)
-	
+
 	// 执行翻译
 	request := &Request{
 		Text:        prompt,
@@ -117,20 +117,20 @@ func (t *ThreeStepTranslator) translateDirect(ctx context.Context, text string) 
 			"step": "direct",
 		},
 	}
-	
+
 	response, err := provider.Translate(ctx, request)
 	if err != nil {
 		return "", fmt.Errorf("translation failed: %w", err)
 	}
-	
+
 	// 提取翻译结果
 	translation := ExtractTranslationFromResponse(response.Text)
-	
+
 	// 如果是推理模型，移除推理标记
 	if isReasoning := t.isReasoningModel(t.stepSet.Initial.Provider, t.stepSet.Initial.Model); isReasoning {
 		translation = RemoveReasoningMarkers(translation)
 	}
-	
+
 	return translation, nil
 }
 
@@ -141,27 +141,27 @@ func (t *ThreeStepTranslator) translateThreeStep(ctx context.Context, text strin
 	if err != nil {
 		return "", fmt.Errorf("initial translation failed: %w", err)
 	}
-	
+
 	// 第二步：反思
 	reflection, err := t.reflection(ctx, text, initialTranslation)
 	if err != nil {
 		// 反思失败时返回初始翻译
 		return initialTranslation, nil
 	}
-	
+
 	// 检查是否需要改进
-	if strings.Contains(strings.ToLower(reflection), "no issues") || 
-	   strings.Contains(strings.ToLower(reflection), "perfect") {
+	if strings.Contains(strings.ToLower(reflection), "no issues") ||
+		strings.Contains(strings.ToLower(reflection), "perfect") {
 		return initialTranslation, nil
 	}
-	
+
 	// 第三步：改进
 	improvedTranslation, err := t.improvement(ctx, text, initialTranslation, reflection)
 	if err != nil {
 		// 改进失败时返回初始翻译
 		return initialTranslation, nil
 	}
-	
+
 	return improvedTranslation, nil
 }
 
@@ -174,20 +174,20 @@ func (t *ThreeStepTranslator) initialTranslation(ctx context.Context, text strin
 			return cached, nil
 		}
 	}
-	
+
 	// 获取提供者
 	provider, ok := t.providers[t.stepSet.Initial.Provider]
 	if !ok {
 		return "", fmt.Errorf("provider not found: %s", t.stepSet.Initial.Provider)
 	}
-	
+
 	// 构建提示词
 	prompt := t.promptBuilder.BuildInitialTranslationPrompt(text)
-	
+
 	// 执行翻译
 	systemPrompt := "You are a professional translator. Follow the instructions carefully."
 	fullPrompt := systemPrompt + "\n\n" + prompt
-	
+
 	request := &Request{
 		Text:        fullPrompt,
 		Model:       t.stepSet.Initial.Model,
@@ -197,24 +197,24 @@ func (t *ThreeStepTranslator) initialTranslation(ctx context.Context, text strin
 			"step": "initial",
 		},
 	}
-	
+
 	response, err := provider.Translate(ctx, request)
 	if err != nil {
 		return "", err
 	}
-	
+
 	translation := ExtractTranslationFromResponse(response.Text)
-	
+
 	// 如果是推理模型，移除推理标记
 	if isReasoning := t.isReasoningModel(t.stepSet.Initial.Provider, t.stepSet.Initial.Model); isReasoning {
 		translation = RemoveReasoningMarkers(translation)
 	}
-	
+
 	// 缓存结果
 	if t.cache != nil {
 		_ = t.cache.Set(cacheKey, translation)
 	}
-	
+
 	return translation, nil
 }
 
@@ -227,20 +227,20 @@ func (t *ThreeStepTranslator) reflection(ctx context.Context, sourceText, transl
 			return cached, nil
 		}
 	}
-	
+
 	// 获取提供者
 	provider, ok := t.providers[t.stepSet.Reflection.Provider]
 	if !ok {
 		return "", fmt.Errorf("provider not found: %s", t.stepSet.Reflection.Provider)
 	}
-	
+
 	// 构建提示词
 	prompt := t.promptBuilder.BuildReflectionPrompt(sourceText, translation)
-	
+
 	// 执行反思
 	systemPrompt := "You are a professional translation reviewer. Analyze the translation carefully."
 	fullPrompt := systemPrompt + "\n\n" + prompt
-	
+
 	request := &Request{
 		Text:        fullPrompt,
 		Model:       t.stepSet.Reflection.Model,
@@ -250,24 +250,24 @@ func (t *ThreeStepTranslator) reflection(ctx context.Context, sourceText, transl
 			"step": "reflection",
 		},
 	}
-	
+
 	response, err := provider.Translate(ctx, request)
 	if err != nil {
 		return "", err
 	}
-	
+
 	reflection := response.Text
-	
+
 	// 如果是推理模型，移除推理标记
 	if isReasoning := t.isReasoningModel(t.stepSet.Reflection.Provider, t.stepSet.Reflection.Model); isReasoning {
 		reflection = RemoveReasoningMarkers(reflection)
 	}
-	
+
 	// 缓存结果
 	if t.cache != nil {
 		_ = t.cache.Set(cacheKey, reflection)
 	}
-	
+
 	return reflection, nil
 }
 
@@ -280,20 +280,20 @@ func (t *ThreeStepTranslator) improvement(ctx context.Context, sourceText, trans
 			return cached, nil
 		}
 	}
-	
+
 	// 获取提供者
 	provider, ok := t.providers[t.stepSet.Improvement.Provider]
 	if !ok {
 		return "", fmt.Errorf("provider not found: %s", t.stepSet.Improvement.Provider)
 	}
-	
+
 	// 构建提示词
 	prompt := t.promptBuilder.BuildImprovementPrompt(sourceText, translation, reflection)
-	
+
 	// 执行改进
 	systemPrompt := "You are a professional translator. Improve the translation based on the feedback."
 	fullPrompt := systemPrompt + "\n\n" + prompt
-	
+
 	request := &Request{
 		Text:        fullPrompt,
 		Model:       t.stepSet.Improvement.Model,
@@ -303,24 +303,24 @@ func (t *ThreeStepTranslator) improvement(ctx context.Context, sourceText, trans
 			"step": "improvement",
 		},
 	}
-	
+
 	response, err := provider.Translate(ctx, request)
 	if err != nil {
 		return "", err
 	}
-	
+
 	improvedTranslation := ExtractTranslationFromResponse(response.Text)
-	
+
 	// 如果是推理模型，移除推理标记
 	if isReasoning := t.isReasoningModel(t.stepSet.Improvement.Provider, t.stepSet.Improvement.Model); isReasoning {
 		improvedTranslation = RemoveReasoningMarkers(improvedTranslation)
 	}
-	
+
 	// 缓存结果
 	if t.cache != nil {
 		_ = t.cache.Set(cacheKey, improvedTranslation)
 	}
-	
+
 	return improvedTranslation, nil
 }
 
@@ -353,47 +353,47 @@ func (t *ThreeStepTranslator) applyProtection(text string) (string, error) {
 	if !t.preserveManager.config.Enabled {
 		return text, nil
 	}
-	
+
 	// 保护代码块
 	protectedText := text
-	
+
 	// 保护 Markdown 代码块
 	codeBlockRe := regexp.MustCompile("(?s)```[^\n]*\n(.*?)\n```")
 	protectedText = codeBlockRe.ReplaceAllStringFunc(protectedText, func(match string) string {
 		return t.preserveManager.Protect(match)
 	})
-	
+
 	// 保护行内代码
 	inlineCodeRe := regexp.MustCompile("`([^`]+)`")
 	protectedText = inlineCodeRe.ReplaceAllStringFunc(protectedText, func(match string) string {
 		return t.preserveManager.Protect(match)
 	})
-	
+
 	// 保护 LaTeX 公式
 	// 块级公式
 	latexBlockRe := regexp.MustCompile("(?s)\\$\\$(.+?)\\$\\$|\\\\\\[(.+?)\\\\\\]")
 	protectedText = latexBlockRe.ReplaceAllStringFunc(protectedText, func(match string) string {
 		return t.preserveManager.Protect(match)
 	})
-	
+
 	// 行内公式
 	latexInlineRe := regexp.MustCompile("\\$([^$\n]+?)\\$|\\\\\\((.+?)\\\\\\)")
 	protectedText = latexInlineRe.ReplaceAllStringFunc(protectedText, func(match string) string {
 		return t.preserveManager.Protect(match)
 	})
-	
+
 	// 保护 URL
 	urlRe := regexp.MustCompile(`https?://[^\s<>"{}|\^` + "`" + `\[\]]+`)
 	protectedText = urlRe.ReplaceAllStringFunc(protectedText, func(match string) string {
 		return t.preserveManager.Protect(match)
 	})
-	
+
 	// 保护文献引用
 	citationRe := regexp.MustCompile(`\[[0-9]+([-,][0-9]+)*\]`)
 	protectedText = citationRe.ReplaceAllStringFunc(protectedText, func(match string) string {
 		return t.preserveManager.Protect(match)
 	})
-	
+
 	return protectedText, nil
 }
 
@@ -406,7 +406,7 @@ func (t *ThreeStepTranslator) isReasoningModel(provider, model string) bool {
 			return reasoningModels[key]
 		}
 	}
-	
+
 	// 默认检查一些已知的推理模型
 	reasoningModelPatterns := []string{
 		"o1-preview",
@@ -414,13 +414,13 @@ func (t *ThreeStepTranslator) isReasoningModel(provider, model string) bool {
 		"claude-3-opus",
 		"deepseek-r1",
 	}
-	
+
 	modelLower := strings.ToLower(model)
 	for _, pattern := range reasoningModelPatterns {
 		if strings.Contains(modelLower, pattern) {
 			return true
 		}
 	}
-	
+
 	return false
 }

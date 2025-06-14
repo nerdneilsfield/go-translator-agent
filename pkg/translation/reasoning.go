@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-// RemoveReasoningProcess 移除推理模型输出中的思考过程
-// 支持多种格式的推理标记
-func RemoveReasoningProcess(content string, tags []string) string {
+// RemoveReasoningProcessV2 移除推理模型输出中的思考过程
+// 支持多种格式的推理标记（增强版本）
+func RemoveReasoningProcessV2(content string, tags []string) string {
 	if len(tags) == 0 {
 		// 如果没有指定标签，尝试自动检测常见的推理标记
 		return removeCommonReasoningTags(content)
@@ -17,14 +17,14 @@ func RemoveReasoningProcess(content string, tags []string) string {
 	if len(tags) >= 2 {
 		startTag := regexp.QuoteMeta(tags[0])
 		endTag := regexp.QuoteMeta(tags[1])
-		
+
 		// 构建正则表达式，支持跨行匹配
 		pattern := startTag + `(?s:.*?)` + endTag
 		re := regexp.MustCompile(pattern)
-		
+
 		// 移除所有匹配的推理过程
 		result := re.ReplaceAllString(content, "")
-		
+
 		// 清理多余的空行
 		return cleanupEmptyLines(result)
 	}
@@ -55,11 +55,11 @@ func removeCommonReasoningTags(content string) string {
 	for _, p := range patterns {
 		startTag := regexp.QuoteMeta(p.start)
 		endTag := regexp.QuoteMeta(p.end)
-		
+
 		// 构建正则表达式
 		pattern := startTag + `(?s:.*?)` + endTag
 		re := regexp.MustCompile(pattern)
-		
+
 		// 移除匹配的内容
 		result = re.ReplaceAllString(result, "")
 	}
@@ -82,25 +82,25 @@ func removeMarkdownReasoningBlocks(content string) string {
 func cleanupEmptyLines(content string) string {
 	// 移除开头和结尾的空白
 	content = strings.TrimSpace(content)
-	
+
 	// 将多个连续空行替换为最多两个空行
 	re := regexp.MustCompile(`\n{3,}`)
 	content = re.ReplaceAllString(content, "\n\n")
-	
+
 	// 分割行，但不清理每行的空白（保留代码块的缩进）
 	lines := strings.Split(content, "\n")
-	
+
 	// 只处理连续的空行，不改变行内容
 	var result []string
 	var lastWasEmpty bool
 	inCodeBlock := false
-	
+
 	for _, line := range lines {
 		// 检测代码块的开始和结束
 		if strings.HasPrefix(strings.TrimSpace(line), "```") {
 			inCodeBlock = !inCodeBlock
 		}
-		
+
 		// 在代码块内，保留所有内容
 		if inCodeBlock {
 			result = append(result, line)
@@ -120,7 +120,7 @@ func cleanupEmptyLines(content string) string {
 			}
 		}
 	}
-	
+
 	return strings.Join(result, "\n")
 }
 
@@ -160,11 +160,11 @@ func ExtractReasoningProcess(content string, tags []string) []string {
 	if len(tags) >= 2 {
 		startTag := regexp.QuoteMeta(tags[0])
 		endTag := regexp.QuoteMeta(tags[1])
-		
+
 		// 构建正则表达式
 		pattern := startTag + `((?s:.*?))` + endTag
 		re := regexp.MustCompile(pattern)
-		
+
 		// 查找所有匹配
 		matches := re.FindAllStringSubmatch(content, -1)
 		for _, match := range matches {
@@ -183,7 +183,7 @@ func ExtractReasoningProcess(content string, tags []string) []string {
 // extractCommonReasoningParts 提取常见格式的推理部分
 func extractCommonReasoningParts(content string) []string {
 	var parts []string
-	
+
 	patterns := []struct {
 		start string
 		end   string
@@ -197,10 +197,10 @@ func extractCommonReasoningParts(content string) []string {
 	for _, p := range patterns {
 		startTag := regexp.QuoteMeta(p.start)
 		endTag := regexp.QuoteMeta(p.end)
-		
+
 		pattern := startTag + `((?s:.*?))` + endTag
 		re := regexp.MustCompile(pattern)
-		
+
 		matches := re.FindAllStringSubmatch(content, -1)
 		for _, match := range matches {
 			if len(match) > 1 {

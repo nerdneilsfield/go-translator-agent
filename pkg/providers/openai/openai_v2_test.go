@@ -14,29 +14,29 @@ func TestProviderV2_Translate(t *testing.T) {
 	if apiKey == "test-api-key" {
 		t.Skip("Skipping test that requires real OpenAI API key")
 	}
-	
+
 	// 创建配置
 	config := DefaultConfigV2()
 	config.APIKey = apiKey
-	
+
 	// 创建提供商
 	provider := NewV2(config)
-	
+
 	// 测试翻译
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	req := &translation.ProviderRequest{
 		Text:           "Hello, world!",
 		SourceLanguage: "English",
 		TargetLanguage: "Chinese",
 	}
-	
+
 	resp, err := provider.Translate(ctx, req)
 	if err != nil {
 		t.Fatalf("translation failed: %v", err)
 	}
-	
+
 	// 验证响应
 	if resp.Text == "" {
 		t.Error("empty translation")
@@ -44,7 +44,7 @@ func TestProviderV2_Translate(t *testing.T) {
 	if resp.Model == "" {
 		t.Error("empty model")
 	}
-	
+
 	t.Logf("Translation: %s", resp.Text)
 	t.Logf("Model: %s", resp.Model)
 	t.Logf("Tokens: %d in, %d out", resp.TokensIn, resp.TokensOut)
@@ -53,7 +53,7 @@ func TestProviderV2_Translate(t *testing.T) {
 func TestProviderV2_GetCapabilities(t *testing.T) {
 	provider := NewV2(DefaultConfigV2())
 	caps := provider.GetCapabilities()
-	
+
 	// 验证能力
 	if !caps.RequiresAPIKey {
 		t.Error("should require API key")
@@ -75,18 +75,18 @@ func TestLLMClientV2_Chat(t *testing.T) {
 	if apiKey == "test-api-key" {
 		t.Skip("Skipping test that requires real OpenAI API key")
 	}
-	
+
 	// 创建配置
 	config := DefaultConfigV2()
 	config.APIKey = apiKey
-	
+
 	// 创建LLMClient
 	client := NewLLMClientV2(config)
-	
+
 	// 测试Chat
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	req := &translation.ChatRequest{
 		Messages: []translation.ChatMessage{
 			{
@@ -102,12 +102,12 @@ func TestLLMClientV2_Chat(t *testing.T) {
 		Temperature: 0.7,
 		MaxTokens:   100,
 	}
-	
+
 	resp, err := client.Chat(ctx, req)
 	if err != nil {
 		t.Fatalf("chat failed: %v", err)
 	}
-	
+
 	// 验证响应
 	if resp.Message.Content == "" {
 		t.Error("empty response")
@@ -115,7 +115,7 @@ func TestLLMClientV2_Chat(t *testing.T) {
 	if resp.Model == "" {
 		t.Error("empty model")
 	}
-	
+
 	t.Logf("Response: %s", resp.Message.Content)
 	t.Logf("Model: %s", resp.Model)
 	t.Logf("Tokens: %d in, %d out", resp.TokensIn, resp.TokensOut)
@@ -127,29 +127,29 @@ func TestProviderV2_StreamTranslate(t *testing.T) {
 	if apiKey == "test-api-key" {
 		t.Skip("Skipping test that requires real OpenAI API key")
 	}
-	
+
 	// 创建配置
 	config := DefaultConfigV2()
 	config.APIKey = apiKey
-	
+
 	// 创建提供商
 	provider := NewV2(config)
-	
+
 	// 测试流式翻译
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	req := &translation.ProviderRequest{
 		Text:           "Hello, world! This is a streaming test.",
 		SourceLanguage: "English",
 		TargetLanguage: "Chinese",
 	}
-	
+
 	chunks, err := provider.StreamTranslate(ctx, req)
 	if err != nil {
 		t.Fatalf("stream translation failed: %v", err)
 	}
-	
+
 	// 收集所有块
 	var fullText string
 	for chunk := range chunks {
@@ -159,11 +159,11 @@ func TestProviderV2_StreamTranslate(t *testing.T) {
 		fullText += chunk.Text
 		t.Logf("Chunk: %s", chunk.Text)
 	}
-	
+
 	if fullText == "" {
 		t.Error("empty translation")
 	}
-	
+
 	t.Logf("Full translation: %s", fullText)
 }
 
@@ -174,19 +174,19 @@ func BenchmarkProviderV2_Translate(b *testing.B) {
 	if apiKey == "test-api-key" {
 		b.Skip("Skipping benchmark that requires real OpenAI API key")
 	}
-	
+
 	config := DefaultConfigV2()
 	config.APIKey = apiKey
 	provider := NewV2(config)
-	
+
 	req := &translation.ProviderRequest{
 		Text:           "Hello, world!",
 		SourceLanguage: "English",
 		TargetLanguage: "Chinese",
 	}
-	
+
 	ctx := context.Background()
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := provider.Translate(ctx, req)

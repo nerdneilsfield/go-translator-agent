@@ -2,10 +2,11 @@ package formats
 
 import (
 	"fmt"
-	"go.uber.org/zap"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"go.uber.org/zap"
 )
 
 // FormatFile 根据文件类型使用相应的外部工具进行格式化

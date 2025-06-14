@@ -89,16 +89,16 @@ func NewRetryableError(code, message string, cause error) *TranslationError {
 
 // 错误代码常量
 const (
-	ErrCodeConfig      = "CONFIG_ERROR"
-	ErrCodeValidation  = "VALIDATION_ERROR"
-	ErrCodeLLM         = "LLM_ERROR"
-	ErrCodeNetwork     = "NETWORK_ERROR"
-	ErrCodeTimeout     = "TIMEOUT_ERROR"
-	ErrCodeRateLimit   = "RATE_LIMIT_ERROR"
-	ErrCodeCache       = "CACHE_ERROR"
-	ErrCodeStep        = "STEP_ERROR"
-	ErrCodeChain       = "CHAIN_ERROR"
-	ErrCodeUnknown     = "UNKNOWN_ERROR"
+	ErrCodeConfig     = "CONFIG_ERROR"
+	ErrCodeValidation = "VALIDATION_ERROR"
+	ErrCodeLLM        = "LLM_ERROR"
+	ErrCodeNetwork    = "NETWORK_ERROR"
+	ErrCodeTimeout    = "TIMEOUT_ERROR"
+	ErrCodeRateLimit  = "RATE_LIMIT_ERROR"
+	ErrCodeCache      = "CACHE_ERROR"
+	ErrCodeStep       = "STEP_ERROR"
+	ErrCodeChain      = "CHAIN_ERROR"
+	ErrCodeUnknown    = "UNKNOWN_ERROR"
 )
 
 // WrapError 包装错误
@@ -106,16 +106,16 @@ func WrapError(err error, code, message string) *TranslationError {
 	if err == nil {
 		return nil
 	}
-	
+
 	// 如果已经是TranslationError，保留原有信息
 	if te, ok := err.(*TranslationError); ok {
 		te.Message = message + ": " + te.Message
 		return te
 	}
-	
+
 	// 判断是否可重试
 	retry := isRetryableError(err)
-	
+
 	return &TranslationError{
 		Code:    code,
 		Message: message,
@@ -129,7 +129,7 @@ func isRetryableError(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	// 检查是否是预定义的可重试错误
 	switch {
 	case errors.Is(err, ErrTimeout),
@@ -137,7 +137,7 @@ func isRetryableError(err error) bool {
 		errors.Is(err, context.DeadlineExceeded):
 		return true
 	}
-	
+
 	// 检查是否包含特定的错误信息
 	errStr := err.Error()
 	retryablePatterns := []string{
@@ -150,13 +150,13 @@ func isRetryableError(err error) bool {
 		"503",
 		"504",
 	}
-	
+
 	for _, pattern := range retryablePatterns {
 		if contains(errStr, pattern) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 

@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 	"golang.org/x/net/html"
 )
 
@@ -61,10 +61,10 @@ func (p *NativeParser) CanParse(format document.Format) bool {
 // extractBlocks 提取 HTML 中的可翻译块
 func (p *NativeParser) extractBlocks(n *html.Node) []document.Block {
 	var blocks []document.Block
-	
+
 	// 使用深度优先遍历提取文本块
 	p.traverseNode(n, &blocks, []string{})
-	
+
 	return blocks
 }
 
@@ -78,13 +78,13 @@ func (p *NativeParser) traverseNode(n *html.Node, blocks *[]document.Block, path
 	case html.ElementNode:
 		// 更新路径
 		newPath := append(path, n.Data)
-		
+
 		// 特殊处理某些元素
 		switch n.Data {
 		case "script", "style", "noscript":
 			// 跳过这些元素
 			return
-			
+
 		case "h1", "h2", "h3", "h4", "h5", "h6":
 			// 标题元素
 			text := p.extractTextContent(n)
@@ -107,7 +107,7 @@ func (p *NativeParser) traverseNode(n *html.Node, blocks *[]document.Block, path
 					node: n,
 				})
 			}
-			
+
 		case "p", "div", "span", "li", "td", "th", "dt", "dd":
 			// 普通文本容器
 			text := p.extractDirectText(n)
@@ -128,7 +128,7 @@ func (p *NativeParser) traverseNode(n *html.Node, blocks *[]document.Block, path
 					node: n,
 				})
 			}
-			
+
 		case "a":
 			// 链接文本
 			text := p.extractTextContent(n)
@@ -151,7 +151,7 @@ func (p *NativeParser) traverseNode(n *html.Node, blocks *[]document.Block, path
 					node: n,
 				})
 			}
-			
+
 		case "img":
 			// 图片的 alt 文本
 			alt := p.getAttr(n, "alt")
@@ -174,7 +174,7 @@ func (p *NativeParser) traverseNode(n *html.Node, blocks *[]document.Block, path
 					node: n,
 				})
 			}
-			
+
 		case "title":
 			// 页面标题
 			text := p.extractTextContent(n)
@@ -195,7 +195,7 @@ func (p *NativeParser) traverseNode(n *html.Node, blocks *[]document.Block, path
 					node: n,
 				})
 			}
-			
+
 		case "meta":
 			// meta 标签的 content
 			name := p.getAttr(n, "name")
@@ -222,12 +222,12 @@ func (p *NativeParser) traverseNode(n *html.Node, blocks *[]document.Block, path
 				}
 			}
 		}
-		
+
 		// 递归处理子节点
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			p.traverseNode(c, blocks, newPath)
 		}
-		
+
 	case html.TextNode:
 		// 处理纯文本节点
 		text := strings.TrimSpace(n.Data)
@@ -254,7 +254,7 @@ func (p *NativeParser) traverseNode(n *html.Node, blocks *[]document.Block, path
 				})
 			}
 		}
-		
+
 	default:
 		// 其他节点类型，递归处理子节点
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -286,14 +286,14 @@ func (p *NativeParser) extractTextRecursive(n *html.Node, text *strings.Builder)
 	if n.Type == html.TextNode {
 		text.WriteString(n.Data)
 	}
-	
+
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
 		// 跳过 script 和 style 标签
 		if c.Type == html.ElementNode && (c.Data == "script" || c.Data == "style") {
 			continue
 		}
 		p.extractTextRecursive(c, text)
-		
+
 		// 在块级元素后添加空格
 		if c.Type == html.ElementNode && isBlockElement(c.Data) {
 			text.WriteString(" ")

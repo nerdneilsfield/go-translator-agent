@@ -73,7 +73,7 @@ func (p *HTMLProcessor) TranslateFile(inputPath, outputPath string) error {
 	}
 
 	// 写入输出文件
-	if err := os.WriteFile(outputPath, []byte(restoredText), 0644); err != nil {
+	if err := os.WriteFile(outputPath, []byte(restoredText), 0o644); err != nil {
 		return fmt.Errorf("写入文件失败 %s: %w", outputPath, err)
 	}
 

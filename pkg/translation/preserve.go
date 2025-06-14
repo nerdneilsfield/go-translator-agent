@@ -62,7 +62,7 @@ func (pm *PreserveManager) Restore(text string) string {
 	for placeholder := range pm.replacements {
 		placeholders = append(placeholders, placeholder)
 	}
-	
+
 	// 按占位符编号降序排序
 	// 简单实现：直接遍历，因为通常不会有太多占位符
 	for i := pm.counter - 1; i >= 0; i-- {
@@ -71,7 +71,7 @@ func (pm *PreserveManager) Restore(text string) string {
 			text = strings.ReplaceAll(text, placeholder, original)
 		}
 	}
-	
+
 	return text
 }
 
@@ -80,10 +80,10 @@ func GetPreservePrompt(config PreserveConfig) string {
 	if !config.Enabled {
 		return ""
 	}
-	
+
 	// 构建正则模式
 	pattern := regexp.QuoteMeta(config.Prefix) + `\d+` + regexp.QuoteMeta(config.Suffix)
-	
+
 	return fmt.Sprintf(`
 IMPORTANT: Preserve Markers
 - Do not translate or modify any text that matches the pattern: %s
@@ -101,6 +101,6 @@ func AppendPreservePrompt(prompt string, config PreserveConfig) string {
 	if preservePrompt == "" {
 		return prompt
 	}
-	
+
 	return prompt + "\n\n" + preservePrompt
 }

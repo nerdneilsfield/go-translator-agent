@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 )
 
 // Parser Markdown 解析器
@@ -27,8 +27,8 @@ type Parser struct {
 // NewParser 创建 Markdown 解析器
 func NewParser() *Parser {
 	return &Parser{
-		codeBlockRegex:  regexp.MustCompile("(?s)```(.*?)```"),
-		multiMathRegex:  regexp.MustCompile(`(?s)\$\$(.*?)\$\$`),
+		codeBlockRegex: regexp.MustCompile("(?s)```(.*?)```"),
+		multiMathRegex: regexp.MustCompile(`(?s)\$\$(.*?)\$\$`),
 		tableBlockRegex: regexp.MustCompile(
 			`(?m)^[ \t]*\|.*\|[ \t]*\r?\n` +
 				`^[ \t]*\|[ :\-\.\|\t]+?\|[ \t]*\r?\n` +
@@ -51,7 +51,7 @@ func (p *Parser) Parse(ctx context.Context, input io.Reader) (*document.Document
 	}
 
 	text := string(content)
-	
+
 	// 创建文档
 	doc := &document.Document{
 		ID:        generateDocumentID(),
@@ -76,18 +76,18 @@ func (p *Parser) CanParse(format document.Format) bool {
 // parseToBlocks 将 Markdown 文本解析为块
 func (p *Parser) parseToBlocks(text string) []document.Block {
 	blocks := make([]document.Block, 0)
-	
+
 	// 先处理代码块和数学块（保护它们不被翻译）
 	protectedBlocks := make(map[string]document.Block)
 	protectedText := text
-	
+
 	// 处理代码块
 	codeBlocks := p.codeBlockRegex.FindAllStringSubmatchIndex(protectedText, -1)
 	for i := len(codeBlocks) - 1; i >= 0; i-- {
 		match := codeBlocks[i]
 		start, end := match[0], match[1]
 		content := protectedText[start:end]
-		
+
 		placeholder := fmt.Sprintf("@@CODE_BLOCK_%d@@", i)
 		block := &document.BaseBlock{
 			Type:         document.BlockTypeCode,
@@ -100,14 +100,14 @@ func (p *Parser) parseToBlocks(text string) []document.Block {
 		protectedBlocks[placeholder] = block
 		protectedText = protectedText[:start] + placeholder + protectedText[end:]
 	}
-	
+
 	// 处理数学块
 	mathBlocks := p.multiMathRegex.FindAllStringSubmatchIndex(protectedText, -1)
 	for i := len(mathBlocks) - 1; i >= 0; i-- {
 		match := mathBlocks[i]
 		start, end := match[0], match[1]
 		content := protectedText[start:end]
-		
+
 		placeholder := fmt.Sprintf("@@MATH_BLOCK_%d@@", i)
 		block := &document.BaseBlock{
 			Type:         document.BlockTypeMath,
@@ -117,14 +117,14 @@ func (p *Parser) parseToBlocks(text string) []document.Block {
 		protectedBlocks[placeholder] = block
 		protectedText = protectedText[:start] + placeholder + protectedText[end:]
 	}
-	
+
 	// 处理表格
 	tables := p.tableBlockRegex.FindAllStringSubmatchIndex(protectedText, -1)
 	for i := len(tables) - 1; i >= 0; i-- {
 		match := tables[i]
 		start, end := match[0], match[1]
 		content := protectedText[start:end]
-		
+
 		placeholder := fmt.Sprintf("@@TABLE_BLOCK_%d@@", i)
 		block := &document.BaseBlock{
 			Type:         document.BlockTypeTable,
@@ -134,22 +134,22 @@ func (p *Parser) parseToBlocks(text string) []document.Block {
 		protectedBlocks[placeholder] = block
 		protectedText = protectedText[:start] + placeholder + protectedText[end:]
 	}
-	
+
 	// 按段落分割剩余内容
 	paragraphs := strings.Split(protectedText, "\n\n")
-	
+
 	for _, para := range paragraphs {
 		para = strings.TrimSpace(para)
 		if para == "" {
 			continue
 		}
-		
+
 		// 检查是否是占位符
 		if block, ok := protectedBlocks[para]; ok {
 			blocks = append(blocks, block)
 			continue
 		}
-		
+
 		// 检查是否是标题
 		if headingMatch := p.headingRegex.FindStringSubmatch(para); headingMatch != nil {
 			blocks = append(blocks, &document.BaseBlock{
@@ -162,7 +162,7 @@ func (p *Parser) parseToBlocks(text string) []document.Block {
 			})
 			continue
 		}
-		
+
 		// 检查是否是列表
 		if isListBlock(para) {
 			blocks = append(blocks, &document.BaseBlock{
@@ -175,7 +175,7 @@ func (p *Parser) parseToBlocks(text string) []document.Block {
 			})
 			continue
 		}
-		
+
 		// 检查是否是引用块
 		if strings.HasPrefix(para, ">") {
 			blocks = append(blocks, &document.BaseBlock{
@@ -185,7 +185,7 @@ func (p *Parser) parseToBlocks(text string) []document.Block {
 			})
 			continue
 		}
-		
+
 		// 默认作为段落处理
 		blocks = append(blocks, &document.BaseBlock{
 			Type:         document.BlockTypeParagraph,
@@ -193,7 +193,7 @@ func (p *Parser) parseToBlocks(text string) []document.Block {
 			Translatable: true,
 		})
 	}
-	
+
 	return blocks
 }
 
@@ -213,34 +213,34 @@ func isListBlock(text string) bool {
 	if len(lines) == 0 {
 		return false
 	}
-	
+
 	// 检查是否所有行都是列表项
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue
 		}
-		
+
 		// 检查无序列表
-		if strings.HasPrefix(trimmed, "- ") || 
-		   strings.HasPrefix(trimmed, "* ") || 
-		   strings.HasPrefix(trimmed, "+ ") {
+		if strings.HasPrefix(trimmed, "- ") ||
+			strings.HasPrefix(trimmed, "* ") ||
+			strings.HasPrefix(trimmed, "+ ") {
 			continue
 		}
-		
+
 		// 检查有序列表
 		if matched, _ := regexp.MatchString(`^\d+\.\s+`, trimmed); matched {
 			continue
 		}
-		
+
 		// 检查缩进的列表项
 		if strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "\t") {
 			continue
 		}
-		
+
 		return false
 	}
-	
+
 	return true
 }
 
@@ -252,18 +252,18 @@ func detectListType(text string) string {
 		if trimmed == "" {
 			continue
 		}
-		
-		if strings.HasPrefix(trimmed, "- ") || 
-		   strings.HasPrefix(trimmed, "* ") || 
-		   strings.HasPrefix(trimmed, "+ ") {
+
+		if strings.HasPrefix(trimmed, "- ") ||
+			strings.HasPrefix(trimmed, "* ") ||
+			strings.HasPrefix(trimmed, "+ ") {
 			return "unordered"
 		}
-		
+
 		if matched, _ := regexp.MatchString(`^\d+\.\s+`, trimmed); matched {
 			return "ordered"
 		}
 	}
-	
+
 	return "unordered"
 }
 

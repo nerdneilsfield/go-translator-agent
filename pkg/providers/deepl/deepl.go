@@ -45,7 +45,7 @@ func New(config Config) *Provider {
 			config.APIEndpoint = "https://api.deepl.com/v2"
 		}
 	}
-	
+
 	return &Provider{
 		config: config,
 		httpClient: &http.Client{
@@ -71,7 +71,7 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 	params.Set("text", req.Text)
 	params.Set("source_lang", normalizeLanguageCode(req.SourceLanguage, true))
 	params.Set("target_lang", normalizeLanguageCode(req.TargetLanguage, false))
-	
+
 	// 可选参数
 	if formality, ok := req.Options["formality"]; ok {
 		params.Set("formality", formality)
@@ -82,23 +82,23 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 	if tagHandling, ok := req.Options["tag_handling"]; ok {
 		params.Set("tag_handling", tagHandling)
 	}
-	
+
 	// 执行翻译
 	resp, err := p.translate(ctx, params)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if len(resp.Translations) == 0 {
 		return nil, fmt.Errorf("no translation returned")
 	}
-	
+
 	// 返回响应
 	metadata := make(map[string]string)
 	if resp.Translations[0].DetectedSourceLanguage != "" {
 		metadata["detected_source"] = resp.Translations[0].DetectedSourceLanguage
 	}
-	
+
 	return &translation.ProviderResponse{
 		Text:     resp.Translations[0].Text,
 		Model:    "deepl",
@@ -167,48 +167,48 @@ func (p *Provider) GetCapabilities() providers.Capabilities {
 // HealthCheck 健康检查
 func (p *Provider) HealthCheck(ctx context.Context) error {
 	// 检查使用量
-	req, err := http.NewRequestWithContext(ctx, "GET", 
+	req, err := http.NewRequestWithContext(ctx, "GET",
 		p.config.APIEndpoint+"/usage", nil)
 	if err != nil {
 		return err
 	}
-	
+
 	req.Header.Set("Authorization", "DeepL-Auth-Key "+p.config.APIKey)
-	
+
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("health check failed: %s", resp.Status)
 	}
-	
+
 	return nil
 }
 
 // translate 执行翻译请求
 func (p *Provider) translate(ctx context.Context, params url.Values) (*TranslateResponse, error) {
 	// 创建请求
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", 
-		p.config.APIEndpoint+"/translate", 
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		p.config.APIEndpoint+"/translate",
 		strings.NewReader(params.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	// 设置头部
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	httpReq.Header.Set("Authorization", "DeepL-Auth-Key "+p.config.APIKey)
 	for k, v := range p.config.Headers {
 		httpReq.Header.Set(k, v)
 	}
-	
+
 	// 执行请求，带重试
 	var resp *http.Response
 	var lastErr error
-	
+
 	for i := 0; i <= p.config.MaxRetries; i++ {
 		if i > 0 {
 			select {
@@ -217,22 +217,22 @@ func (p *Provider) translate(ctx context.Context, params url.Values) (*Translate
 			case <-time.After(p.config.RetryDelay * time.Duration(i)):
 			}
 		}
-		
+
 		resp, err = p.httpClient.Do(httpReq)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		
+
 		// 检查状态码
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			break
 		}
-		
+
 		// 读取错误响应
 		errBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		
+
 		// 处理特定错误码
 		switch resp.StatusCode {
 		case 400:
@@ -254,26 +254,26 @@ func (p *Provider) translate(ctx context.Context, params url.Values) (*Translate
 		default:
 			lastErr = fmt.Errorf("API error: %s", resp.Status)
 		}
-		
+
 		// 检查是否可重试
 		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
 			continue
 		}
 		break
 	}
-	
+
 	if lastErr != nil {
 		return nil, lastErr
 	}
-	
+
 	defer resp.Body.Close()
-	
+
 	// 解析响应
 	var translateResp TranslateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&translateResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
-	
+
 	return &translateResp, nil
 }
 
@@ -281,7 +281,7 @@ func (p *Provider) translate(ctx context.Context, params url.Values) (*Translate
 func normalizeLanguageCode(lang string, isSource bool) string {
 	// DeepL使用大写的语言代码
 	upper := strings.ToUpper(lang)
-	
+
 	// 特殊处理
 	replacements := map[string]string{
 		"CHINESE":    "ZH",
@@ -295,11 +295,11 @@ func normalizeLanguageCode(lang string, isSource bool) string {
 		"RUSSIAN":    "RU",
 		"ITALIAN":    "IT",
 	}
-	
+
 	if normalized, ok := replacements[upper]; ok {
 		return normalized
 	}
-	
+
 	// 对于英语和葡萄牙语，目标语言需要指定变体
 	if !isSource {
 		switch upper {
@@ -309,7 +309,7 @@ func normalizeLanguageCode(lang string, isSource bool) string {
 			return "PT-BR" // 默认巴西葡萄牙语
 		}
 	}
-	
+
 	// 处理 xx_YY 格式到 XX-YY
 	if strings.Contains(upper, "_") {
 		parts := strings.Split(upper, "_")
@@ -317,7 +317,7 @@ func normalizeLanguageCode(lang string, isSource bool) string {
 			return parts[0] + "-" + parts[1]
 		}
 	}
-	
+
 	return upper
 }
 

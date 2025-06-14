@@ -98,7 +98,7 @@ type Cache interface {
 type Provider interface {
 	// Name 返回提供者名称
 	Name() string
-	
+
 	// Translate 执行翻译
 	Translate(ctx context.Context, req *Request) (*Response, error)
 }

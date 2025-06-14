@@ -36,5 +36,5 @@ func FormatMarkdown(path string, logger *zap.Logger) error {
 
 	logger.Info("格式化 Markdown 文件完成", zap.String("path", path), zap.Int("size", len(res)))
 
-	return os.WriteFile(path, []byte(res), 0644)
+	return os.WriteFile(path, []byte(res), 0o644)
 }

@@ -78,12 +78,12 @@ func (p *providerLLMClient) Complete(ctx context.Context, req *CompletionRequest
 	provReq := &ProviderRequest{
 		Text: req.Prompt,
 	}
-	
+
 	resp, err := p.provider.Translate(ctx, provReq)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &CompletionResponse{
 		Text:      resp.Text,
 		Model:     resp.Model,
@@ -97,17 +97,17 @@ func (p *providerLLMClient) Chat(ctx context.Context, req *ChatRequest) (*ChatRe
 	if len(req.Messages) == 0 {
 		return nil, ErrEmptyText
 	}
-	
+
 	lastMessage := req.Messages[len(req.Messages)-1]
 	provReq := &ProviderRequest{
 		Text: lastMessage.Content,
 	}
-	
+
 	resp, err := p.provider.Translate(ctx, provReq)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &ChatResponse{
 		Message: ChatMessage{
 			Role:    "assistant",

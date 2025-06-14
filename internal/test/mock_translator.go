@@ -302,12 +302,12 @@ func (m *MockTranslator) TranslateFile(inputPath, outputPath string) error {
 
 	// 创建输出目录（如果不存在）
 	outputDir := filepath.Dir(outputPath)
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return fmt.Errorf("创建输出目录失败 %s: %w", outputDir, err)
 	}
 
 	// 写入输出文件
-	if err := os.WriteFile(outputPath, []byte(translatedContent), 0644); err != nil {
+	if err := os.WriteFile(outputPath, []byte(translatedContent), 0o644); err != nil {
 		return fmt.Errorf("写入文件失败 %s: %w", outputPath, err)
 	}
 

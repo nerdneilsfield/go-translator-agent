@@ -16,12 +16,12 @@ type DeepLProvider struct {
 func (d *DeepLProvider) Translate(ctx context.Context, req *translation.ProviderRequest) (*translation.ProviderResponse, error) {
 	// 这里应该调用真实的 DeepL API
 	// 模拟 DeepL 的高质量直接翻译
-	translatedText := fmt.Sprintf("[DeepL] %s -> %s: %s", 
-		req.SourceLanguage, 
+	translatedText := fmt.Sprintf("[DeepL] %s -> %s: %s",
+		req.SourceLanguage,
 		req.TargetLanguage,
 		"这是由 DeepL 翻译的高质量文本。",
 	)
-	
+
 	return &translation.ProviderResponse{
 		Text:  translatedText,
 		Model: "deepl-pro",
@@ -43,12 +43,12 @@ type GoogleTranslateProvider struct {
 
 func (g *GoogleTranslateProvider) Translate(ctx context.Context, req *translation.ProviderRequest) (*translation.ProviderResponse, error) {
 	// 这里应该调用真实的 Google Translate API
-	translatedText := fmt.Sprintf("[Google] %s -> %s: %s", 
-		req.SourceLanguage, 
+	translatedText := fmt.Sprintf("[Google] %s -> %s: %s",
+		req.SourceLanguage,
 		req.TargetLanguage,
 		"这是由 Google 翻译的文本。",
 	)
-	
+
 	return &translation.ProviderResponse{
 		Text:  translatedText,
 		Model: "google-translate",
@@ -71,7 +71,7 @@ type OpenAIProvider struct {
 func (o *OpenAIProvider) Translate(ctx context.Context, req *translation.ProviderRequest) (*translation.ProviderResponse, error) {
 	// 模拟 OpenAI 的响应，可以处理复杂的提示词
 	var response string
-	
+
 	// 根据请求中的选项判断是哪个步骤
 	if stepType, ok := req.Options["step_type"]; ok {
 		switch stepType {
@@ -85,7 +85,7 @@ func (o *OpenAIProvider) Translate(ctx context.Context, req *translation.Provide
 	} else {
 		response = "这是 OpenAI 的翻译结果。"
 	}
-	
+
 	return &translation.ProviderResponse{
 		Text:      response,
 		Model:     "gpt-4",
@@ -196,10 +196,10 @@ func main() {
 
 	// 配置3：仅使用 LLM 的传统三步翻译
 	fmt.Println("\n=== 示例3: 纯 OpenAI 三步翻译 ===")
-	
+
 	// 为了兼容性，创建一个 LLMClient 适配器
 	llmClient := &MockLLMClient{provider: openai}
-	
+
 	config3 := translation.DefaultConfig()
 	translator3, err := translation.New(config3,
 		translation.WithLLMClient(llmClient),
@@ -242,7 +242,7 @@ func (m *MockLLMClient) Chat(ctx context.Context, req *translation.ChatRequest) 
 	if len(req.Messages) == 0 {
 		return nil, fmt.Errorf("no messages")
 	}
-	
+
 	lastMsg := req.Messages[len(req.Messages)-1]
 	resp, err := m.provider.Translate(ctx, &translation.ProviderRequest{
 		Text: lastMsg.Content,
@@ -250,7 +250,7 @@ func (m *MockLLMClient) Chat(ctx context.Context, req *translation.ChatRequest) 
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &translation.ChatResponse{
 		Message: translation.ChatMessage{
 			Role:    "assistant",

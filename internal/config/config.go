@@ -44,40 +44,62 @@ type StepSetConfig struct {
 
 // Config 保存翻译器的所有配置
 type Config struct {
-	SourceLang              string                   `mapstructure:"source_lang"`
-	TargetLang              string                   `mapstructure:"target_lang"`
-	Country                 string                   `mapstructure:"country"`
-	DefaultModelName        string                   `mapstructure:"default_model_name"`
-	ModelConfigs            map[string]ModelConfig   `mapstructure:"models"`
-	StepSets                map[string]StepSetConfig `mapstructure:"step_sets"`
+	SourceLang              string                     `mapstructure:"source_lang"`
+	TargetLang              string                     `mapstructure:"target_lang"`
+	Country                 string                     `mapstructure:"country"`
+	DefaultModelName        string                     `mapstructure:"default_model_name"`
+	ModelConfigs            map[string]ModelConfig     `mapstructure:"models"`
+	StepSets                map[string]StepSetConfig   `mapstructure:"step_sets"`
 	StepSetsV2              map[string]StepSetConfigV2 `mapstructure:"step_sets_v2"` // 新格式的步骤集
-	ActiveStepSet           string                   `mapstructure:"active_step_set"`
-	MaxTokensPerChunk       int                      `mapstructure:"max_tokens_per_chunk"`
-	CacheDir                string                   `mapstructure:"cache_dir"`
-	UseCache                bool                     `mapstructure:"use_cache"`
-	Debug                   bool                     `mapstructure:"debug"`
-	RequestTimeout          int                      `mapstructure:"request_timeout"`           // 请求超时时间（秒）
-	Concurrency             int                      `mapstructure:"concurrency"`               // 并行翻译请求数
-	HtmlConcurrency         int                      `mapstructure:"html_concurrency"`          // 并行HTML翻译请求数(每个 html 内部翻译请求数)
-	EpubConcurrency         int                      `mapstructure:"epub_concurrency"`          // 并行EPUB翻译请求数（同时翻译几个内部的 html)
-	MinSplitSize            int                      `mapstructure:"min_split_size"`            // 最小分割大小（字符数）
-	MaxSplitSize            int                      `mapstructure:"max_split_size"`            // 最大分割大小（字符数）
-	FilterReasoning         bool                     `mapstructure:"filter_reasoning"`          // 是否过滤推理过程
-	AutoSaveInterval        int                      `mapstructure:"auto_save_interval"`        // 自动保存间隔（秒）
-	TranslationTimeout      int                      `mapstructure:"translation_timeout"`       // 翻译超时时间（秒）
-	PreserveMath            bool                     `mapstructure:"preserve_math"`             // 保留数学公式
-	TranslateFigureCaptions bool                     `mapstructure:"translate_figure_captions"` // 翻译图表标题
-	RetryFailedParts        bool                     `mapstructure:"retry_failed_parts"`        // 重试失败的部分
-	MaxRetries              int                      `mapstructure:"max_retries"`               // 最大重试次数
-	PostProcessMarkdown     bool                     `mapstructure:"post_process_markdown"`     // 翻译后对 Markdown 进行后处理
-	FixMathFormulas         bool                     `mapstructure:"fix_math_formulas"`         // 修复数学公式
-	FixTableFormat          bool                     `mapstructure:"fix_table_format"`          // 修复表格格式
-	FixMixedContent         bool                     `mapstructure:"fix_mixed_content"`         // 修复混合内容（中英文混合）
-	FixPicture              bool                     `mapstructure:"fix_picture"`               // 修复图片
-	TargetCurrency          string                   `mapstructure:"target_currency"`           // 目标货币单位 (例如 USD, RMB), 空字符串表示不转换
-	UsdRmbRate              float64                  `mapstructure:"usd_rmb_rate"`              // USD 到 RMB 的汇率, 用于成本估算时的货币转换
-	KeepIntermediateFiles   bool                     `mapstructure:"keep_intermediate_files"`   // 是否保留中间文件（如EPUB解压的临时文件夹）
-	SaveDebugInfo           bool                     `mapstructure:"save_debug_info"`           // 是否保存调试信息到 JSON 文件
+	ActiveStepSet           string                     `mapstructure:"active_step_set"`
+	MaxTokensPerChunk       int                        `mapstructure:"max_tokens_per_chunk"`
+	CacheDir                string                     `mapstructure:"cache_dir"`
+	UseCache                bool                       `mapstructure:"use_cache"`
+	Debug                   bool                       `mapstructure:"debug"`
+	RequestTimeout          int                        `mapstructure:"request_timeout"`           // 请求超时时间（秒）
+	Concurrency             int                        `mapstructure:"concurrency"`               // 并行翻译请求数
+	HtmlConcurrency         int                        `mapstructure:"html_concurrency"`          // 并行HTML翻译请求数(每个 html 内部翻译请求数)
+	EpubConcurrency         int                        `mapstructure:"epub_concurrency"`          // 并行EPUB翻译请求数（同时翻译几个内部的 html)
+	MinSplitSize            int                        `mapstructure:"min_split_size"`            // 最小分割大小（字符数）
+	MaxSplitSize            int                        `mapstructure:"max_split_size"`            // 最大分割大小（字符数）
+	FilterReasoning         bool                       `mapstructure:"filter_reasoning"`          // 是否过滤推理过程
+	AutoSaveInterval        int                        `mapstructure:"auto_save_interval"`        // 自动保存间隔（秒）
+	TranslationTimeout      int                        `mapstructure:"translation_timeout"`       // 翻译超时时间（秒）
+	PreserveMath            bool                       `mapstructure:"preserve_math"`             // 保留数学公式
+	TranslateFigureCaptions bool                       `mapstructure:"translate_figure_captions"` // 翻译图表标题
+	RetryFailedParts        bool                       `mapstructure:"retry_failed_parts"`        // 重试失败的部分
+	MaxRetries              int                        `mapstructure:"max_retries"`               // 最大重试次数
+	PostProcessMarkdown     bool                       `mapstructure:"post_process_markdown"`     // 翻译后对 Markdown 进行后处理
+	FixMathFormulas         bool                       `mapstructure:"fix_math_formulas"`         // 修复数学公式
+	FixTableFormat          bool                       `mapstructure:"fix_table_format"`          // 修复表格格式
+	FixMixedContent         bool                       `mapstructure:"fix_mixed_content"`         // 修复混合内容（中英文混合）
+	FixPicture              bool                       `mapstructure:"fix_picture"`               // 修复图片
+	TargetCurrency          string                     `mapstructure:"target_currency"`           // 目标货币单位 (例如 USD, RMB), 空字符串表示不转换
+	UsdRmbRate              float64                    `mapstructure:"usd_rmb_rate"`              // USD 到 RMB 的汇率, 用于成本估算时的货币转换
+	KeepIntermediateFiles   bool                       `mapstructure:"keep_intermediate_files"`   // 是否保留中间文件（如EPUB解压的临时文件夹）
+	SaveDebugInfo           bool                       `mapstructure:"save_debug_info"`           // 是否保存调试信息到 JSON 文件
+	ChunkSize               int                        `mapstructure:"chunk_size"`                // 分块大小
+	RetryAttempts           int                        `mapstructure:"retry_attempts"`            // 重试次数
+	Metadata                map[string]interface{}     `mapstructure:"metadata"`                  // 元数据
+
+	// 格式修复配置
+	EnableFormatFix      bool `mapstructure:"enable_format_fix"`      // 启用格式修复
+	FormatFixInteractive bool `mapstructure:"format_fix_interactive"` // 交互式格式修复
+	PreTranslationFix    bool `mapstructure:"pre_translation_fix"`    // 翻译前格式修复
+	PostTranslationFix   bool `mapstructure:"post_translation_fix"`   // 翻译后格式修复
+	UseExternalTools     bool `mapstructure:"use_external_tools"`     // 使用外部工具（如markdownlint、prettier）
+	FormatFixMarkdown    bool `mapstructure:"format_fix_markdown"`    // 启用Markdown格式修复
+	FormatFixText        bool `mapstructure:"format_fix_text"`        // 启用Text格式修复
+	FormatFixHTML        bool `mapstructure:"format_fix_html"`        // 启用HTML格式修复
+	FormatFixEPUB        bool `mapstructure:"format_fix_epub"`        // 启用EPUB格式修复
+
+	// 翻译后处理配置
+	EnablePostProcessing      bool   `mapstructure:"enable_post_processing"`      // 启用翻译后处理
+	GlossaryPath              string `mapstructure:"glossary_path"`               // 词汇表文件路径
+	ContentProtection         bool   `mapstructure:"content_protection"`          // 内容保护
+	TerminologyConsistency    bool   `mapstructure:"terminology_consistency"`     // 术语一致性检查
+	MixedLanguageSpacing      bool   `mapstructure:"mixed_language_spacing"`      // 中英文混排空格优化
+	MachineTranslationCleanup bool   `mapstructure:"machine_translation_cleanup"` // 机器翻译痕迹清理
 }
 
 // LoadConfig 从文件加载配置
@@ -123,8 +145,7 @@ func LoadConfig(configPath string) (*Config, error) {
 
 	// 设置缓存目录（如果未设置）
 	if config.CacheDir == "" {
-		tmpDir := os.TempDir()
-		config.CacheDir = filepath.Join(tmpDir, "translator-cache")
+		config.CacheDir = getDefaultCacheDir()
 	}
 
 	if config.MaxRetries == 0 {
@@ -154,7 +175,7 @@ func SaveConfig(config *Config, configPath string) error {
 
 	// 创建父目录（如果不存在）
 	dir := filepath.Dir(configPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 
@@ -163,6 +184,9 @@ func SaveConfig(config *Config, configPath string) error {
 
 // NewDefaultConfig 创建一个新的默认配置
 func NewDefaultConfig() *Config {
+	// 获取系统缓存目录
+	cacheDir := getDefaultCacheDir()
+
 	return &Config{
 		SourceLang:              "English",
 		TargetLang:              "Chinese",
@@ -173,7 +197,7 @@ func NewDefaultConfig() *Config {
 		StepSetsV2:              GetDefaultStepSetsV2(),
 		ActiveStepSet:           "basic",
 		MaxTokensPerChunk:       2000,
-		CacheDir:                "",
+		CacheDir:                cacheDir,
 		UseCache:                true,
 		Debug:                   false,
 		RequestTimeout:          300,  // 默认5分钟超时
@@ -196,7 +220,28 @@ func NewDefaultConfig() *Config {
 		UsdRmbRate:              7.4,   // 默认 USD 到 RMB 汇率
 		KeepIntermediateFiles:   false, // 默认不保留中间文件
 		SaveDebugInfo:           false,
+		ChunkSize:               2000, // 默认分块大小2000字符
+		RetryAttempts:           3,    // 默认重试3次
+		Metadata:                make(map[string]interface{}),
 	}
+}
+
+// getDefaultCacheDir 获取默认缓存目录
+func getDefaultCacheDir() string {
+	// 优先使用系统缓存目录
+	cacheDir, err := os.UserCacheDir()
+	if err == nil {
+		return filepath.Join(cacheDir, "translator")
+	}
+
+	// 如果无法获取系统缓存目录，使用用户主目录
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		return filepath.Join(homeDir, ".translator", "cache")
+	}
+
+	// 最后的兜底方案
+	return "./translator-cache"
 }
 
 // DefaultModelConfigs 返回默认模型配置
@@ -275,16 +320,16 @@ func DefaultModelConfigs() map[string]ModelConfig {
 			ReasoningTags:    []string{"<think>", "</think>"},
 		},
 		"qwq-32b": {
-			Name:             "qwq-32b",
-			ModelID:          "qwq-32b-preview",
-			APIType:          "openai",
-			BaseURL:          "",
-			Key:              "",
-			MaxOutputTokens:  32768,
-			MaxInputTokens:   32768,
-			Temperature:      0.7,
-			IsReasoning:      true,
-			ReasoningTags:    []string{"<think>", "</think>"},
+			Name:            "qwq-32b",
+			ModelID:         "qwq-32b-preview",
+			APIType:         "openai",
+			BaseURL:         "",
+			Key:             "",
+			MaxOutputTokens: 32768,
+			MaxInputTokens:  32768,
+			Temperature:     0.7,
+			IsReasoning:     true,
+			ReasoningTags:   []string{"<think>", "</think>"},
 		},
 		"qwen-plus": {
 			Name:            "qwen-plus",
@@ -432,7 +477,20 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("usd_rmb_rate", 7.4)
 	v.SetDefault("keep_intermediate_files", false)
 	v.SetDefault("save_debug_info", false)
-	
+	v.SetDefault("chunk_size", 2000)
+	v.SetDefault("retry_attempts", 3)
+
+	// 格式修复默认配置
+	v.SetDefault("enable_format_fix", true)       // 默认启用格式修复
+	v.SetDefault("format_fix_interactive", false) // 默认使用静默修复
+	v.SetDefault("pre_translation_fix", true)     // 默认启用翻译前修复
+	v.SetDefault("post_translation_fix", true)    // 默认启用翻译后修复
+	v.SetDefault("use_external_tools", true)      // 默认尝试使用外部工具
+	v.SetDefault("format_fix_markdown", true)     // 默认启用Markdown修复
+	v.SetDefault("format_fix_text", true)         // 默认启用Text修复
+	v.SetDefault("format_fix_html", false)        // HTML修复暂未实现
+	v.SetDefault("format_fix_epub", false)        // EPUB修复暂未实现
+
 	// 设置默认的新格式步骤集
 	v.SetDefault("step_sets_v2", GetDefaultStepSetsV2())
 }
@@ -472,5 +530,19 @@ func structToMap(config *Config) map[string]interface{} {
 		"usd_rmb_rate":              config.UsdRmbRate,
 		"keep_intermediate_files":   config.KeepIntermediateFiles,
 		"save_debug_info":           config.SaveDebugInfo,
+		"chunk_size":                config.ChunkSize,
+		"retry_attempts":            config.RetryAttempts,
+		"metadata":                  config.Metadata,
+
+		// 格式修复配置
+		"enable_format_fix":      config.EnableFormatFix,
+		"format_fix_interactive": config.FormatFixInteractive,
+		"pre_translation_fix":    config.PreTranslationFix,
+		"post_translation_fix":   config.PostTranslationFix,
+		"use_external_tools":     config.UseExternalTools,
+		"format_fix_markdown":    config.FormatFixMarkdown,
+		"format_fix_text":        config.FormatFixText,
+		"format_fix_html":        config.FormatFixHTML,
+		"format_fix_epub":        config.FormatFixEPUB,
 	}
 }

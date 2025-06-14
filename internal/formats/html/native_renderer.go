@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 	"golang.org/x/net/html"
 )
 
@@ -33,7 +33,7 @@ func (r *NativeRenderer) Render(ctx context.Context, doc *document.Document, out
 		if htmlNode, ok := doc.Metadata.CustomFields["html_node"].(*html.Node); ok {
 			// 更新 HTML 节点中的文本
 			r.updateHTMLNodes(doc.Blocks)
-			
+
 			// 渲染 HTML
 			return html.Render(output, htmlNode)
 		}
@@ -60,7 +60,7 @@ func (r *NativeRenderer) updateHTMLNodes(blocks []document.Block) {
 
 			content := block.GetContent()
 			metadata := block.GetMetadata()
-			
+
 			// 根据元数据确定如何更新
 			if attrs := metadata.Attributes; attrs != nil {
 				// 检查是否是文本节点
@@ -69,14 +69,14 @@ func (r *NativeRenderer) updateHTMLNodes(blocks []document.Block) {
 					node.Data = content
 					continue
 				}
-				
+
 				// 检查是否是属性更新
 				if attrName, ok := attrs["attr"].(string); ok && attrName != "" {
 					// 更新属性值
 					r.updateNodeAttribute(node, attrName, content)
 					continue
 				}
-				
+
 				// 默认更新元素的文本内容
 				r.updateElementText(node, content)
 			}
@@ -104,7 +104,7 @@ func (r *NativeRenderer) updateElementText(node *html.Node, text string) {
 	// 移除所有子节点
 	node.FirstChild = nil
 	node.LastChild = nil
-	
+
 	// 添加新的文本节点
 	textNode := &html.Node{
 		Type: html.TextNode,
@@ -145,7 +145,7 @@ func (r *NativeRenderer) renderBlock(block document.Block) string {
 	}
 
 	content := html.EscapeString(block.GetContent())
-	
+
 	switch block.GetType() {
 	case document.BlockTypeHeading:
 		level := block.GetMetadata().Level
@@ -153,7 +153,7 @@ func (r *NativeRenderer) renderBlock(block document.Block) string {
 			level = 1
 		}
 		return fmt.Sprintf("<h%d>%s</h%d>", level, content, level)
-		
+
 	case document.BlockTypeParagraph:
 		// 检查元数据中的原始标签
 		if attrs := block.GetMetadata().Attributes; attrs != nil {
@@ -179,10 +179,10 @@ func (r *NativeRenderer) renderBlock(block document.Block) string {
 			}
 		}
 		return fmt.Sprintf("<p>%s</p>", content)
-		
+
 	case document.BlockTypeCode:
 		return fmt.Sprintf("<pre><code>%s</code></pre>", content)
-		
+
 	case document.BlockTypeList:
 		// 简单处理，创建无序列表
 		items := strings.Split(content, "\n")
@@ -199,14 +199,14 @@ func (r *NativeRenderer) renderBlock(block document.Block) string {
 		}
 		result += "</ul>"
 		return result
-		
+
 	case document.BlockTypeTable:
 		// 简单的表格处理
 		return fmt.Sprintf("<table>\n%s\n</table>", content)
-		
+
 	case document.BlockTypeQuote:
 		return fmt.Sprintf("<blockquote>%s</blockquote>", content)
-		
+
 	case document.BlockTypeImage:
 		// 从元数据获取 src
 		src := ""
@@ -216,7 +216,7 @@ func (r *NativeRenderer) renderBlock(block document.Block) string {
 			}
 		}
 		return fmt.Sprintf(`<img src="%s" alt="%s">`, html.EscapeString(src), content)
-		
+
 	default:
 		return fmt.Sprintf("<div>%s</div>", content)
 	}

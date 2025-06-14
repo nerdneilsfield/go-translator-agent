@@ -25,7 +25,7 @@ target_lang = "Chinese"
 "Hello" = "你好"
 "World" = "世界"
 `
-	err := os.WriteFile(testFile, []byte(testContent), 0644)
+	err := os.WriteFile(testFile, []byte(testContent), 0o644)
 	assert.NoError(t, err)
 
 	// 加载预设配置
@@ -58,7 +58,7 @@ source_lang = "English"
 target_lang = "Chinese"
 [invalid section
 `
-	err = os.WriteFile(testFile, []byte(invalidContent), 0644)
+	err = os.WriteFile(testFile, []byte(invalidContent), 0o644)
 	assert.NoError(t, err)
 
 	// 尝试加载无效的预设配置

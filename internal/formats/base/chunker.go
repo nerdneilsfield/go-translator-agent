@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 )
 
 // SimpleChunker 简单的文本分块器
@@ -31,7 +31,7 @@ func (c *SimpleChunker) Chunk(content string, opts document.ChunkOptions) []docu
 
 	chunks := make([]document.Chunk, 0)
 	lines := strings.Split(content, "\n")
-	
+
 	currentChunk := strings.Builder{}
 	currentStart := 0
 	currentPos := 0
@@ -39,7 +39,7 @@ func (c *SimpleChunker) Chunk(content string, opts document.ChunkOptions) []docu
 
 	for i, line := range lines {
 		lineLen := len(line) + 1 // +1 for newline
-		
+
 		// 检查是否会超过最大大小
 		if currentChunk.Len() > 0 && currentChunk.Len()+lineLen > opts.MaxSize {
 			// 创建新块
@@ -49,10 +49,10 @@ func (c *SimpleChunker) Chunk(content string, opts document.ChunkOptions) []docu
 				Start:   currentStart,
 				End:     currentPos,
 			})
-			
+
 			chunkID++
 			currentChunk.Reset()
-			
+
 			// 处理重叠
 			if opts.Overlap > 0 && i > 0 {
 				// 从前面的行中取一些作为重叠
@@ -62,10 +62,10 @@ func (c *SimpleChunker) Chunk(content string, opts document.ChunkOptions) []docu
 					currentChunk.WriteString("\n")
 				}
 			}
-			
+
 			currentStart = currentPos
 		}
-		
+
 		currentChunk.WriteString(line)
 		if i < len(lines)-1 {
 			currentChunk.WriteString("\n")
@@ -93,14 +93,14 @@ func (c *SimpleChunker) Merge(chunks []document.TranslatedChunk) string {
 	}
 
 	var result strings.Builder
-	
+
 	for i, chunk := range chunks {
 		result.WriteString(chunk.TranslatedContent)
 		if i < len(chunks)-1 {
 			result.WriteString("\n\n")
 		}
 	}
-	
+
 	return result.String()
 }
 
@@ -131,7 +131,7 @@ func (c *SmartChunker) Chunk(content string, opts document.ChunkOptions) []docum
 
 	chunks := make([]document.Chunk, 0)
 	paragraphs := strings.Split(content, "\n\n")
-	
+
 	currentChunk := strings.Builder{}
 	currentStart := 0
 	currentPos := 0
@@ -139,7 +139,7 @@ func (c *SmartChunker) Chunk(content string, opts document.ChunkOptions) []docum
 
 	for _, para := range paragraphs {
 		paraLen := len(para) + 2 // +2 for double newline
-		
+
 		// 如果段落本身就超过最大大小，需要进一步分割
 		if len(para) > opts.MaxSize {
 			// 按句子分割
@@ -153,12 +153,12 @@ func (c *SmartChunker) Chunk(content string, opts document.ChunkOptions) []docum
 						Start:   currentStart,
 						End:     currentPos,
 					})
-					
+
 					chunkID++
 					currentChunk.Reset()
 					currentStart = currentPos
 				}
-				
+
 				currentChunk.WriteString(sentence)
 				currentPos += len(sentence)
 			}
@@ -172,12 +172,12 @@ func (c *SmartChunker) Chunk(content string, opts document.ChunkOptions) []docum
 					Start:   currentStart,
 					End:     currentPos,
 				})
-				
+
 				chunkID++
 				currentChunk.Reset()
 				currentStart = currentPos
 			}
-			
+
 			if currentChunk.Len() > 0 {
 				currentChunk.WriteString("\n\n")
 			}
@@ -203,11 +203,11 @@ func (c *SmartChunker) Chunk(content string, opts document.ChunkOptions) []docum
 func (c *SmartChunker) splitSentences(text string) []string {
 	sentences := make([]string, 0)
 	current := strings.Builder{}
-	
+
 	runes := []rune(text)
 	for i, r := range runes {
 		current.WriteRune(r)
-		
+
 		// 检查是否是句子结束符
 		for _, delimiter := range c.sentenceDelimiters {
 			if strings.HasSuffix(current.String(), delimiter) {
@@ -220,12 +220,12 @@ func (c *SmartChunker) splitSentences(text string) []string {
 			}
 		}
 	}
-	
+
 	// 添加剩余内容
 	if current.Len() > 0 {
 		sentences = append(sentences, current.String())
 	}
-	
+
 	return sentences
 }
 
@@ -236,13 +236,13 @@ func (c *SmartChunker) Merge(chunks []document.TranslatedChunk) string {
 	}
 
 	var result strings.Builder
-	
+
 	for i, chunk := range chunks {
 		result.WriteString(chunk.TranslatedContent)
 		if i < len(chunks)-1 && !strings.HasSuffix(chunk.TranslatedContent, "\n\n") {
 			result.WriteString("\n\n")
 		}
 	}
-	
+
 	return result.String()
 }

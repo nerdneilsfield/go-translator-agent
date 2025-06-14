@@ -42,7 +42,7 @@ func (p *TextFormattingProcessor) FormatFile(inputPath, outputPath string) error
 		return fmt.Errorf("编码转换失败: %w", err)
 	}
 	formatted := p.FormatText(content)
-	if err := os.WriteFile(outputPath, []byte(formatted), 0644); err != nil {
+	if err := os.WriteFile(outputPath, []byte(formatted), 0o644); err != nil {
 		return fmt.Errorf("写入文件失败 %s: %w", outputPath, err)
 	}
 	return nil

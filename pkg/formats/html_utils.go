@@ -227,7 +227,7 @@ func (t *GoQueryHTMLTranslator) processHTML(htmlStr string) (*goquery.Document, 
 		if match := xmlDeclRegex.FindString(htmlStr); match != "" {
 			xmlDecl = match
 			// t.logger.Debug("找到XML声明/Found XML declaration", zap.String("declaration", xmlDecl))
-			htmlStr = strings.Replace(htmlStr, xmlDecl, "", 1) //移除一次，避免影响解析/Remove once to avoid affecting parsing
+			htmlStr = strings.Replace(htmlStr, xmlDecl, "", 1) // 移除一次，避免影响解析/Remove once to avoid affecting parsing
 		}
 	}
 
@@ -237,7 +237,7 @@ func (t *GoQueryHTMLTranslator) processHTML(htmlStr string) (*goquery.Document, 
 		if match := doctypeRegex.FindString(htmlStr); match != "" {
 			doctypeDecl = match
 			// t.logger.Debug("找到DOCTYPE声明/Found DOCTYPE", zap.String("doctype", doctypeDecl))
-			htmlStr = strings.Replace(htmlStr, doctypeDecl, "", 1) //移除一次/Remove once
+			htmlStr = strings.Replace(htmlStr, doctypeDecl, "", 1) // 移除一次/Remove once
 		}
 	}
 
@@ -551,7 +551,7 @@ func (t *GoQueryHTMLTranslator) parseGroupTranslation(groupTranslatedText string
 			} else {
 				// 仅在节点索引有效时赋值/Assign only if node index is valid
 				if validIDsMap[nodeIndex] {
-					//t.logger.Debug("检测到的节点/Detected node", zap.Int("nodeIndex", nodeIndex), zap.String("translation", translation))
+					// t.logger.Debug("检测到的节点/Detected node", zap.Int("nodeIndex", nodeIndex), zap.String("translation", translation))
 					nodeIDWithTranslation[nodeIndex] = translation
 					detectedNodeCount++
 				} else {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -97,9 +97,9 @@ func testHTMLProcessor(t *testing.T, processor document.Processor, htmlContent s
 
 		// 验证提取了关键内容
 		allContent := getAllBlocksAsString(doc.Blocks)
-		assert.Contains(t, allContent, "Main Title")    // h1
-		assert.Contains(t, allContent, "Section 1")     // h2
-		assert.Contains(t, allContent, "First item")    // list item
+		assert.Contains(t, allContent, "Main Title") // h1
+		assert.Contains(t, allContent, "Section 1")  // h2
+		assert.Contains(t, allContent, "First item") // list item
 	})
 
 	// 测试处理（翻译）
@@ -151,7 +151,7 @@ func testHTMLProcessor(t *testing.T, processor document.Processor, htmlContent s
 		// 验证是 HTML 格式
 		assert.Contains(t, rendered, "<")
 		assert.Contains(t, rendered, ">")
-		
+
 		// 验证翻译的内容
 		assert.Contains(t, rendered, "[TRANSLATED]")
 	})
@@ -235,7 +235,7 @@ func TestHTMLToMarkdownConverter(t *testing.T) {
 		assert.Contains(t, markdown, "`inline code`")
 		assert.Contains(t, markdown, "***bold italic***")
 		// 检查有序列表（可能有格式差异）
-		assert.Contains(t, markdown, "First") 
+		assert.Contains(t, markdown, "First")
 		assert.Contains(t, markdown, "[linked item](#link)")
 		assert.Contains(t, markdown, "Second item")
 	})

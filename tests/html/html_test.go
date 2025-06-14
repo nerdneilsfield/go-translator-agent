@@ -100,7 +100,7 @@ func TestHTMLTranslation(t *testing.T) {
 
 			// 保存翻译结果
 			outputPath := filepath.Join(".", tc.filename+"_translated")
-			if err := os.WriteFile(outputPath, []byte(translated), 0644); err != nil {
+			if err := os.WriteFile(outputPath, []byte(translated), 0o644); err != nil {
 				t.Fatalf("写入文件失败 %s: %v", outputPath, err)
 			}
 

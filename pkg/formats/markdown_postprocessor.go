@@ -72,7 +72,7 @@ func (p *MarkdownPostProcessor) ProcessMarkdown(text string, replacements []Repl
 	} else {
 		tempFile = tempFile + ".temp"
 	}
-	if err := os.WriteFile(tempFile, []byte(text), 0644); err != nil {
+	if err := os.WriteFile(tempFile, []byte(text), 0o644); err != nil {
 		p.logger.Error("创建临时文件失败", zap.Error(err))
 		return text
 	}

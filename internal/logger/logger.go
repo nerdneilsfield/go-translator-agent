@@ -166,13 +166,13 @@ func NewLoggerWithPath(debug bool, outputPath string) *zap.Logger {
 	var fileWriter zapcore.WriteSyncer
 	if enableFileOutput {
 		dir := filepath.Dir(outputPath)
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			// 使用一个临时的基本logger来记录这个致命错误，因为我们的完整logger还没建好
 			tempLogger, _ := zap.NewProduction()
 			tempLogger.Fatal("创建日志输出目录失败", zap.Error(err))
 			// panic(err) // Fatal 已经会 os.Exit(1)
 		}
-		file, err := os.OpenFile(outputPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		file, err := os.OpenFile(outputPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666)
 		if err != nil {
 			tempLogger, _ := zap.NewProduction()
 			tempLogger.Fatal("打开日志输出文件失败", zap.Error(err))

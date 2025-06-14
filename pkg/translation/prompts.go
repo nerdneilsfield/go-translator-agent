@@ -54,7 +54,7 @@ Formatting Rules:
    - For LaTeX files, preserve all commands, environments (such as \begin{...} and \end{...}), and macros exactly as they are.
    - Keep all HTML tags intact.
 2. Do not alter abbreviations, technical terms, or code identifiers.
-3. Preserve document structure, including line breaks, paragraph spacing, lists, and tables.`, 
+3. Preserve document structure, including line breaks, paragraph spacing, lists, and tables.`,
 		pb.SourceLang, pb.TargetLang)
 
 	// 添加国家/地区特定说明
@@ -188,7 +188,7 @@ func ExtractTranslationFromResponse(response string) string {
 		"Translated text:",
 		"The translation is:",
 	}
-	
+
 	result := response
 	for _, prefix := range prefixes {
 		if strings.HasPrefix(strings.TrimSpace(result), prefix) {
@@ -196,7 +196,7 @@ func ExtractTranslationFromResponse(response string) string {
 			result = strings.TrimSpace(result)
 		}
 	}
-	
+
 	// 移除可能的代码块标记
 	if strings.HasPrefix(result, "```") && strings.HasSuffix(result, "```") {
 		lines := strings.Split(result, "\n")
@@ -205,7 +205,7 @@ func ExtractTranslationFromResponse(response string) string {
 			result = strings.Join(lines[1:len(lines)-1], "\n")
 		}
 	}
-	
+
 	return strings.TrimSpace(result)
 }
 
@@ -214,20 +214,20 @@ func RemoveReasoningMarkers(text string) string {
 	// 移除 <thinking>...</thinking> 标记
 	thinkingRe := regexp.MustCompile(`(?s)<thinking>.*?</thinking>`)
 	text = thinkingRe.ReplaceAllString(text, "")
-	
+
 	// 移除 <reflection>...</reflection> 标记
 	reflectionRe := regexp.MustCompile(`(?s)<reflection>.*?</reflection>`)
 	text = reflectionRe.ReplaceAllString(text, "")
-	
+
 	// 移除 <answer>...</answer> 标记，但保留内容
 	answerRe := regexp.MustCompile(`(?s)<answer>(.*?)</answer>`)
 	if matches := answerRe.FindStringSubmatch(text); len(matches) > 1 {
 		text = matches[1]
 	}
-	
+
 	// 移除多余的空行
 	text = regexp.MustCompile(`\n{3,}`).ReplaceAllString(text, "\n\n")
-	
+
 	return strings.TrimSpace(text)
 }
 
@@ -237,14 +237,14 @@ func RemoveReasoningProcess(text string, tags []string) string {
 	if len(tags) == 0 {
 		return RemoveReasoningMarkers(text)
 	}
-	
+
 	// 为每个标记创建正则表达式并移除
 	for _, tag := range tags {
 		// 处理成对标记，如 <thinking>...</thinking>
 		pattern := fmt.Sprintf(`(?s)<%s>.*?</%s>`, regexp.QuoteMeta(tag), regexp.QuoteMeta(tag))
 		re := regexp.MustCompile(pattern)
 		text = re.ReplaceAllString(text, "")
-		
+
 		// 处理单独标记，如 <answer>...保留内容...</answer>
 		if tag == "answer" {
 			pattern = fmt.Sprintf(`(?s)<%s>(.*?)</%s>`, regexp.QuoteMeta(tag), regexp.QuoteMeta(tag))
@@ -254,9 +254,9 @@ func RemoveReasoningProcess(text string, tags []string) string {
 			}
 		}
 	}
-	
+
 	// 移除多余的空行
 	text = regexp.MustCompile(`\n{3,}`).ReplaceAllString(text, "\n\n")
-	
+
 	return strings.TrimSpace(text)
 }

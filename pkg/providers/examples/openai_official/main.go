@@ -42,7 +42,7 @@ func main() {
 // basicTranslation 基本翻译示例
 func basicTranslation(config openai.ConfigV2) {
 	provider := openai.NewV2(config)
-	
+
 	req := &translation.ProviderRequest{
 		Text:           "The quick brown fox jumps over the lazy dog.",
 		SourceLanguage: "English",
@@ -64,7 +64,7 @@ func basicTranslation(config openai.ConfigV2) {
 // streamingTranslation 流式翻译示例
 func streamingTranslation(config openai.ConfigV2) {
 	provider := openai.NewV2(config)
-	
+
 	req := &translation.ProviderRequest{
 		Text: `In the heart of Silicon Valley, a new revolution is brewing. 
 		Artificial intelligence is no longer just a buzzword—it's becoming 
@@ -97,7 +97,7 @@ func streamingTranslation(config openai.ConfigV2) {
 func threeStepTranslation(config openai.ConfigV2) {
 	// 创建LLM客户端
 	llmClient := openai.NewLLMClientV2(config)
-	
+
 	// 创建翻译配置
 	translationConfig := &translation.Config{
 		SourceLanguage: "English",
@@ -191,27 +191,27 @@ Please provide an improved translation that addresses the feedback.`,
 // customConfiguration 自定义配置示例
 func customConfiguration() {
 	config := openai.ConfigV2{
-		BaseConfig: openai.DefaultConfigV2().BaseConfig,
-		Model:      "gpt-3.5-turbo-16k", // 使用长上下文模型
+		BaseConfig:  openai.DefaultConfigV2().BaseConfig,
+		Model:       "gpt-3.5-turbo-16k", // 使用长上下文模型
 		Temperature: 0.1,                 // 更低的温度，更确定性的输出
 		MaxTokens:   8000,                // 更大的token限制
 	}
-	
+
 	// 设置API密钥
 	config.APIKey = os.Getenv("OPENAI_API_KEY")
-	
+
 	// 设置自定义端点（例如使用代理）
 	if proxy := os.Getenv("OPENAI_PROXY_URL"); proxy != "" {
 		config.APIEndpoint = proxy
 	}
-	
+
 	// 设置组织ID（如果有）
 	if orgID := os.Getenv("OPENAI_ORG_ID"); orgID != "" {
 		config.OrgID = orgID
 	}
 
 	provider := openai.NewV2(config)
-	
+
 	// 带自定义指令的翻译
 	req := &translation.ProviderRequest{
 		Text:           "Quantum computing represents a fundamental shift in how we process information.",

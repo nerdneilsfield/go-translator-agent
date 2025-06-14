@@ -22,7 +22,7 @@ func NewDefaultChunker(size, overlap int) Chunker {
 	if overlap >= size {
 		overlap = size / 10 // 重叠不能超过块大小的10%
 	}
-	
+
 	return &defaultChunker{
 		config: ChunkConfig{
 			Size:    size,
@@ -36,15 +36,15 @@ func (c *defaultChunker) Chunk(text string) []string {
 	if text == "" {
 		return []string{}
 	}
-	
+
 	// 如果文本小于块大小，直接返回
 	if utf8.RuneCountInString(text) <= c.config.Size {
 		return []string{text}
 	}
-	
+
 	// 按段落分割
 	paragraphs := splitParagraphs(text)
-	
+
 	// 将段落组合成块
 	return c.combineParagraphsIntoChunks(paragraphs)
 }
@@ -59,10 +59,10 @@ func splitParagraphs(text string) []string {
 	// 标准化换行符
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
-	
+
 	// 按双换行符分割段落
 	parts := strings.Split(text, "\n\n")
-	
+
 	paragraphs := make([]string, 0, len(parts))
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
@@ -70,12 +70,12 @@ func splitParagraphs(text string) []string {
 			paragraphs = append(paragraphs, part)
 		}
 	}
-	
+
 	// 如果没有段落分隔，尝试按句子分割
 	if len(paragraphs) == 1 && utf8.RuneCountInString(paragraphs[0]) > 1000 {
 		return splitSentences(paragraphs[0])
 	}
-	
+
 	return paragraphs
 }
 
@@ -83,18 +83,18 @@ func splitParagraphs(text string) []string {
 func splitSentences(text string) []string {
 	var sentences []string
 	var current strings.Builder
-	
+
 	runes := []rune(text)
 	inQuote := false
-	
+
 	for i, r := range runes {
 		current.WriteRune(r)
-		
+
 		// 处理引号
 		if r == '"' || r == '\'' {
 			inQuote = !inQuote
 		}
-		
+
 		// 句子结束符
 		if !inQuote && isSentenceEnd(r) {
 			// 检查下一个字符是否是空格或段落结束
@@ -107,7 +107,7 @@ func splitSentences(text string) []string {
 			}
 		}
 	}
-	
+
 	// 添加剩余的文本
 	if current.Len() > 0 {
 		sentence := strings.TrimSpace(current.String())
@@ -115,7 +115,7 @@ func splitSentences(text string) []string {
 			sentences = append(sentences, sentence)
 		}
 	}
-	
+
 	return sentences
 }
 
@@ -129,14 +129,14 @@ func (c *defaultChunker) combineParagraphsIntoChunks(paragraphs []string) []stri
 	if len(paragraphs) == 0 {
 		return []string{}
 	}
-	
+
 	var chunks []string
 	var currentChunk strings.Builder
 	currentSize := 0
-	
+
 	for i, para := range paragraphs {
 		paraSize := utf8.RuneCountInString(para)
-		
+
 		// 如果单个段落超过块大小，需要分割
 		if paraSize > c.config.Size {
 			// 先保存当前块
@@ -145,18 +145,18 @@ func (c *defaultChunker) combineParagraphsIntoChunks(paragraphs []string) []stri
 				currentChunk.Reset()
 				currentSize = 0
 			}
-			
+
 			// 分割大段落
 			subChunks := c.splitLargeParagraph(para)
 			chunks = append(chunks, subChunks...)
 			continue
 		}
-		
+
 		// 如果加入这个段落会超过块大小
 		if currentSize > 0 && currentSize+paraSize+1 > c.config.Size {
 			// 保存当前块
 			chunks = append(chunks, strings.TrimSpace(currentChunk.String()))
-			
+
 			// 处理重叠
 			if c.config.Overlap > 0 && i > 0 {
 				// 从当前块的末尾获取重叠部分
@@ -172,7 +172,7 @@ func (c *defaultChunker) combineParagraphsIntoChunks(paragraphs []string) []stri
 				currentSize = 0
 			}
 		}
-		
+
 		// 添加段落到当前块
 		if currentChunk.Len() > 0 {
 			currentChunk.WriteString("\n\n")
@@ -181,12 +181,12 @@ func (c *defaultChunker) combineParagraphsIntoChunks(paragraphs []string) []stri
 		currentChunk.WriteString(para)
 		currentSize += paraSize
 	}
-	
+
 	// 添加最后一个块
 	if currentChunk.Len() > 0 {
 		chunks = append(chunks, strings.TrimSpace(currentChunk.String()))
 	}
-	
+
 	return chunks
 }
 
@@ -194,13 +194,13 @@ func (c *defaultChunker) combineParagraphsIntoChunks(paragraphs []string) []stri
 func (c *defaultChunker) splitLargeParagraph(para string) []string {
 	var chunks []string
 	sentences := splitSentences(para)
-	
+
 	var currentChunk strings.Builder
 	currentSize := 0
-	
+
 	for _, sentence := range sentences {
 		sentenceSize := utf8.RuneCountInString(sentence)
-		
+
 		// 如果单个句子就超过块大小，强制分割
 		if sentenceSize > c.config.Size {
 			if currentChunk.Len() > 0 {
@@ -208,20 +208,20 @@ func (c *defaultChunker) splitLargeParagraph(para string) []string {
 				currentChunk.Reset()
 				currentSize = 0
 			}
-			
+
 			// 按字符强制分割
 			forcedChunks := c.forceChunk(sentence)
 			chunks = append(chunks, forcedChunks...)
 			continue
 		}
-		
+
 		// 如果加入这个句子会超过块大小
 		if currentSize > 0 && currentSize+sentenceSize+1 > c.config.Size {
 			chunks = append(chunks, strings.TrimSpace(currentChunk.String()))
 			currentChunk.Reset()
 			currentSize = 0
 		}
-		
+
 		if currentChunk.Len() > 0 {
 			currentChunk.WriteString(" ")
 			currentSize++
@@ -229,11 +229,11 @@ func (c *defaultChunker) splitLargeParagraph(para string) []string {
 		currentChunk.WriteString(sentence)
 		currentSize += sentenceSize
 	}
-	
+
 	if currentChunk.Len() > 0 {
 		chunks = append(chunks, strings.TrimSpace(currentChunk.String()))
 	}
-	
+
 	return chunks
 }
 
@@ -243,18 +243,18 @@ func (c *defaultChunker) getOverlapText(text string) string {
 	if len(runes) <= c.config.Overlap {
 		return text
 	}
-	
+
 	// 从末尾获取重叠大小的文本
 	overlapStart := len(runes) - c.config.Overlap
 	overlapText := string(runes[overlapStart:])
-	
+
 	// 尝试在单词边界处开始
 	words := strings.Fields(overlapText)
 	if len(words) > 1 {
 		// 移除第一个可能不完整的单词
 		overlapText = strings.Join(words[1:], " ")
 	}
-	
+
 	return overlapText
 }
 
@@ -262,17 +262,17 @@ func (c *defaultChunker) getOverlapText(text string) string {
 func (c *defaultChunker) forceChunk(text string) []string {
 	var chunks []string
 	runes := []rune(text)
-	
+
 	for i := 0; i < len(runes); i += c.config.Size {
 		end := i + c.config.Size
 		if end > len(runes) {
 			end = len(runes)
 		}
-		
+
 		chunk := string(runes[i:end])
 		chunks = append(chunks, chunk)
 	}
-	
+
 	return chunks
 }
 
@@ -301,7 +301,7 @@ func NewSmartChunker(size, overlap int) Chunker {
 func (sc *smartChunker) Chunk(text string) []string {
 	// 识别并保护特殊结构
 	blocks := sc.identifyBlocks(text)
-	
+
 	// 对每个块进行分块
 	var allChunks []string
 	for _, block := range blocks {
@@ -320,7 +320,7 @@ func (sc *smartChunker) Chunk(text string) []string {
 			allChunks = append(allChunks, chunks...)
 		}
 	}
-	
+
 	return allChunks
 }
 
@@ -334,11 +334,11 @@ type Block struct {
 func (sc *smartChunker) identifyBlocks(text string) []Block {
 	var blocks []Block
 	lines := strings.Split(text, "\n")
-	
+
 	var currentBlock Block
 	var inCodeBlock bool
 	var codeBlockDelimiter string
-	
+
 	for _, line := range lines {
 		// 检查代码块开始/结束
 		if strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~") {
@@ -379,13 +379,13 @@ func (sc *smartChunker) identifyBlocks(text string) []Block {
 			}
 		}
 	}
-	
+
 	// 添加最后一个块
 	if currentBlock.Content != "" {
 		currentBlock.Content = strings.TrimSpace(currentBlock.Content)
 		blocks = append(blocks, currentBlock)
 	}
-	
+
 	return blocks
 }
 
@@ -395,12 +395,12 @@ func (sc *smartChunker) isListItem(line string) bool {
 	if trimmed == "" {
 		return false
 	}
-	
+
 	// 检查无序列表
 	if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") || strings.HasPrefix(trimmed, "+ ") {
 		return true
 	}
-	
+
 	// 检查有序列表
 	for i, r := range trimmed {
 		if !unicode.IsDigit(r) {
@@ -410,6 +410,6 @@ func (sc *smartChunker) isListItem(line string) bool {
 			break
 		}
 	}
-	
+
 	return false
 }

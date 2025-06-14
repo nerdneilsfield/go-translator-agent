@@ -41,7 +41,7 @@ func New(config Config) *Provider {
 	if config.APIEndpoint == "" {
 		config.APIEndpoint = "https://translation.googleapis.com/language/translate/v2"
 	}
-	
+
 	return &Provider{
 		config: config,
 		httpClient: &http.Client{
@@ -69,22 +69,22 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 		Target: normalizeLanguageCode(req.TargetLanguage),
 		Format: "text",
 	}
-	
+
 	// 检查是否包含HTML格式
 	if format, ok := req.Options["format"]; ok && format == "html" {
 		translateReq.Format = "html"
 	}
-	
+
 	// 执行翻译
 	resp, err := p.translate(ctx, translateReq)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if len(resp.Data.Translations) == 0 {
 		return nil, fmt.Errorf("no translation returned")
 	}
-	
+
 	// 返回响应
 	return &translation.ProviderResponse{
 		Text:  resp.Data.Translations[0].TranslatedText,
@@ -194,8 +194,8 @@ func (p *Provider) GetCapabilities() providers.Capabilities {
 		SupportsFormatting: true, // 支持HTML格式
 		RequiresAPIKey:     true,
 		RateLimit: &providers.RateLimit{
-			RequestsPerMinute: 600,          // 取决于配额
-			CharactersPerDay:  500000,       // 免费层级限制
+			RequestsPerMinute: 600,    // 取决于配额
+			CharactersPerDay:  500000, // 免费层级限制
 		},
 	}
 }
@@ -208,7 +208,7 @@ func (p *Provider) HealthCheck(ctx context.Context) error {
 		SourceLanguage: "en",
 		TargetLanguage: "es",
 	}
-	
+
 	_, err := p.Translate(ctx, req)
 	return err
 }
@@ -222,24 +222,24 @@ func (p *Provider) translate(ctx context.Context, req TranslateRequest) (*Transl
 	params.Set("source", req.Source)
 	params.Set("target", req.Target)
 	params.Set("format", req.Format)
-	
+
 	// 创建请求
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", 
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
 		p.config.APIEndpoint, strings.NewReader(params.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	// 设置头部
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	for k, v := range p.config.Headers {
 		httpReq.Header.Set(k, v)
 	}
-	
+
 	// 执行请求，带重试
 	var resp *http.Response
 	var lastErr error
-	
+
 	for i := 0; i <= p.config.MaxRetries; i++ {
 		if i > 0 {
 			select {
@@ -248,22 +248,22 @@ func (p *Provider) translate(ctx context.Context, req TranslateRequest) (*Transl
 			case <-time.After(p.config.RetryDelay * time.Duration(i)):
 			}
 		}
-		
+
 		resp, err = p.httpClient.Do(httpReq)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		
+
 		// 检查状态码
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			break
 		}
-		
+
 		// 读取错误响应
 		errBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		
+
 		// 解析错误
 		var apiErr APIError
 		if err := json.Unmarshal(errBody, &apiErr); err == nil {
@@ -271,26 +271,26 @@ func (p *Provider) translate(ctx context.Context, req TranslateRequest) (*Transl
 		} else {
 			lastErr = fmt.Errorf("API error: %s", resp.Status)
 		}
-		
+
 		// 检查是否可重试
 		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
 			continue
 		}
 		break
 	}
-	
+
 	if lastErr != nil {
 		return nil, lastErr
 	}
-	
+
 	defer resp.Body.Close()
-	
+
 	// 解析响应
 	var translateResp TranslateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&translateResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
-	
+
 	return &translateResp, nil
 }
 
@@ -298,30 +298,30 @@ func (p *Provider) translate(ctx context.Context, req TranslateRequest) (*Transl
 func normalizeLanguageCode(lang string) string {
 	// 转换常见的语言代码格式
 	replacements := map[string]string{
-		"chinese":    "zh",
-		"chinese_simplified": "zh-CN",
+		"chinese":             "zh",
+		"chinese_simplified":  "zh-CN",
 		"chinese_traditional": "zh-TW",
-		"english":    "en",
-		"spanish":    "es",
-		"french":     "fr",
-		"german":     "de",
-		"japanese":   "ja",
-		"korean":     "ko",
-		"portuguese": "pt",
-		"russian":    "ru",
-		"italian":    "it",
+		"english":             "en",
+		"spanish":             "es",
+		"french":              "fr",
+		"german":              "de",
+		"japanese":            "ja",
+		"korean":              "ko",
+		"portuguese":          "pt",
+		"russian":             "ru",
+		"italian":             "it",
 	}
-	
+
 	lower := strings.ToLower(lang)
 	if normalized, ok := replacements[lower]; ok {
 		return normalized
 	}
-	
+
 	// 处理 xx_YY 格式到 xx-YY
 	if strings.Contains(lang, "_") {
 		return strings.Replace(lang, "_", "-", 1)
 	}
-	
+
 	return lang
 }
 

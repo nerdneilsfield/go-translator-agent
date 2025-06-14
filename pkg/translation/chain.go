@@ -23,7 +23,7 @@ func NewChain(opts ...ChainOption) Chain {
 	for _, opt := range opts {
 		opt(&options)
 	}
-	
+
 	return &chain{
 		steps:   make([]Step, 0),
 		options: options,
@@ -34,29 +34,29 @@ func NewChain(opts ...ChainOption) Chain {
 func (c *chain) Execute(ctx context.Context, input string) (*ChainResult, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	
+
 	if len(c.steps) == 0 {
 		return nil, ErrNoSteps
 	}
-	
+
 	result := &ChainResult{
 		Steps:       make([]StepResult, 0, len(c.steps)),
 		Success:     true,
 		FinalOutput: input,
 	}
-	
+
 	startTime := time.Now()
 	currentInput := input
-	
+
 	// 执行每个步骤
 	for i, step := range c.steps {
 		stepResult, err := c.executeStep(ctx, step, currentInput, i)
 		result.Steps = append(result.Steps, *stepResult)
-		
+
 		if err != nil {
 			result.Success = false
 			result.Error = err
-			
+
 			if !c.options.continueOnError {
 				break
 			}
@@ -65,7 +65,7 @@ func (c *chain) Execute(ctx context.Context, input string) (*ChainResult, error)
 			result.FinalOutput = stepResult.Output
 		}
 	}
-	
+
 	result.TotalDuration = time.Since(startTime)
 	return result, result.Error
 }
@@ -74,7 +74,7 @@ func (c *chain) Execute(ctx context.Context, input string) (*ChainResult, error)
 func (c *chain) AddStep(step Step) Chain {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	c.steps = append(c.steps, step)
 	return c
 }
@@ -83,7 +83,7 @@ func (c *chain) AddStep(step Step) Chain {
 func (c *chain) GetSteps() []Step {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	
+
 	steps := make([]Step, len(c.steps))
 	copy(steps, c.steps)
 	return steps
@@ -92,24 +92,24 @@ func (c *chain) GetSteps() []Step {
 // executeStep 执行单个步骤
 func (c *chain) executeStep(ctx context.Context, step Step, input string, index int) (*StepResult, error) {
 	stepConfig := step.GetConfig()
-	
+
 	result := &StepResult{
 		Name:  step.GetName(),
 		Model: stepConfig.Model,
 	}
-	
+
 	startTime := time.Now()
 	defer func() {
 		result.Duration = time.Since(startTime)
 	}()
-	
+
 	// 准备步骤输入
 	stepInput := StepInput{
 		Text:           input,
 		SourceLanguage: stepConfig.Variables["source_language"],
 		TargetLanguage: stepConfig.Variables["target_language"],
 	}
-	
+
 	// 如果是反思或改进步骤，添加之前的输出作为上下文
 	if index > 0 && len(c.steps) > 1 {
 		if index == 1 { // 反思步骤
@@ -125,7 +125,7 @@ func (c *chain) executeStep(ctx context.Context, step Step, input string, index 
 			}
 		}
 	}
-	
+
 	// 执行步骤，带重试
 	var lastErr error
 	for attempt := 0; attempt <= c.options.maxRetries; attempt++ {
@@ -137,7 +137,7 @@ func (c *chain) executeStep(ctx context.Context, step Step, input string, index 
 			case <-time.After(time.Duration(attempt) * time.Second):
 			}
 		}
-		
+
 		output, err := step.Execute(ctx, stepInput)
 		if err == nil {
 			result.Output = output.Text
@@ -145,15 +145,15 @@ func (c *chain) executeStep(ctx context.Context, step Step, input string, index 
 			result.TokensOut = output.TokensOut
 			return result, nil
 		}
-		
+
 		lastErr = err
-		
+
 		// 检查是否可重试
 		if !isRetryableError(err) {
 			break
 		}
 	}
-	
+
 	result.Error = lastErr.Error()
 	return result, WrapError(lastErr, ErrCodeStep, fmt.Sprintf("step '%s' failed", step.GetName()))
 }
@@ -190,12 +190,12 @@ func (s *step) Execute(ctx context.Context, input StepInput) (*StepOutput, error
 	if s.provider != nil {
 		return s.executeWithProvider(ctx, input)
 	}
-	
+
 	// 否则使用 LLM
 	if s.llmClient == nil {
 		return nil, ErrNoLLMClient
 	}
-	
+
 	return s.executeWithLLM(ctx, input)
 }
 
@@ -211,7 +211,7 @@ func (s *step) executeWithProvider(ctx context.Context, input StepInput) (*StepO
 			}, nil
 		}
 	}
-	
+
 	// 准备请求
 	req := &ProviderRequest{
 		Text:           input.Text,
@@ -219,32 +219,32 @@ func (s *step) executeWithProvider(ctx context.Context, input StepInput) (*StepO
 		TargetLanguage: input.TargetLanguage,
 		Options:        s.config.Variables,
 	}
-	
+
 	// 设置超时
 	if s.config.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, s.config.Timeout)
 		defer cancel()
 	}
-	
+
 	// 调用提供商
 	resp, err := s.provider.Translate(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	output := &StepOutput{
 		Text:      resp.Text,
 		Model:     resp.Model,
 		TokensIn:  resp.TokensIn,
 		TokensOut: resp.TokensOut,
 	}
-	
+
 	// 缓存结果
 	if s.cache != nil {
 		_ = s.cache.Set(cacheKey, output.Text)
 	}
-	
+
 	return output, nil
 }
 
@@ -252,7 +252,7 @@ func (s *step) executeWithProvider(ctx context.Context, input StepInput) (*StepO
 func (s *step) executeWithLLM(ctx context.Context, input StepInput) (*StepOutput, error) {
 	// 准备提示词
 	prompt := s.preparePrompt(input)
-	
+
 	// 检查缓存
 	if s.cache != nil {
 		cacheKey := s.getCacheKey(prompt)
@@ -263,7 +263,7 @@ func (s *step) executeWithLLM(ctx context.Context, input StepInput) (*StepOutput
 			}, nil
 		}
 	}
-	
+
 	// 准备聊天请求
 	messages := []ChatMessage{
 		{
@@ -275,40 +275,40 @@ func (s *step) executeWithLLM(ctx context.Context, input StepInput) (*StepOutput
 			Content: prompt,
 		},
 	}
-	
+
 	req := &ChatRequest{
 		Messages:    messages,
 		Model:       s.config.Model,
 		Temperature: s.config.Temperature,
 		MaxTokens:   s.config.MaxTokens,
 	}
-	
+
 	// 设置超时
 	if s.config.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, s.config.Timeout)
 		defer cancel()
 	}
-	
+
 	// 调用LLM
 	resp, err := s.llmClient.Chat(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	output := &StepOutput{
 		Text:      resp.Message.Content,
 		Model:     resp.Model,
 		TokensIn:  resp.TokensIn,
 		TokensOut: resp.TokensOut,
 	}
-	
+
 	// 缓存结果
 	if s.cache != nil {
 		cacheKey := s.getCacheKey(prompt)
 		_ = s.cache.Set(cacheKey, output.Text)
 	}
-	
+
 	return output, nil
 }
 
@@ -325,7 +325,7 @@ func (s *step) GetConfig() *StepConfig {
 // preparePrompt 准备提示词
 func (s *step) preparePrompt(input StepInput) string {
 	prompt := s.config.Prompt
-	
+
 	// 替换基本变量
 	replacements := map[string]string{
 		"{{text}}":            input.Text,
@@ -334,22 +334,22 @@ func (s *step) preparePrompt(input StepInput) string {
 		"{{source}}":          input.SourceLanguage,
 		"{{target}}":          input.TargetLanguage,
 	}
-	
+
 	// 添加上下文变量
 	for k, v := range input.Context {
 		replacements[fmt.Sprintf("{{%s}}", k)] = v
 	}
-	
+
 	// 添加配置的变量
 	for k, v := range s.config.Variables {
 		replacements[fmt.Sprintf("{{%s}}", k)] = v
 	}
-	
+
 	// 执行替换
 	for k, v := range replacements {
 		prompt = strings.ReplaceAll(prompt, k, v)
 	}
-	
+
 	return prompt
 }
 

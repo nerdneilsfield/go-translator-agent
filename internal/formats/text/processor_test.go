@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -234,7 +234,7 @@ Details of the section.`
 			"This is the fourth sentence.",
 			"This is the fifth sentence.",
 		}
-		
+
 		// 创建一个很长的单行文本
 		longText := strings.Join(sentences, " ")
 		// 重复多次使其超过分割阈值
@@ -262,7 +262,7 @@ func TestTextChunking(t *testing.T) {
 	t.Run("ChunkingLongParagraph", func(t *testing.T) {
 		// 创建一个超长段落
 		longParagraph := strings.Repeat("This is a sentence that will be repeated many times. ", 50)
-		
+
 		reader := strings.NewReader(longParagraph)
 		doc, err := processor.Parse(ctx, reader)
 		require.NoError(t, err)

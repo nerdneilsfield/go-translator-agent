@@ -30,7 +30,7 @@ func (m *MockProvider) Translate(ctx context.Context, req *Request) (*Response, 
 			},
 		}, nil
 	}
-	
+
 	// 默认行为：如果是反思步骤，返回无问题
 	if strings.Contains(req.Text, "review a source text") {
 		return &Response{
@@ -41,7 +41,7 @@ func (m *MockProvider) Translate(ctx context.Context, req *Request) (*Response, 
 			},
 		}, nil
 	}
-	
+
 	// 默认行为：返回一个简单的翻译
 	return &Response{
 		Text: "Translated: " + req.Text,
@@ -63,17 +63,17 @@ func TestThreeStepTranslator(t *testing.T) {
 			"country": "China",
 		},
 	}
-	
+
 	// 创建模拟提供者
 	providers := map[string]Provider{
 		"openai": &MockProvider{
-			name: "openai",
+			name:         "openai",
 			translations: map[string]string{
 				// 预设一些翻译响应
 			},
 		},
 	}
-	
+
 	// 创建步骤集配置
 	stepSet := &StepSetConfig{
 		Initial: StepConfig{
@@ -95,42 +95,42 @@ func TestThreeStepTranslator(t *testing.T) {
 			MaxTokens:   4096,
 		},
 	}
-	
+
 	// 创建翻译器
 	translator := NewThreeStepTranslator(config, providers, stepSet)
-	
+
 	t.Run("Basic Translation", func(t *testing.T) {
 		ctx := context.Background()
 		text := "Hello world"
-		
+
 		result, err := translator.TranslateText(ctx, text)
 		require.NoError(t, err)
 		assert.NotEmpty(t, result)
 		assert.Contains(t, result, "Translated:")
 	})
-	
+
 	t.Run("Translation with Protection Blocks", func(t *testing.T) {
 		ctx := context.Background()
 		text := "This is a formula: $E = mc^2$ and some code: `print('hello')`"
-		
+
 		result, err := translator.TranslateText(ctx, text)
 		require.NoError(t, err)
-		
+
 		// 验证保护的内容被还原
 		assert.Contains(t, result, "$E = mc^2$")
 		assert.Contains(t, result, "`print('hello')`")
 	})
-	
+
 	t.Run("Fast Mode", func(t *testing.T) {
 		// 启用快速模式
 		config.Metadata["fast_mode"] = true
 		config.Metadata["fast_mode_threshold"] = 1000
-		
+
 		translator := NewThreeStepTranslator(config, providers, stepSet)
-		
+
 		ctx := context.Background()
 		text := "Short text"
-		
+
 		result, err := translator.TranslateText(ctx, text)
 		require.NoError(t, err)
 		assert.NotEmpty(t, result)
@@ -146,20 +146,20 @@ func TestProtectionIntegration(t *testing.T) {
 			"preserve_patterns": []string{"@@PRESERVE_"},
 		},
 	}
-	
+
 	// 创建一个会保留保护块标记的模拟提供者
 	preservingProvider := &MockProvider{
-		name: "preserving",
+		name:         "preserving",
 		translations: map[string]string{},
 	}
-	
+
 	// 重写 Translate 方法以保留保护块
 	preservingProvider.translations["mock"] = "mock" // 占位
-	
+
 	providers := map[string]Provider{
 		"preserving": preservingProvider,
 	}
-	
+
 	stepSet := &StepSetConfig{
 		Initial: StepConfig{
 			Provider: "preserving",
@@ -174,9 +174,9 @@ func TestProtectionIntegration(t *testing.T) {
 			Model:    "test",
 		},
 	}
-	
+
 	translator := NewThreeStepTranslator(config, providers, stepSet)
-	
+
 	t.Run("Code Block Protection", func(t *testing.T) {
 		ctx := context.Background()
 		text := `Here is some code:
@@ -186,46 +186,46 @@ func main() {
 }
 '''
 And more text.`
-		
+
 		result, err := translator.TranslateText(ctx, text)
 		require.NoError(t, err)
-		
+
 		// 验证代码块被保护和还原
 		assert.Contains(t, result, "func main()")
 		assert.Contains(t, result, "fmt.Println")
 	})
-	
+
 	t.Run("LaTeX Protection", func(t *testing.T) {
 		ctx := context.Background()
 		text := `The equation $\alpha + \beta = \gamma$ is important.
 Also see: $$\int_0^1 x^2 dx = \frac{1}{3}$$`
-		
+
 		result, err := translator.TranslateText(ctx, text)
 		require.NoError(t, err)
-		
+
 		// 验证 LaTeX 公式被保护
 		assert.Contains(t, result, `$\alpha + \beta = \gamma$`)
 		assert.Contains(t, result, `$$\int_0^1 x^2 dx = \frac{1}{3}$$`)
 	})
-	
+
 	t.Run("URL Protection", func(t *testing.T) {
 		ctx := context.Background()
 		text := "Visit https://example.com/path?query=value for more info."
-		
+
 		result, err := translator.TranslateText(ctx, text)
 		require.NoError(t, err)
-		
+
 		// 验证 URL 被保护
 		assert.Contains(t, result, "https://example.com/path?query=value")
 	})
-	
+
 	t.Run("Citation Protection", func(t *testing.T) {
 		ctx := context.Background()
 		text := "As shown in previous studies [1,2,3] and recent work [10-15]."
-		
+
 		result, err := translator.TranslateText(ctx, text)
 		require.NoError(t, err)
-		
+
 		// 验证引用被保护
 		assert.Contains(t, result, "[1,2,3]")
 		assert.Contains(t, result, "[10-15]")
@@ -240,23 +240,23 @@ func TestPromptBuilderIntegration(t *testing.T) {
 			"country": "China",
 		},
 	}
-	
+
 	providers := map[string]Provider{
 		"test": &MockProvider{name: "test"},
 	}
-	
+
 	stepSet := &StepSetConfig{
 		Initial:     StepConfig{Provider: "test", Model: "test"},
 		Reflection:  StepConfig{Provider: "test", Model: "test"},
 		Improvement: StepConfig{Provider: "test", Model: "test"},
 	}
-	
+
 	translator := NewThreeStepTranslator(config, providers, stepSet)
-	
+
 	// 获取提示词构建器
 	pb := translator.GetPromptBuilder()
 	assert.NotNil(t, pb)
-	
+
 	// 验证提示词包含保护块说明
 	prompt := pb.BuildInitialTranslationPrompt("test text")
 	assert.Contains(t, prompt, "@@PRESERVE_")

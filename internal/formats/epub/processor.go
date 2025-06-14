@@ -7,9 +7,9 @@ import (
 	"path"
 	"strings"
 
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 	"github.com/nerdneilsfield/go-translator-agent/internal/formats/base"
 	"github.com/nerdneilsfield/go-translator-agent/internal/formats/html"
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
 )
 
 // ProcessingMode EPUB 处理模式
@@ -40,7 +40,7 @@ func NewProcessor(opts document.ProcessorOptions) (*Processor, error) {
 			mode = ProcessingMode(m)
 		}
 	}
-	
+
 	// 根据模式创建对应的 HTML 处理器
 	var htmlMode html.ProcessingMode
 	switch mode {
@@ -53,7 +53,7 @@ func NewProcessor(opts document.ProcessorOptions) (*Processor, error) {
 		htmlMode = html.ModeMarkdown
 		mode = ModeMarkdown
 	}
-	
+
 	// 创建 HTML 处理器
 	htmlProcessor, err := html.ProcessorWithMode(htmlMode, opts)
 	if err != nil {
@@ -164,6 +164,6 @@ func ProcessorWithMode(mode ProcessingMode, opts document.ProcessorOptions) (doc
 		opts.Metadata = make(map[string]interface{})
 	}
 	opts.Metadata["epub_mode"] = string(mode)
-	
+
 	return Factory(opts)
 }

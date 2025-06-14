@@ -1,8 +1,8 @@
 package text
 
 import (
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 	"github.com/nerdneilsfield/go-translator-agent/internal/formats/base"
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
 )
 
 // Processor 纯文本处理器
@@ -15,9 +15,9 @@ func NewProcessor(opts document.ProcessorOptions) (*Processor, error) {
 	parser := NewParser()
 	renderer := NewRenderer()
 	chunker := base.NewSimpleChunker() // 纯文本使用简单分块器
-	
+
 	baseProcessor := base.NewProcessor(parser, renderer, chunker, opts)
-	
+
 	return &Processor{
 		Processor: baseProcessor,
 	}, nil

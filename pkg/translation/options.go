@@ -5,16 +5,16 @@ type Option func(*serviceOptions)
 
 // serviceOptions 服务内部选项
 type serviceOptions struct {
-	llmClient          LLMClient
-	providers          map[string]TranslationProvider
-	cache              Cache
-	metricsCollector   MetricsCollector
-	progressTracker    ProgressTracker
-	progressCallback   func(*Progress)
-	chunker            Chunker
-	errorHandler       func(error)
-	beforeTranslate    func(*Request)
-	afterTranslate     func(*Response)
+	llmClient        LLMClient
+	providers        map[string]TranslationProvider
+	cache            Cache
+	metricsCollector MetricsCollector
+	progressTracker  ProgressTracker
+	progressCallback func(*Progress)
+	chunker          Chunker
+	errorHandler     func(error)
+	beforeTranslate  func(*Request)
+	afterTranslate   func(*Response)
 }
 
 // WithLLMClient 设置LLM客户端
@@ -154,10 +154,10 @@ type ChainOption func(*chainOptions)
 
 // chainOptions 翻译链内部选项
 type chainOptions struct {
-	skipCache        bool
-	continueOnError  bool
-	maxRetries       int
-	parallelSteps    bool
+	skipCache       bool
+	continueOnError bool
+	maxRetries      int
+	parallelSteps   bool
 }
 
 // WithSkipCache 跳过缓存

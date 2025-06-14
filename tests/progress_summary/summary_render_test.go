@@ -15,7 +15,7 @@ func stripAnsi(str string) string {
 	// A common regex for stripping ANSI escape codes, focusing on sequences starting with ESC[
 	// This pattern is generally more robust with UTF-8 and Go's regexp engine.
 	const ansi = "\\x1b\\[[0-?]*[ -/]*[@-~]"
-	var re = regexp.MustCompile(ansi)
+	re := regexp.MustCompile(ansi)
 	return re.ReplaceAllString(str, "")
 }
 

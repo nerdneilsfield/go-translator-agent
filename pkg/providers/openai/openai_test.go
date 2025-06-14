@@ -17,13 +17,13 @@ func TestProvider_Translate(t *testing.T) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
-		
+
 		// 验证认证头
 		auth := r.Header.Get("Authorization")
 		if auth != "Bearer test-api-key" {
 			t.Errorf("unexpected auth header: %s", auth)
 		}
-		
+
 		// 返回模拟响应
 		resp := ChatResponse{
 			ID:    "test-id",
@@ -46,32 +46,32 @@ func TestProvider_Translate(t *testing.T) {
 		resp.Usage.PromptTokens = 10
 		resp.Usage.CompletionTokens = 5
 		resp.Usage.TotalTokens = 15
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
-	
+
 	// 创建配置
 	config := DefaultConfig()
 	config.APIKey = "test-api-key"
 	config.APIEndpoint = server.URL
-	
+
 	// 创建提供商
 	provider := New(config)
-	
+
 	// 测试翻译
 	req := &translation.ProviderRequest{
 		Text:           "Hello, world!",
 		SourceLanguage: "English",
 		TargetLanguage: "Chinese",
 	}
-	
+
 	resp, err := provider.Translate(context.Background(), req)
 	if err != nil {
 		t.Fatalf("translation failed: %v", err)
 	}
-	
+
 	// 验证响应
 	if resp.Text != "你好，世界！" {
 		t.Errorf("unexpected translation: %s", resp.Text)
@@ -90,7 +90,7 @@ func TestProvider_Translate(t *testing.T) {
 func TestProvider_GetCapabilities(t *testing.T) {
 	provider := New(DefaultConfig())
 	caps := provider.GetCapabilities()
-	
+
 	// 验证能力
 	if !caps.RequiresAPIKey {
 		t.Error("should require API key")
@@ -121,34 +121,34 @@ func TestProvider_ErrorHandling(t *testing.T) {
 				Code:    "invalid_api_key",
 			},
 		}
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(apiErr)
 	}))
 	defer server.Close()
-	
+
 	// 创建配置
 	config := DefaultConfig()
 	config.APIKey = "invalid-key"
 	config.APIEndpoint = server.URL
 	config.MaxRetries = 0 // 不重试
-	
+
 	// 创建提供商
 	provider := New(config)
-	
+
 	// 测试翻译
 	req := &translation.ProviderRequest{
 		Text:           "Hello",
 		SourceLanguage: "en",
 		TargetLanguage: "zh",
 	}
-	
+
 	_, err := provider.Translate(context.Background(), req)
 	if err == nil {
 		t.Fatal("expected error but got none")
 	}
-	
+
 	// 验证错误消息
 	if err.Error() != "Invalid API key" {
 		t.Errorf("unexpected error: %v", err)
@@ -180,20 +180,20 @@ func TestLLMClient_Chat(t *testing.T) {
 		resp.Usage.PromptTokens = 20
 		resp.Usage.CompletionTokens = 10
 		resp.Usage.TotalTokens = 30
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
-	
+
 	// 创建配置
 	config := DefaultConfig()
 	config.APIKey = "test-api-key"
 	config.APIEndpoint = server.URL
-	
+
 	// 创建LLMClient
 	client := NewLLMClient(config)
-	
+
 	// 测试Chat
 	req := &translation.ChatRequest{
 		Messages: []translation.ChatMessage{
@@ -204,12 +204,12 @@ func TestLLMClient_Chat(t *testing.T) {
 		},
 		Model: "gpt-4",
 	}
-	
+
 	resp, err := client.Chat(context.Background(), req)
 	if err != nil {
 		t.Fatalf("chat failed: %v", err)
 	}
-	
+
 	// 验证响应
 	if resp.Message.Content != "Test response" {
 		t.Errorf("unexpected content: %s", resp.Message.Content)
@@ -244,31 +244,31 @@ func TestLLMClient_Complete(t *testing.T) {
 		resp.Usage.PromptTokens = 15
 		resp.Usage.CompletionTokens = 8
 		resp.Usage.TotalTokens = 23
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
-	
+
 	// 创建配置
 	config := DefaultConfig()
 	config.APIKey = "test-api-key"
 	config.APIEndpoint = server.URL
-	
+
 	// 创建LLMClient
 	client := NewLLMClient(config)
-	
+
 	// 测试Complete
 	req := &translation.CompletionRequest{
 		Prompt: "Complete this",
 		Model:  "gpt-3.5-turbo",
 	}
-	
+
 	resp, err := client.Complete(context.Background(), req)
 	if err != nil {
 		t.Fatalf("completion failed: %v", err)
 	}
-	
+
 	// 验证响应
 	if resp.Text != "Completed text" {
 		t.Errorf("unexpected text: %s", resp.Text)

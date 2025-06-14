@@ -6,7 +6,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 )
 
 // Processor 基础处理器实现
@@ -54,7 +54,7 @@ func (p *Processor) Process(ctx context.Context, doc *document.Document, transla
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	errors := make([]error, 0)
-	
+
 	// 预分配块数组以保持顺序
 	processedDoc.Blocks = make([]document.Block, len(doc.Blocks))
 
@@ -117,7 +117,7 @@ func (p *Processor) GetFormat() document.Format {
 // translateBlock 翻译单个块
 func (p *Processor) translateBlock(ctx context.Context, block document.Block, translator document.TranslateFunc) (string, error) {
 	content := block.GetContent()
-	
+
 	// 如果没有分块器，直接翻译整个内容
 	if p.chunker == nil {
 		return translator(ctx, content)
@@ -134,14 +134,14 @@ func (p *Processor) translateBlock(ctx context.Context, block document.Block, tr
 	translatedChunks := make([]document.TranslatedChunk, len(chunks))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	
+
 	for i, chunk := range chunks {
 		wg.Add(1)
 		go func(idx int, ch document.Chunk) {
 			defer wg.Done()
-			
+
 			translated, err := translator(ctx, ch.Content)
-			
+
 			mu.Lock()
 			translatedChunks[idx] = document.TranslatedChunk{
 				Chunk:             ch,
@@ -151,7 +151,7 @@ func (p *Processor) translateBlock(ctx context.Context, block document.Block, tr
 			mu.Unlock()
 		}(i, chunk)
 	}
-	
+
 	wg.Wait()
 
 	// 检查错误

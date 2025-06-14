@@ -42,7 +42,7 @@ func New(config Config) *Provider {
 	if config.APIEndpoint == "" {
 		config.APIEndpoint = "http://localhost:1188/translate"
 	}
-	
+
 	return &Provider{
 		config: config,
 		httpClient: &http.Client{
@@ -69,24 +69,24 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 		SourceLang: normalizeLanguageCode(req.SourceLanguage),
 		TargetLang: normalizeLanguageCode(req.TargetLanguage),
 	}
-	
+
 	// 执行翻译
 	resp, err := p.translate(ctx, deeplxReq)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// 检查响应
 	if resp.Code != 200 {
 		return nil, fmt.Errorf("translation failed: %s", resp.Message)
 	}
-	
+
 	// 返回响应
 	metadata := make(map[string]string)
 	if resp.SourceLang != "" {
 		metadata["detected_source"] = resp.SourceLang
 	}
-	
+
 	return &translation.ProviderResponse{
 		Text:     resp.Data,
 		Model:    "deeplx",
@@ -139,7 +139,7 @@ func (p *Provider) GetCapabilities() providers.Capabilities {
 			{Code: "UK", Name: "Ukrainian"},
 			{Code: "ZH", Name: "Chinese"},
 		},
-		MaxTextLength:      5000,  // 建议限制
+		MaxTextLength:      5000, // 建议限制
 		SupportsBatch:      false,
 		SupportsFormatting: false,
 		RequiresAPIKey:     false, // DeepLX不需要API密钥
@@ -154,7 +154,7 @@ func (p *Provider) HealthCheck(ctx context.Context) error {
 		SourceLanguage: "EN",
 		TargetLanguage: "ZH",
 	}
-	
+
 	_, err := p.Translate(ctx, req)
 	return err
 }
@@ -166,14 +166,14 @@ func (p *Provider) translate(ctx context.Context, req TranslateRequest) (*Transl
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
-	
+
 	// 创建HTTP请求
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", 
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
 		p.config.APIEndpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	// 设置头部
 	httpReq.Header.Set("Content-Type", "application/json")
 	if p.config.AccessToken != "" {
@@ -182,11 +182,11 @@ func (p *Provider) translate(ctx context.Context, req TranslateRequest) (*Transl
 	for k, v := range p.config.Headers {
 		httpReq.Header.Set(k, v)
 	}
-	
+
 	// 执行请求，带重试
 	var resp *http.Response
 	var lastErr error
-	
+
 	for i := 0; i <= p.config.MaxRetries; i++ {
 		if i > 0 {
 			select {
@@ -195,13 +195,13 @@ func (p *Provider) translate(ctx context.Context, req TranslateRequest) (*Transl
 			case <-time.After(p.config.RetryDelay * time.Duration(i)):
 			}
 		}
-		
+
 		resp, err = p.httpClient.Do(httpReq)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		
+
 		// 读取响应体
 		respBody, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -209,14 +209,14 @@ func (p *Provider) translate(ctx context.Context, req TranslateRequest) (*Transl
 			lastErr = fmt.Errorf("failed to read response: %w", err)
 			continue
 		}
-		
+
 		// 解析响应
 		var translateResp TranslateResponse
 		if err := json.Unmarshal(respBody, &translateResp); err != nil {
 			lastErr = fmt.Errorf("failed to decode response: %w", err)
 			continue
 		}
-		
+
 		// 检查业务错误
 		if translateResp.Code != 200 {
 			lastErr = fmt.Errorf("API error: %s", translateResp.Message)
@@ -226,10 +226,10 @@ func (p *Provider) translate(ctx context.Context, req TranslateRequest) (*Transl
 			}
 			continue
 		}
-		
+
 		return &translateResp, nil
 	}
-	
+
 	return nil, lastErr
 }
 
@@ -237,7 +237,7 @@ func (p *Provider) translate(ctx context.Context, req TranslateRequest) (*Transl
 func normalizeLanguageCode(lang string) string {
 	// DeepLX使用大写的语言代码，与DeepL兼容
 	upper := strings.ToUpper(lang)
-	
+
 	// 特殊处理
 	replacements := map[string]string{
 		"CHINESE":    "ZH",
@@ -251,11 +251,11 @@ func normalizeLanguageCode(lang string) string {
 		"RUSSIAN":    "RU",
 		"ITALIAN":    "IT",
 	}
-	
+
 	if normalized, ok := replacements[upper]; ok {
 		return normalized
 	}
-	
+
 	return upper
 }
 

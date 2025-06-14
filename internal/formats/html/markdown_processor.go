@@ -9,23 +9,23 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 	"github.com/nerdneilsfield/go-translator-agent/internal/formats/markdown"
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
 	"golang.org/x/net/html"
 )
 
 // MarkdownProcessor HTML 处理器（通过 Markdown 转换）
 type MarkdownProcessor struct {
-	converter    *HTMLToMarkdown
-	mdProcessor  document.Processor
-	opts         document.ProcessorOptions
+	converter   *HTMLToMarkdown
+	mdProcessor document.Processor
+	opts        document.ProcessorOptions
 }
 
 // NewMarkdownProcessor 创建基于 Markdown 的 HTML 处理器
 func NewMarkdownProcessor(opts document.ProcessorOptions) (*MarkdownProcessor, error) {
 	// 创建 HTML 到 Markdown 转换器
 	converter := NewHTMLToMarkdown()
-	
+
 	// 创建 Markdown 处理器
 	mdProcessor, err := markdown.NewProcessor(opts)
 	if err != nil {
@@ -102,7 +102,7 @@ func (p *MarkdownProcessor) Render(ctx context.Context, doc *document.Document, 
 
 	// 将 Markdown 转换回 HTML
 	htmlContent := p.markdownToHTML(markdownBuffer.String(), originalHTML)
-	
+
 	_, err = output.Write([]byte(htmlContent))
 	return err
 }
@@ -125,7 +125,7 @@ func (p *MarkdownProcessor) markdownToHTML(markdown string, originalHTML string)
 				// 清空 body 内容
 				body.FirstChild = nil
 				body.LastChild = nil
-				
+
 				// 将 Markdown 转换的 HTML 插入 body
 				convertedHTML := simpleMarkdownToHTML(markdown)
 				contentDoc, err := html.Parse(strings.NewReader("<body>" + convertedHTML + "</body>"))
@@ -142,7 +142,7 @@ func (p *MarkdownProcessor) markdownToHTML(markdown string, originalHTML string)
 						}
 					}
 				}
-				
+
 				// 渲染回 HTML
 				var buf bytes.Buffer
 				html.Render(&buf, doc)
@@ -170,11 +170,11 @@ func simpleMarkdownToHTML(markdown string) string {
 	var result strings.Builder
 	inCodeBlock := false
 	inList := false
-	
+
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
 		trimmed := strings.TrimSpace(line)
-		
+
 		// 代码块
 		if strings.HasPrefix(trimmed, "```") {
 			if !inCodeBlock {
@@ -191,18 +191,18 @@ func simpleMarkdownToHTML(markdown string) string {
 			}
 			continue
 		}
-		
+
 		if inCodeBlock {
 			result.WriteString(html.EscapeString(line))
 			result.WriteString("\n")
 			continue
 		}
-		
+
 		// 标题 - 处理可能被翻译的标题（如 "[TRANSLATED] # Title"）
 		headingMatch := false
 		headingContent := ""
 		headingLevel := 0
-		
+
 		// 尝试匹配标准 Markdown 标题
 		if strings.HasPrefix(trimmed, "#") {
 			level := 0
@@ -231,12 +231,12 @@ func simpleMarkdownToHTML(markdown string) string {
 				}
 			}
 		}
-		
+
 		if headingMatch {
 			result.WriteString(fmt.Sprintf("<h%d>%s</h%d>\n", headingLevel, processInlineMarkdown(headingContent), headingLevel))
 			continue
 		}
-		
+
 		// 列表
 		if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
 			if !inList {
@@ -245,23 +245,23 @@ func simpleMarkdownToHTML(markdown string) string {
 			}
 			content := strings.TrimSpace(trimmed[2:])
 			result.WriteString(fmt.Sprintf("<li>%s</li>\n", processInlineMarkdown(content)))
-			
+
 			// 检查下一行是否还是列表项
-			if i+1 >= len(lines) || (!strings.HasPrefix(strings.TrimSpace(lines[i+1]), "- ") && 
+			if i+1 >= len(lines) || (!strings.HasPrefix(strings.TrimSpace(lines[i+1]), "- ") &&
 				!strings.HasPrefix(strings.TrimSpace(lines[i+1]), "* ")) {
 				result.WriteString("</ul>\n")
 				inList = false
 			}
 			continue
 		}
-		
+
 		// 引用
 		if strings.HasPrefix(trimmed, ">") {
 			content := strings.TrimSpace(strings.TrimPrefix(trimmed, ">"))
 			result.WriteString(fmt.Sprintf("<blockquote>%s</blockquote>\n", processInlineMarkdown(content)))
 			continue
 		}
-		
+
 		// 空行
 		if trimmed == "" {
 			if inList {
@@ -270,11 +270,11 @@ func simpleMarkdownToHTML(markdown string) string {
 			}
 			continue
 		}
-		
+
 		// 普通段落
 		result.WriteString(fmt.Sprintf("<p>%s</p>\n", processInlineMarkdown(trimmed)))
 	}
-	
+
 	return result.String()
 }
 
@@ -282,22 +282,22 @@ func simpleMarkdownToHTML(markdown string) string {
 func processInlineMarkdown(text string) string {
 	// 转义 HTML
 	text = html.EscapeString(text)
-	
+
 	// 粗体
 	text = replacePattern(text, `\*\*([^*]+)\*\*`, "<strong>$1</strong>")
-	
+
 	// 斜体
 	text = replacePattern(text, `\*([^*]+)\*`, "<em>$1</em>")
-	
+
 	// 代码
 	text = replacePattern(text, "`([^`]+)`", "<code>$1</code>")
-	
+
 	// 链接
 	text = replacePattern(text, `\[([^\]]+)\]\(([^)]+)\)`, `<a href="$2">$1</a>`)
-	
+
 	// 图片
 	text = replacePattern(text, `!\[([^\]]*)\]\(([^)]+)\)`, `<img src="$2" alt="$1">`)
-	
+
 	return text
 }
 

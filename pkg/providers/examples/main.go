@@ -19,12 +19,12 @@ import (
 func main() {
 	// 命令行参数
 	var (
-		provider       = flag.String("provider", "openai", "Translation provider to use (openai, google, deepl, deeplx, libretranslate)")
-		text           = flag.String("text", "Hello, world! This is a test.", "Text to translate")
-		sourceLang     = flag.String("source", "English", "Source language")
-		targetLang     = flag.String("target", "Chinese", "Target language")
-		showCaps       = flag.Bool("caps", false, "Show provider capabilities")
-		useThreeStep   = flag.Bool("three-step", false, "Use three-step translation (OpenAI only)")
+		provider     = flag.String("provider", "openai", "Translation provider to use (openai, google, deepl, deeplx, libretranslate)")
+		text         = flag.String("text", "Hello, world! This is a test.", "Text to translate")
+		sourceLang   = flag.String("source", "English", "Source language")
+		targetLang   = flag.String("target", "Chinese", "Target language")
+		showCaps     = flag.Bool("caps", false, "Show provider capabilities")
+		useThreeStep = flag.Bool("three-step", false, "Use three-step translation (OpenAI only)")
 	)
 	flag.Parse()
 
@@ -104,7 +104,7 @@ func initDeepL() (translation.TranslationProvider, error) {
 
 	config := deepl.DefaultConfig()
 	config.APIKey = apiKey
-	
+
 	// 检查是否使用免费API
 	if os.Getenv("DEEPL_FREE_API") == "true" {
 		config.UseFreeAPI = true
@@ -116,12 +116,12 @@ func initDeepL() (translation.TranslationProvider, error) {
 // initDeepLX 初始化DeepLX提供商
 func initDeepLX() (translation.TranslationProvider, error) {
 	config := deeplx.DefaultConfig()
-	
+
 	// 可选：设置自定义端点
 	if endpoint := os.Getenv("DEEPLX_ENDPOINT"); endpoint != "" {
 		config.APIEndpoint = endpoint
 	}
-	
+
 	// 可选：设置访问令牌
 	if token := os.Getenv("DEEPLX_TOKEN"); token != "" {
 		config.AccessToken = token
@@ -133,12 +133,12 @@ func initDeepLX() (translation.TranslationProvider, error) {
 // initLibreTranslate 初始化LibreTranslate提供商
 func initLibreTranslate() (translation.TranslationProvider, error) {
 	config := libretranslate.DefaultConfig()
-	
+
 	// 可选：设置自定义端点
 	if endpoint := os.Getenv("LIBRETRANSLATE_ENDPOINT"); endpoint != "" {
 		config.APIEndpoint = endpoint
 	}
-	
+
 	// 可选：设置API密钥
 	if apiKey := os.Getenv("LIBRETRANSLATE_API_KEY"); apiKey != "" {
 		config.APIKey = apiKey
@@ -151,7 +151,7 @@ func initLibreTranslate() (translation.TranslationProvider, error) {
 // performSingleTranslation 执行单步翻译
 func performSingleTranslation(provider translation.TranslationProvider, text, sourceLang, targetLang string) {
 	ctx := context.Background()
-	
+
 	fmt.Printf("=== %s Translation ===\n", provider.GetName())
 	fmt.Printf("Source Language: %s\n", sourceLang)
 	fmt.Printf("Target Language: %s\n", targetLang)
@@ -189,7 +189,7 @@ func performSingleTranslation(provider translation.TranslationProvider, text, so
 // performThreeStepTranslation 执行三步翻译（仅限OpenAI）
 func performThreeStepTranslation(text, sourceLang, targetLang string) {
 	ctx := context.Background()
-	
+
 	fmt.Println("=== Three-Step Translation with OpenAI ===")
 	fmt.Printf("Source Language: %s\n", sourceLang)
 	fmt.Printf("Target Language: %s\n", targetLang)
@@ -301,14 +301,14 @@ func showCapabilities(provider translation.TranslationProvider) {
 	// 尝试转换为providers.Provider以获取更多信息
 	if p, ok := provider.(providers.Provider); ok {
 		caps := p.GetCapabilities()
-		
+
 		fmt.Printf("=== %s Capabilities ===\n", provider.GetName())
 		fmt.Printf("Requires API Key: %v\n", caps.RequiresAPIKey)
 		fmt.Printf("Max Text Length: %d\n", caps.MaxTextLength)
 		fmt.Printf("Supports Batch: %v\n", caps.SupportsBatch)
 		fmt.Printf("Supports Formatting: %v\n", caps.SupportsFormatting)
 		fmt.Printf("Supports Multi-Step: %v\n", provider.SupportsSteps())
-		
+
 		if caps.RateLimit != nil {
 			fmt.Println("\nRate Limits:")
 			if caps.RateLimit.RequestsPerMinute > 0 {
@@ -318,7 +318,7 @@ func showCapabilities(provider translation.TranslationProvider) {
 				fmt.Printf("  Characters per day: %d\n", caps.RateLimit.CharactersPerDay)
 			}
 		}
-		
+
 		fmt.Printf("\nSupported Languages (%d):\n", len(caps.SupportedLanguages))
 		for i, lang := range caps.SupportedLanguages {
 			fmt.Printf("  %s (%s)", lang.Code, lang.Name)
@@ -329,7 +329,7 @@ func showCapabilities(provider translation.TranslationProvider) {
 			}
 		}
 		fmt.Println()
-		
+
 		// 健康检查
 		fmt.Print("\nHealth Check: ")
 		if err := p.HealthCheck(context.Background()); err != nil {

@@ -23,7 +23,7 @@ func New(config *Config, opts ...Option) (Service, error) {
 	if config == nil {
 		return nil, WrapError(ErrInvalidConfig, ErrCodeConfig, "config is nil")
 	}
-	
+
 	// 验证配置
 	if err := config.Validate(); err != nil {
 		return nil, WrapError(err, ErrCodeConfig, fmt.Sprintf("invalid configuration: %v", err))
@@ -67,7 +67,7 @@ func (s *service) buildChain() error {
 	for _, stepConfig := range s.config.Steps {
 		// 复制配置以避免共享
 		cfg := stepConfig
-		
+
 		// 设置默认变量
 		if cfg.Variables == nil {
 			cfg.Variables = make(map[string]string)
@@ -89,7 +89,7 @@ func (s *service) buildChain() error {
 			// 使用默认的 LLM
 			step = NewStep(&cfg, s.options.llmClient, s.options.cache)
 		}
-		
+
 		s.chain.AddStep(step)
 	}
 
@@ -177,7 +177,7 @@ func (s *service) Translate(ctx context.Context, req *Request) (*Response, error
 
 		// 收集结果
 		translatedChunks = append(translatedChunks, chainResult.FinalOutput)
-		
+
 		// 收集步骤信息（只记录第一个块的步骤作为示例）
 		if i == 0 {
 			allSteps = chainResult.Steps

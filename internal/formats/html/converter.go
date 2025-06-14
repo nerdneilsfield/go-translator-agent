@@ -217,7 +217,7 @@ func (h *HTMLToMarkdown) listToMarkdown(n *html.Node, builder *strings.Builder, 
 			for i := 0; i < depth; i++ {
 				builder.WriteString("  ")
 			}
-			
+
 			// 添加列表标记
 			if ordered {
 				builder.WriteString(fmt.Sprintf("%d. ", counter))
@@ -225,7 +225,7 @@ func (h *HTMLToMarkdown) listToMarkdown(n *html.Node, builder *strings.Builder, 
 			} else {
 				builder.WriteString("- ")
 			}
-			
+
 			// 处理列表项内容
 			h.childrenToMarkdown(c, builder, depth+1)
 			builder.WriteString("\n")
@@ -372,9 +372,9 @@ func (h *HTMLToMarkdown) cleanupMarkdown(markdown string) string {
 	// 移除多余的空行
 	re := regexp.MustCompile(`\n{3,}`)
 	markdown = re.ReplaceAllString(markdown, "\n\n")
-	
+
 	// 移除开头和结尾的空白
 	markdown = strings.TrimSpace(markdown)
-	
+
 	return markdown
 }

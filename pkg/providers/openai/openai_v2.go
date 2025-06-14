@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
+	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 )
 
 // 辅助函数
@@ -73,35 +73,35 @@ func NewV2(config ConfigV2) *ProviderV2 {
 	opts := []option.RequestOption{
 		option.WithAPIKey(config.APIKey),
 	}
-	
+
 	// 添加自定义端点（如果有）
 	if config.APIEndpoint != "" {
 		opts = append(opts, option.WithBaseURL(config.APIEndpoint))
 	}
-	
+
 	// 添加组织ID（如果有）
 	if config.OrgID != "" {
 		opts = append(opts, option.WithOrganization(config.OrgID))
 	}
-	
+
 	// 添加自定义头部
 	for k, v := range config.Headers {
 		opts = append(opts, option.WithHeader(k, v))
 	}
-	
+
 	// 设置超时
 	if config.Timeout > 0 {
 		opts = append(opts, option.WithRequestTimeout(config.Timeout))
 	}
-	
+
 	// 设置重试
 	if config.MaxRetries > 0 {
 		opts = append(opts, option.WithMaxRetries(config.MaxRetries))
 	}
-	
+
 	// 创建客户端
 	client := openai.NewClient(opts...)
-	
+
 	return &ProviderV2{
 		config: config,
 		client: client,
@@ -125,21 +125,21 @@ func (p *ProviderV2) Translate(ctx context.Context, req *translation.ProviderReq
 	// 构建消息
 	messages := []openai.ChatCompletionMessageParamUnion{
 		openai.SystemMessage("You are a professional translator. Translate accurately while preserving the original meaning and tone."),
-		openai.UserMessage(fmt.Sprintf("Translate the following text from %s to %s:\n\n%s", 
+		openai.UserMessage(fmt.Sprintf("Translate the following text from %s to %s:\n\n%s",
 			req.SourceLanguage, req.TargetLanguage, req.Text)),
 	}
-	
+
 	// 如果有额外的指令
 	if instruction, ok := req.Options["instruction"]; ok {
 		messages[0] = openai.SystemMessage("You are a professional translator. Translate accurately while preserving the original meaning and tone.\n\n" + instruction)
 	}
-	
+
 	// 创建聊天完成请求
 	params := openai.ChatCompletionNewParams{
 		Messages: messages,
 		Model:    getModel(p.config.Model),
 	}
-	
+
 	// 设置可选参数
 	if p.config.Temperature > 0 {
 		params.Temperature = openai.Float(float64(p.config.Temperature))
@@ -147,18 +147,18 @@ func (p *ProviderV2) Translate(ctx context.Context, req *translation.ProviderReq
 	if p.config.MaxTokens > 0 {
 		params.MaxTokens = openai.Int(int64(p.config.MaxTokens))
 	}
-	
+
 	// 执行请求
 	completion, err := p.client.Chat.Completions.New(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("openai chat completion failed: %w", err)
 	}
-	
+
 	// 检查响应
 	if len(completion.Choices) == 0 {
 		return nil, fmt.Errorf("no choices returned from OpenAI")
 	}
-	
+
 	// 返回响应
 	return &translation.ProviderResponse{
 		Text:      completion.Choices[0].Message.Content,
@@ -167,7 +167,7 @@ func (p *ProviderV2) Translate(ctx context.Context, req *translation.ProviderReq
 		TokensOut: int(completion.Usage.CompletionTokens),
 		Metadata: map[string]string{
 			"finish_reason": string(completion.Choices[0].FinishReason),
-			"id":           completion.ID,
+			"id":            completion.ID,
 		},
 	}, nil
 }
@@ -230,7 +230,7 @@ func (p *ProviderV2) HealthCheck(ctx context.Context) error {
 		Model:     getModel(p.config.Model),
 		MaxTokens: openai.Int(10),
 	}
-	
+
 	_, err := p.client.Chat.Completions.New(ctx, params)
 	return err
 }
@@ -263,18 +263,18 @@ func (c *LLMClientV2) Chat(ctx context.Context, req *translation.ChatRequest) (*
 			messages[i] = openai.UserMessage(msg.Content)
 		}
 	}
-	
+
 	// 创建请求
 	model := req.Model
 	if model == "" {
 		model = c.provider.config.Model
 	}
-	
+
 	params := openai.ChatCompletionNewParams{
 		Messages: messages,
 		Model:    getModel(model),
 	}
-	
+
 	// 设置可选参数
 	if req.Temperature > 0 {
 		params.Temperature = openai.Float(float64(req.Temperature))
@@ -282,17 +282,17 @@ func (c *LLMClientV2) Chat(ctx context.Context, req *translation.ChatRequest) (*
 	if req.MaxTokens > 0 {
 		params.MaxTokens = openai.Int(int64(req.MaxTokens))
 	}
-	
+
 	// 执行请求
 	completion, err := c.provider.client.Chat.Completions.New(ctx, params)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if len(completion.Choices) == 0 {
 		return nil, fmt.Errorf("no choices returned")
 	}
-	
+
 	// 转换响应
 	return &translation.ChatResponse{
 		Message: translation.ChatMessage{
@@ -319,12 +319,12 @@ func (c *LLMClientV2) Complete(ctx context.Context, req *translation.CompletionR
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
 	}
-	
+
 	resp, err := c.Chat(ctx, chatReq)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &translation.CompletionResponse{
 		Text:      resp.Message.Content,
 		Model:     resp.Model,
@@ -349,20 +349,20 @@ func (c *LLMClientV2) HealthCheck(ctx context.Context) error {
 func (p *ProviderV2) StreamTranslate(ctx context.Context, req *translation.ProviderRequest) (<-chan StreamChunk, error) {
 	// 创建结果channel
 	chunks := make(chan StreamChunk)
-	
+
 	// 构建消息
 	messages := []openai.ChatCompletionMessageParamUnion{
 		openai.SystemMessage("You are a professional translator. Translate accurately while preserving the original meaning and tone."),
-		openai.UserMessage(fmt.Sprintf("Translate the following text from %s to %s:\n\n%s", 
+		openai.UserMessage(fmt.Sprintf("Translate the following text from %s to %s:\n\n%s",
 			req.SourceLanguage, req.TargetLanguage, req.Text)),
 	}
-	
+
 	// 创建流式请求
 	params := openai.ChatCompletionNewParams{
 		Messages: messages,
 		Model:    getModel(p.config.Model),
 	}
-	
+
 	// 设置可选参数
 	if p.config.Temperature > 0 {
 		params.Temperature = openai.Float(float64(p.config.Temperature))
@@ -370,13 +370,13 @@ func (p *ProviderV2) StreamTranslate(ctx context.Context, req *translation.Provi
 	if p.config.MaxTokens > 0 {
 		params.MaxTokens = openai.Int(int64(p.config.MaxTokens))
 	}
-	
+
 	stream := p.client.Chat.Completions.NewStreaming(ctx, params)
-	
+
 	// 在goroutine中处理流
 	go func() {
 		defer close(chunks)
-		
+
 		for stream.Next() {
 			chunk := stream.Current()
 			if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
@@ -390,12 +390,12 @@ func (p *ProviderV2) StreamTranslate(ctx context.Context, req *translation.Provi
 				}
 			}
 		}
-		
+
 		if err := stream.Err(); err != nil {
 			chunks <- StreamChunk{Error: err}
 		}
 	}()
-	
+
 	return chunks, nil
 }
 

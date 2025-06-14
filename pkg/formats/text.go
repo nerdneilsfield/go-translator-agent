@@ -92,7 +92,7 @@ func (p *TextProcessor) TranslateFile(inputPath, outputPath string) error {
 	}
 
 	// 写入输出文件
-	if err := os.WriteFile(outputPath, []byte(translatedText), 0644); err != nil {
+	if err := os.WriteFile(outputPath, []byte(translatedText), 0o644); err != nil {
 		p.logger.Error("写入文件失败", zap.Error(err), zap.String("文件路径", outputPath))
 		return fmt.Errorf("写入文件失败 %s: %w", outputPath, err)
 	}
@@ -155,7 +155,7 @@ func (p *TextProcessor) TranslateText(text string) (string, error) {
 
 	if len(failedNodes) > 0 {
 		p.logger.Warn("第一次翻译后有未翻译的节点", zap.Int("未翻译节点数量", len(failedNodes)))
-		//return p.combineNodeGroupsText(translatedGroups), fmt.Errorf("第一次翻译后有未翻译的节点")
+		// return p.combineNodeGroupsText(translatedGroups), fmt.Errorf("第一次翻译后有未翻译的节点")
 	}
 
 	failedNodesWithContext := p.generateFailedNodesWithContext(translatedNodes)
@@ -297,7 +297,7 @@ func (p *TextProcessor) groupNodes(nodes []TextNode) [][]TextNode {
 		groups = append(groups, currentGroup)
 	}
 
-	//p.debugGroupsLength(groups)
+	// p.debugGroupsLength(groups)
 
 	if groupedNodeCount != len(nodes) {
 		p.logger.Warn("group Nodes节点分组失败， 前后不一致", zap.Int("节点数量", len(nodes)), zap.Int("分组节点数量", groupedNodeCount))
@@ -351,7 +351,6 @@ func (p *TextProcessor) combineTranslatedNodeGroupText(nodeGroup []TextNode) str
 }
 
 func (p *TextProcessor) translateNodeGroup(nodeGroup []TextNode) []TextNode {
-
 	translatedNodes := make([]TextNode, 0)
 	translatedNodes = append(translatedNodes, nodeGroup...)
 

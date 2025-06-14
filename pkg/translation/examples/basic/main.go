@@ -11,9 +11,9 @@ import (
 
 // ExampleLLMClient 示例LLM客户端实现
 type ExampleLLMClient struct {
-	apiKey   string
-	baseURL  string
-	model    string
+	apiKey  string
+	baseURL string
+	model   string
 }
 
 func NewExampleLLMClient(apiKey, baseURL, model string) *ExampleLLMClient {
@@ -160,7 +160,7 @@ Please provide an improved translation that addresses the feedback.`,
 	if apiKey == "" {
 		log.Println("Warning: OPENAI_API_KEY not set, using mock client")
 	}
-	
+
 	llmClient := NewExampleLLMClient(
 		apiKey,
 		"https://api.openai.com/v1",
@@ -187,7 +187,7 @@ Please provide an improved translation that addresses the feedback.`,
 
 	// 5. 执行翻译
 	ctx := context.Background()
-	
+
 	// 示例1：简单翻译
 	fmt.Println("=== Example 1: Simple Translation ===")
 	result, err := translator.Translate(ctx, &translation.Request{
@@ -199,8 +199,8 @@ Please provide an improved translation that addresses the feedback.`,
 		fmt.Printf("Original: %s\n", "Hello, world! This is a test of the translation service.")
 		fmt.Printf("Translated: %s\n", result.Text)
 		fmt.Printf("Duration: %v\n", result.Metrics.Duration)
-		fmt.Printf("Total tokens: in=%d, out=%d\n", 
-			result.Metrics.TotalTokensIn, 
+		fmt.Printf("Total tokens: in=%d, out=%d\n",
+			result.Metrics.TotalTokensIn,
 			result.Metrics.TotalTokensOut)
 	}
 
@@ -227,7 +227,7 @@ Please provide an improved translation that addresses the feedback.`,
 		{Text: "How are you?"},
 		{Text: "Thank you very much."},
 	}
-	
+
 	results, err := translator.TranslateBatch(ctx, requests)
 	if err != nil {
 		log.Printf("Batch translation failed: %v\n", err)
@@ -276,14 +276,14 @@ The traditional goals of AI research include reasoning, knowledge representation
 			},
 		},
 	}
-	
+
 	simpleTranslator, err := translation.New(customConfig,
 		translation.WithLLMClient(llmClient),
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
-	
+
 	result5, err := simpleTranslator.Translate(ctx, &translation.Request{
 		Text: "你好，世界！",
 	})

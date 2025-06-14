@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -156,7 +156,7 @@ $$
 		require.NoError(t, err)
 
 		result := output.String()
-		assert.Contains(t, result, "段落") // 验证翻译生效
+		assert.Contains(t, result, "段落")    // 验证翻译生效
 		assert.Contains(t, result, "```go") // 验证代码块保持不变
 	})
 }

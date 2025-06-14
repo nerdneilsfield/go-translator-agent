@@ -40,7 +40,7 @@ func createFullTestConfig() *config.Config {
 func TestFullTranslationWorkflow(t *testing.T) {
 	// 创建logger
 	appLogger := logger.NewZapLogger(true)
-	//assert.NoError(t, err)
+	// assert.NoError(t, err)
 
 	// 创建模拟OpenAI服务器
 	server := test.NewMockOpenAIServer(t)
@@ -162,7 +162,7 @@ func TestFullTranslationWorkflow(t *testing.T) {
 		outputFile := filepath.Join(tempDir, "test_translated.html")
 
 		// 写入测试内容
-		err := os.WriteFile(testFile, []byte(htmlContent), 0644)
+		err := os.WriteFile(testFile, []byte(htmlContent), 0o644)
 		assert.NoError(t, err)
 
 		// 使用goquery翻译HTML
@@ -171,7 +171,7 @@ func TestFullTranslationWorkflow(t *testing.T) {
 		assert.NoError(t, err)
 
 		// 写入翻译结果
-		err = os.WriteFile(outputFile, []byte(translated), 0644)
+		err = os.WriteFile(outputFile, []byte(translated), 0o644)
 		assert.NoError(t, err)
 
 		// 验证翻译结果

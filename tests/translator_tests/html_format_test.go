@@ -150,7 +150,7 @@ func TestHTMLXMLTranslation(t *testing.T) {
 			outputFile := filepath.Join(tempDir, "test_translated."+tc.format)
 
 			// 写入测试内容
-			err2 := os.WriteFile(testFile, []byte(tc.content), 0644)
+			err2 := os.WriteFile(testFile, []byte(tc.content), 0o644)
 			assert.NoError(t, err2)
 
 			// 由于TranslateFile方法不存在，我们跳过这个测试
@@ -231,7 +231,7 @@ func TestHTMLTagHandling(t *testing.T) {
     <p>This is a test paragraph.</p>
 </body>
 </html>`
-	err2 := os.WriteFile(testFile, []byte(testContent), 0644)
+	err2 := os.WriteFile(testFile, []byte(testContent), 0o644)
 	assert.NoError(t, err2)
 
 	// 由于TranslateFile方法不存在，我们跳过这个测试

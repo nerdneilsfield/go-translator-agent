@@ -65,7 +65,7 @@ Each paragraph should be translated separately.
 
 Some paragraphs may be longer than others, which tests the text splitting functionality.
 `
-	err2 := os.WriteFile(testFile, []byte(testContent), 0644)
+	err2 := os.WriteFile(testFile, []byte(testContent), 0o644)
 	assert.NoError(t, err2)
 
 	// 创建模拟翻译器
@@ -163,7 +163,7 @@ Paragraph 2.
 
 Paragraph 3.
 `
-	err2 := os.WriteFile(testFile, []byte(testContent), 0644)
+	err2 := os.WriteFile(testFile, []byte(testContent), 0o644)
 	assert.NoError(t, err2)
 
 	// 创建模拟翻译器
@@ -244,7 +244,7 @@ func TestTextErrorHandling(t *testing.T) {
 
 	// 写入测试内容
 	testContent := `Error test paragraph.`
-	err2 := os.WriteFile(testFile, []byte(testContent), 0644)
+	err2 := os.WriteFile(testFile, []byte(testContent), 0o644)
 	assert.NoError(t, err2)
 
 	// 创建模拟翻译器

@@ -42,7 +42,7 @@ func New(config Config) *Provider {
 	if config.APIEndpoint == "" {
 		config.APIEndpoint = "https://api.openai.com/v1"
 	}
-	
+
 	return &Provider{
 		config: config,
 		httpClient: &http.Client{
@@ -70,17 +70,17 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 			Content: "You are a professional translator. Translate accurately while preserving the original meaning and tone.",
 		},
 		{
-			Role:    "user",
-			Content: fmt.Sprintf("Translate the following text from %s to %s:\n\n%s", 
+			Role: "user",
+			Content: fmt.Sprintf("Translate the following text from %s to %s:\n\n%s",
 				req.SourceLanguage, req.TargetLanguage, req.Text),
 		},
 	}
-	
+
 	// 如果有额外的上下文或指令
 	if instruction, ok := req.Options["instruction"]; ok {
 		messages[0].Content += "\n\n" + instruction
 	}
-	
+
 	// 创建请求
 	chatReq := ChatRequest{
 		Model:       p.config.Model,
@@ -88,13 +88,13 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 		Temperature: p.config.Temperature,
 		MaxTokens:   p.config.MaxTokens,
 	}
-	
+
 	// 执行请求
 	resp, err := p.chat(ctx, chatReq)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// 返回响应
 	return &translation.ProviderResponse{
 		Text:      resp.Choices[0].Message.Content,
@@ -103,7 +103,7 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 		TokensOut: resp.Usage.CompletionTokens,
 		Metadata: map[string]string{
 			"finish_reason": resp.Choices[0].FinishReason,
-			"id":           resp.ID,
+			"id":            resp.ID,
 		},
 	}, nil
 }
@@ -154,7 +154,7 @@ func (p *Provider) HealthCheck(ctx context.Context) error {
 		},
 		MaxTokens: 10,
 	}
-	
+
 	_, err := p.chat(ctx, req)
 	return err
 }
@@ -166,25 +166,25 @@ func (p *Provider) chat(ctx context.Context, req ChatRequest) (*ChatResponse, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
-	
+
 	// 创建HTTP请求
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", 
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
 		p.config.APIEndpoint+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	// 设置头部
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+p.config.APIKey)
 	for k, v := range p.config.Headers {
 		httpReq.Header.Set(k, v)
 	}
-	
+
 	// 执行请求，带重试
 	var resp *http.Response
 	var lastErr error
-	
+
 	for i := 0; i <= p.config.MaxRetries; i++ {
 		if i > 0 {
 			select {
@@ -193,22 +193,22 @@ func (p *Provider) chat(ctx context.Context, req ChatRequest) (*ChatResponse, er
 			case <-time.After(p.config.RetryDelay * time.Duration(i)):
 			}
 		}
-		
+
 		resp, err = p.httpClient.Do(httpReq)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		
+
 		// 检查状态码
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			break
 		}
-		
+
 		// 读取错误响应
 		errBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		
+
 		// 解析错误
 		var apiErr APIError
 		if err := json.Unmarshal(errBody, &apiErr); err == nil {
@@ -216,26 +216,26 @@ func (p *Provider) chat(ctx context.Context, req ChatRequest) (*ChatResponse, er
 		} else {
 			lastErr = fmt.Errorf("API error: %s", resp.Status)
 		}
-		
+
 		// 检查是否可重试
 		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
 			continue
 		}
 		break
 	}
-	
+
 	if lastErr != nil {
 		return nil, lastErr
 	}
-	
+
 	defer resp.Body.Close()
-	
+
 	// 解析响应
 	var chatResp ChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
-	
+
 	return &chatResp, nil
 }
 
@@ -261,9 +261,9 @@ type ChatResponse struct {
 	Created int64  `json:"created"`
 	Model   string `json:"model"`
 	Choices []struct {
-		Index   int `json:"index"`
-		Message Message `json:"message"`
-		FinishReason string `json:"finish_reason"`
+		Index        int     `json:"index"`
+		Message      Message `json:"message"`
+		FinishReason string  `json:"finish_reason"`
 	} `json:"choices"`
 	Usage struct {
 		PromptTokens     int `json:"prompt_tokens"`
@@ -307,7 +307,7 @@ func (c *LLMClient) Chat(ctx context.Context, req *translation.ChatRequest) (*tr
 			Content: msg.Content,
 		}
 	}
-	
+
 	// 创建请求
 	chatReq := ChatRequest{
 		Model:       req.Model,
@@ -315,17 +315,17 @@ func (c *LLMClient) Chat(ctx context.Context, req *translation.ChatRequest) (*tr
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
 	}
-	
+
 	if chatReq.Model == "" {
 		chatReq.Model = c.provider.config.Model
 	}
-	
+
 	// 执行请求
 	resp, err := c.provider.chat(ctx, chatReq)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// 转换响应
 	return &translation.ChatResponse{
 		Message: translation.ChatMessage{
@@ -352,12 +352,12 @@ func (c *LLMClient) Complete(ctx context.Context, req *translation.CompletionReq
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
 	}
-	
+
 	resp, err := c.Chat(ctx, chatReq)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &translation.CompletionResponse{
 		Text:      resp.Message.Content,
 		Model:     resp.Model,

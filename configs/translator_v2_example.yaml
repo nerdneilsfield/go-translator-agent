@@ -1,0 +1,124 @@
+# 翻译器配置文件 v2.0
+# 支持多提供商和灵活的步骤配置
+
+version: "2.0"
+
+# 默认语言设置
+source_lang: en
+target_lang: zh
+
+# 提供商配置
+providers:
+  openai:
+    type: openai
+    api_key: ${OPENAI_API_KEY}
+    base_url: https://api.openai.com/v1
+    max_input_tokens: 4096
+    
+  deepl:
+    type: deepl
+    api_key: ${DEEPL_API_KEY}
+    
+  google:
+    type: google
+    credentials_path: ${GOOGLE_CREDENTIALS_PATH}
+    
+  local_llm:
+    type: openai  # 使用 OpenAI 兼容接口
+    base_url: http://localhost:8080/v1
+    api_key: not-needed
+    max_input_tokens: 8192
+
+# 步骤集配置
+step_sets:
+  # 默认三步翻译流程
+  default:
+    name: "标准三步翻译"
+    description: "使用 GPT-3.5 进行三步翻译"
+    steps:
+      initial:
+        type: openai
+        model: gpt-3.5-turbo
+        temperature: 0.3
+        system_prompt_suffix: "请保持翻译的准确性和流畅性。"
+      reflection:
+        type: openai
+        model: gpt-3.5-turbo
+        temperature: 0.1
+      improvement:
+        type: openai
+        model: gpt-3.5-turbo
+        temperature: 0.3
+        
+  # 高质量翻译流程
+  premium:
+    name: "高质量翻译"
+    description: "使用 GPT-4 和 DeepL 结合"
+    steps:
+      initial:
+        type: deepl
+        model: deepl
+      reflection:
+        type: openai
+        model: gpt-4
+        temperature: 0.1
+        is_reasoning: true  # 使用推理模型
+      improvement:
+        type: openai
+        model: gpt-4
+        temperature: 0.3
+        
+  # 快速翻译流程
+  fast:
+    name: "快速翻译"
+    description: "仅使用初始翻译，适合简单文本"
+    steps:
+      initial:
+        type: openai
+        model: gpt-3.5-turbo
+        temperature: 0.5
+        
+  # 本地模型流程
+  local:
+    name: "本地模型翻译"
+    description: "使用本地部署的模型"
+    steps:
+      initial:
+        type: local_llm
+        model: llama2
+        temperature: 0.3
+      reflection:
+        type: local_llm
+        model: llama2
+        temperature: 0.1
+      improvement:
+        type: local_llm
+        model: llama2
+        temperature: 0.3
+
+# 默认使用的步骤集
+default_step_set: default
+
+# 处理参数
+chunk_size: 2000
+chunk_overlap: 100
+concurrency: 3
+retry_attempts: 3
+retry_delay: 1s
+timeout: 5m
+
+# HTML 处理模式
+html_mode: native  # native 或 markdown
+
+# 日志配置
+log_level: info
+log_file: ""  # 空表示输出到标准输出
+
+# 保护块配置（可选）
+preserve_blocks:
+  - type: code
+    pattern: '```[\s\S]*?```'
+  - type: latex
+    pattern: '\$\$[\s\S]*?\$\$'
+  - type: url
+    pattern: 'https?://[^\s]+'

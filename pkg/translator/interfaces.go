@@ -2,6 +2,7 @@ package translator
 
 import (
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
 )
 
@@ -66,4 +67,37 @@ type Cache interface {
 
 	// Clear 清除缓存
 	Clear() error
+}
+
+// ProgressReporter 进度报告接口
+type ProgressReporter interface {
+	// StartDocument 开始文档翻译
+	StartDocument(docID, fileName string, totalNodes int)
+
+	// UpdateNode 更新节点进度
+	UpdateNode(docID string, nodeID int, status document.NodeStatus, charCount int, err error)
+
+	// CompleteDocument 完成文档翻译
+	CompleteDocument(docID string)
+
+	// UpdateStep 更新翻译步骤（用于三步翻译流程）
+	UpdateStep(docID string, nodeID int, step int, stepName string)
+}
+
+// TranslatorOptions 翻译器选项
+type TranslatorOptions struct {
+	// SourceLanguage 源语言
+	SourceLanguage string
+
+	// TargetLanguage 目标语言
+	TargetLanguage string
+
+	// EnableRetry 是否启用重试
+	EnableRetry bool
+
+	// MaxRetries 最大重试次数
+	MaxRetries int
+
+	// ProgressReporter 进度报告器（可选）
+	ProgressReporter ProgressReporter
 }

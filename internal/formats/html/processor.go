@@ -3,7 +3,7 @@ package html
 import (
 	"fmt"
 
-	"github.com/nerdneilsfield/go-translator-agent/pkg/document"
+	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 )
 
 // ProcessingMode HTML 处理模式
@@ -52,7 +52,7 @@ func MarkdownFactory(opts document.ProcessorOptions) (document.Processor, error)
 func init() {
 	// 注册默认工厂
 	document.Register(document.FormatHTML, Factory)
-	
+
 	// 也可以注册特定模式的工厂（如果需要）
 	// 例如：document.Register("html-markdown", MarkdownFactory)
 	// 例如：document.Register("html-native", NativeFactory)
@@ -65,6 +65,6 @@ func ProcessorWithMode(mode ProcessingMode, opts document.ProcessorOptions) (doc
 		opts.Metadata = make(map[string]interface{})
 	}
 	opts.Metadata["html_mode"] = string(mode)
-	
+
 	return Factory(opts)
 }

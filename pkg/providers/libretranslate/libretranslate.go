@@ -44,7 +44,7 @@ func New(config Config) *Provider {
 	if config.APIEndpoint == "" {
 		config.APIEndpoint = "https://libretranslate.com"
 	}
-	
+
 	return &Provider{
 		config: config,
 		httpClient: &http.Client{
@@ -72,11 +72,11 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 			p.languages = getDefaultLanguages()
 		}
 	}
-	
+
 	// 标准化语言代码
 	sourceLang := p.normalizeLanguageCode(req.SourceLanguage)
 	targetLang := p.normalizeLanguageCode(req.TargetLanguage)
-	
+
 	// 构建请求
 	translateReq := TranslateRequest{
 		Q:      req.Text,
@@ -84,30 +84,30 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 		Target: targetLang,
 		Format: "text",
 	}
-	
+
 	// 添加API密钥（如果需要）
 	if p.config.RequiresAPIKey && p.config.APIKey != "" {
 		translateReq.APIKey = p.config.APIKey
 	}
-	
+
 	// 检查选项
 	if format, ok := req.Options["format"]; ok && format == "html" {
 		translateReq.Format = "html"
 	}
-	
+
 	// 执行翻译
 	resp, err := p.translate(ctx, translateReq)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// 返回响应
 	metadata := make(map[string]string)
 	if resp.DetectedLanguage != nil {
 		metadata["detected_source"] = resp.DetectedLanguage.Language
 		metadata["confidence"] = fmt.Sprintf("%.2f", resp.DetectedLanguage.Confidence)
 	}
-	
+
 	return &translation.ProviderResponse{
 		Text:     resp.TranslatedText,
 		Model:    "libretranslate",
@@ -146,12 +146,12 @@ func (p *Provider) GetCapabilities() providers.Capabilities {
 			})
 		}
 	}
-	
+
 	return providers.Capabilities{
 		SupportedLanguages: supportedLangs,
-		MaxTextLength:      5000,  // LibreTranslate限制
+		MaxTextLength:      5000, // LibreTranslate限制
 		SupportsBatch:      false,
-		SupportsFormatting: true,  // 支持HTML
+		SupportsFormatting: true, // 支持HTML
 		RequiresAPIKey:     p.config.RequiresAPIKey,
 	}
 }
@@ -169,24 +169,24 @@ func (p *Provider) translate(ctx context.Context, req TranslateRequest) (*Transl
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
-	
+
 	// 创建HTTP请求
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", 
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
 		p.config.APIEndpoint+"/translate", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	// 设置头部
 	httpReq.Header.Set("Content-Type", "application/json")
 	for k, v := range p.config.Headers {
 		httpReq.Header.Set(k, v)
 	}
-	
+
 	// 执行请求，带重试
 	var resp *http.Response
 	var lastErr error
-	
+
 	for i := 0; i <= p.config.MaxRetries; i++ {
 		if i > 0 {
 			select {
@@ -195,13 +195,13 @@ func (p *Provider) translate(ctx context.Context, req TranslateRequest) (*Transl
 			case <-time.After(p.config.RetryDelay * time.Duration(i)):
 			}
 		}
-		
+
 		resp, err = p.httpClient.Do(httpReq)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		
+
 		// 读取响应体
 		respBody, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -209,7 +209,7 @@ func (p *Provider) translate(ctx context.Context, req TranslateRequest) (*Transl
 			lastErr = fmt.Errorf("failed to read response: %w", err)
 			continue
 		}
-		
+
 		// 检查状态码
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			// 解析成功响应
@@ -219,7 +219,7 @@ func (p *Provider) translate(ctx context.Context, req TranslateRequest) (*Transl
 			}
 			return &translateResp, nil
 		}
-		
+
 		// 解析错误响应
 		var errorResp ErrorResponse
 		if err := json.Unmarshal(respBody, &errorResp); err == nil && errorResp.Error != "" {
@@ -227,40 +227,40 @@ func (p *Provider) translate(ctx context.Context, req TranslateRequest) (*Transl
 		} else {
 			lastErr = fmt.Errorf("API error: %s", resp.Status)
 		}
-		
+
 		// 检查是否可重试
 		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
 			continue
 		}
 		break
 	}
-	
+
 	return nil, lastErr
 }
 
 // fetchLanguages 获取支持的语言列表
 func (p *Provider) fetchLanguages(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", 
+	req, err := http.NewRequestWithContext(ctx, "GET",
 		p.config.APIEndpoint+"/languages", nil)
 	if err != nil {
 		return err
 	}
-	
+
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to fetch languages: %s", resp.Status)
 	}
-	
+
 	var languages []Language
 	if err := json.NewDecoder(resp.Body).Decode(&languages); err != nil {
 		return err
 	}
-	
+
 	p.languages = languages
 	return nil
 }
@@ -268,7 +268,7 @@ func (p *Provider) fetchLanguages(ctx context.Context) error {
 // normalizeLanguageCode 标准化语言代码
 func (p *Provider) normalizeLanguageCode(lang string) string {
 	lower := strings.ToLower(lang)
-	
+
 	// 常见映射
 	replacements := map[string]string{
 		"chinese":    "zh",
@@ -291,23 +291,23 @@ func (p *Provider) normalizeLanguageCode(lang string) string {
 		"norwegian":  "no",
 		"finnish":    "fi",
 	}
-	
+
 	if normalized, ok := replacements[lower]; ok {
 		return normalized
 	}
-	
+
 	// 如果已经是两字母代码，直接返回
 	if len(lang) == 2 {
 		return lower
 	}
-	
+
 	// 尝试从已知语言列表中查找
 	for _, l := range p.languages {
 		if strings.EqualFold(l.Name, lang) {
 			return l.Code
 		}
 	}
-	
+
 	return lower
 }
 
@@ -342,10 +342,10 @@ type Language struct {
 
 // TranslateRequest 翻译请求
 type TranslateRequest struct {
-	Q      string `json:"q"`                // 要翻译的文本
-	Source string `json:"source"`           // 源语言
-	Target string `json:"target"`           // 目标语言
-	Format string `json:"format"`           // 文本格式
+	Q      string `json:"q"`                 // 要翻译的文本
+	Source string `json:"source"`            // 源语言
+	Target string `json:"target"`            // 目标语言
+	Format string `json:"format"`            // 文本格式
 	APIKey string `json:"api_key,omitempty"` // API密钥（如果需要）
 }
 

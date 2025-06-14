@@ -10,17 +10,17 @@ import (
 // BaseConfig 基础配置
 type BaseConfig struct {
 	// API配置
-	APIKey     string        `json:"api_key,omitempty"`
-	APIEndpoint string       `json:"api_endpoint,omitempty"`
-	
+	APIKey      string `json:"api_key,omitempty"`
+	APIEndpoint string `json:"api_endpoint,omitempty"`
+
 	// 超时和重试
 	Timeout    time.Duration `json:"timeout"`
 	MaxRetries int           `json:"max_retries"`
 	RetryDelay time.Duration `json:"retry_delay"`
-	
+
 	// 代理设置
 	ProxyURL string `json:"proxy_url,omitempty"`
-	
+
 	// 自定义头部
 	Headers map[string]string `json:"headers,omitempty"`
 }
@@ -38,13 +38,13 @@ func DefaultConfig() BaseConfig {
 // Provider 提供商接口（扩展 translation.TranslationProvider）
 type Provider interface {
 	translation.TranslationProvider
-	
+
 	// Configure 配置提供商
 	Configure(config interface{}) error
-	
+
 	// GetCapabilities 获取提供商能力
 	GetCapabilities() Capabilities
-	
+
 	// HealthCheck 健康检查
 	HealthCheck(ctx context.Context) error
 }
@@ -53,19 +53,19 @@ type Provider interface {
 type Capabilities struct {
 	// 支持的语言
 	SupportedLanguages []Language `json:"supported_languages"`
-	
+
 	// 最大文本长度
 	MaxTextLength int `json:"max_text_length"`
-	
+
 	// 是否支持批量翻译
 	SupportsBatch bool `json:"supports_batch"`
-	
+
 	// 是否支持格式保留
 	SupportsFormatting bool `json:"supports_formatting"`
-	
+
 	// 是否需要API密钥
 	RequiresAPIKey bool `json:"requires_api_key"`
-	
+
 	// 速率限制
 	RateLimit *RateLimit `json:"rate_limit,omitempty"`
 }
@@ -84,8 +84,8 @@ type RateLimit struct {
 
 // Error 提供商错误
 type Error struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code    string                 `json:"code"`
+	Message string                 `json:"message"`
 	Details map[string]interface{} `json:"details,omitempty"`
 }
 

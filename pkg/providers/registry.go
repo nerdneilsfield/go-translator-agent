@@ -22,11 +22,11 @@ func NewRegistry() *Registry {
 func (r *Registry) Register(name string, provider Provider) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	if _, exists := r.providers[name]; exists {
 		return fmt.Errorf("provider %s already registered", name)
 	}
-	
+
 	r.providers[name] = provider
 	return nil
 }
@@ -35,12 +35,12 @@ func (r *Registry) Register(name string, provider Provider) error {
 func (r *Registry) Get(name string) (Provider, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	provider, exists := r.providers[name]
 	if !exists {
 		return nil, fmt.Errorf("provider %s not found", name)
 	}
-	
+
 	return provider, nil
 }
 
@@ -48,12 +48,12 @@ func (r *Registry) Get(name string) (Provider, error) {
 func (r *Registry) List() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	names := make([]string, 0, len(r.providers))
 	for name := range r.providers {
 		names = append(names, name)
 	}
-	
+
 	return names
 }
 
@@ -61,7 +61,7 @@ func (r *Registry) List() []string {
 func (r *Registry) Remove(name string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	delete(r.providers, name)
 }
 
@@ -69,7 +69,7 @@ func (r *Registry) Remove(name string) {
 func (r *Registry) Clear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	r.providers = make(map[string]Provider)
 }
 

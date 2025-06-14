@@ -29,22 +29,22 @@ type Config struct {
 	// 缓存配置
 	EnableCache bool   `json:"enable_cache"`
 	CacheDir    string `json:"cache_dir"`
-	
+
 	// 元数据
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // StepConfig 翻译步骤配置
 type StepConfig struct {
-	Name         string            `json:"name"`          // 步骤名称
-	Provider     string            `json:"provider"`      // 提供商名称（可选，如 "deepl", "openai"）
-	Model        string            `json:"model"`         // 使用的模型
-	Temperature  float32           `json:"temperature"`   // 温度参数
-	MaxTokens    int               `json:"max_tokens"`    // 最大token数
-	Timeout      time.Duration     `json:"timeout"`       // 超时时间
-	Prompt       string            `json:"prompt"`        // 提示词模板
-	Variables    map[string]string `json:"variables"`     // 提示词变量
-	SystemRole   string            `json:"system_role"`   // 系统角色
+	Name        string            `json:"name"`        // 步骤名称
+	Provider    string            `json:"provider"`    // 提供商名称（可选，如 "deepl", "openai"）
+	Model       string            `json:"model"`       // 使用的模型
+	Temperature float32           `json:"temperature"` // 温度参数
+	MaxTokens   int               `json:"max_tokens"`  // 最大token数
+	Timeout     time.Duration     `json:"timeout"`     // 超时时间
+	Prompt      string            `json:"prompt"`      // 提示词模板
+	Variables   map[string]string `json:"variables"`   // 提示词变量
+	SystemRole  string            `json:"system_role"` // 系统角色
 }
 
 // DefaultConfig 返回默认配置
