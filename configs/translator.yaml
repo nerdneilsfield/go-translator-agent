@@ -342,27 +342,50 @@ step_sets_v2:
         temperature: 0.2
         max_tokens: 3000
         prompt: |
-          作为一位精通{{source_language}}和{{target_language}}的语言专家，请评估这个翻译：
-          
-          原文：{{original_text}}
-          翻译：{{initial_translation}}
-          
-          请从准确性、流畅性、文化适应性、专业术语方面进行评估，并提供具体的改进建议。
-        system_role: "你是一位资深的翻译评论家。"
+          You are reviewing a translation from {{source_lang}} to {{target_lang}}.
+
+          Original text:
+          {{original_text}}
+
+          Initial translation:
+          {{initial_translation}}
+
+          Please analyze this translation and identify any issues. Consider:
+          1. Accuracy: Does the translation convey the exact meaning of the original?
+          2. Fluency: Does the translation read naturally in {{target_lang}}?
+          3. Terminology: Are technical terms, proper nouns, and specialized vocabulary translated appropriately?
+          4. Formatting: Is all original formatting preserved (Markdown, LaTeX, HTML tags, etc.)?
+          5. Consistency: Is the translation consistent throughout?
+          6. Regional appropriateness: Is the language appropriate for {{country}}?
+
+          Provide a detailed analysis of any issues found. If the translation is perfect, simply state that no issues were found.
+        system_role: "You are an expert translation reviewer specializing in {{source_lang}} to {{target_lang}} translation quality assessment."
       - name: "final_polish"
         provider: "openai"
         model_name: "gpt-4o"
         temperature: 0.3
         max_tokens: 4096
         prompt: |
-          基于以下信息，提供最终的优化翻译：
-          
-          原文：{{original_text}}
-          翻译：{{initial_translation}}
-          评估反馈：{{ai_review}}
-          
-          请生成一个更加准确、流畅的{{target_language}}翻译。
-        system_role: "你是一位专业的{{target_language}}编辑。"
+          You are improving a translation from {{source_lang}} to {{target_lang}} based on the following reflection.
+
+          Original text:
+          {{original_text}}
+
+          Initial translation:
+          {{initial_translation}}
+
+          Reflection/Issues identified:
+          {{ai_review}}
+
+          Please provide an improved translation that addresses all the issues mentioned in the reflection while:
+          1. Maintaining the exact meaning of the original text
+          2. Ensuring natural fluency in {{target_lang}}
+          3. Preserving all original formatting (Markdown, LaTeX, HTML tags, etc.)
+          4. Using appropriate terminology and expressions
+          5. Using language appropriate for {{country}}
+
+          Provide only the improved translation without any explanation or commentary.
+        system_role: "You are a professional {{target_lang}} editor specializing in translation refinement and quality improvement."
     fast_mode_threshold: 500
 
   multi_engine:
@@ -386,14 +409,27 @@ step_sets_v2:
         temperature: 0.2
         max_tokens: 4096
         prompt: |
-          请分析以下翻译结果，并生成一个综合最优的翻译：
-          
-          原文：{{original_text}}
-          
-          翻译结果：
+          You have multiple translation engine results. Please compare and synthesize the best translation from {{source_lang}} to {{target_lang}}.
+
+          Original text:
+          {{original_text}}
+
+          Translation results:
           1. DeepL: {{deepl_translation}}
           2. Google: {{google_translation}}
-          
-          请比较优缺点，选择最准确的部分，生成一个自然、准确的{{target_language}}翻译。
-        system_role: "你是一位翻译专家，精通对比分析不同翻译结果。"
+
+          Please analyze each translation considering:
+          1. Accuracy: Which translation better captures the original meaning?
+          2. Fluency: Which reads more naturally in {{target_lang}}?
+          3. Terminology: Which handles technical terms and proper nouns better?
+          4. Formatting: Which preserves the original formatting better?
+
+          Based on your analysis, provide a final synthesized translation that combines the best aspects of all translations while:
+          - Maintaining perfect accuracy to the original meaning
+          - Ensuring natural fluency in {{target_lang}}
+          - Preserving all original formatting (Markdown, LaTeX, HTML tags, etc.)
+          - Using appropriate language for {{country}}
+
+          Provide only the final synthesized translation without any explanation or analysis.
+        system_role: "You are a professional translation expert specializing in multi-engine translation comparison and synthesis."
     fast_mode_threshold: 1000
