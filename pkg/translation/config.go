@@ -36,16 +36,15 @@ type Config struct {
 
 // StepConfig 翻译步骤配置
 type StepConfig struct {
-	Name        string            `json:"name"`        // 步骤名称
-	Provider    string            `json:"provider"`    // 提供商名称（可选，如 "deepl", "openai"）
-	Model       string            `json:"model"`       // 使用的模型
-	Temperature float32           `json:"temperature"` // 温度参数
-	MaxTokens   int               `json:"max_tokens"`  // 最大token数
-	Timeout     time.Duration     `json:"timeout"`     // 超时时间
-	Prompt      string            `json:"prompt"`      // 提示词模板
-	Variables   map[string]string `json:"variables"`   // 提示词变量
-	SystemRole  string            `json:"system_role"` // 系统角色
-	IsLLM       bool              `json:"is_llm"`      // 是否是LLM模型（支持复杂推理和对话）
+	Name            string            `json:"name"`             // 步骤名称
+	Provider        string            `json:"provider"`         // 提供商名称（可选，如 "deepl", "openai"）
+	Model           string            `json:"model"`            // 使用的模型
+	Temperature     float32           `json:"temperature"`      // 温度参数
+	MaxTokens       int               `json:"max_tokens"`       // 最大token数
+	Timeout         time.Duration     `json:"timeout"`          // 超时时间
+	AdditionalNotes string            `json:"additional_notes"` // 用户自定义说明
+	Variables       map[string]string `json:"variables"`        // 提示词变量（保留用于兼容）
+	IsLLM           bool              `json:"is_llm"`           // 是否是LLM模型（支持复杂推理和对话）
 }
 
 // DefaultConfig 返回默认配置
@@ -68,8 +67,7 @@ func DefaultConfig() *Config {
 				Temperature: 0.3,
 				MaxTokens:   4096,
 				Timeout:     2 * time.Minute,
-				Prompt:      defaultTranslationPrompt,
-				SystemRole:  "You are a professional translator.",
+				AdditionalNotes: "Maintain the original meaning, tone, and style as much as possible.",
 			},
 			{
 				Name:        "reflection",
@@ -77,8 +75,7 @@ func DefaultConfig() *Config {
 				Temperature: 0.1,
 				MaxTokens:   2048,
 				Timeout:     1 * time.Minute,
-				Prompt:      defaultReflectionPrompt,
-				SystemRole:  "You are a translation quality reviewer.",
+				AdditionalNotes: "Identify any issues with accuracy, fluency, cultural appropriateness, or style.",
 			},
 			{
 				Name:        "improvement",
@@ -86,8 +83,7 @@ func DefaultConfig() *Config {
 				Temperature: 0.3,
 				MaxTokens:   4096,
 				Timeout:     2 * time.Minute,
-				Prompt:      defaultImprovementPrompt,
-				SystemRole:  "You are a professional translator focusing on quality improvement.",
+				AdditionalNotes: "Provide an improved translation that addresses the feedback.",
 			},
 		},
 	}
@@ -136,14 +132,11 @@ func (c *Config) Validate() error {
 			}
 		}
 		
-		// Provider-based steps might not need model and prompt
+		// Provider-based steps might not need model
 		if step.Provider == "" {
-			// Only require model and prompt for LLM-based steps
+			// Only require model for LLM-based steps
 			if step.Model == "" {
 				return errors.New("step model is required when no provider is specified")
-			}
-			if step.Prompt == "" {
-				return errors.New("step prompt is required when no provider is specified")
 			}
 		}
 		if step.Temperature < 0 || step.Temperature > 2 {

@@ -87,8 +87,7 @@ func createDefaultStepSetConfigV2() *StepSetConfigV2 {
 				Temperature: 0.3,
 				MaxTokens:   4096,
 				Timeout:     30,
-				Prompt:      "Translate the following text from {{source}} to {{target}}:\n\n{{text}}",
-				SystemRole:  "You are a professional translator.",
+				AdditionalNotes: "Translate accurately while maintaining the original meaning and tone.",
 			},
 			{
 				Name:        "reflection",
@@ -97,8 +96,7 @@ func createDefaultStepSetConfigV2() *StepSetConfigV2 {
 				Temperature: 0.1,
 				MaxTokens:   2048,
 				Timeout:     30,
-				Prompt:      "Review the translation and identify any issues:\n\nOriginal: {{original}}\nTranslation: {{translation}}",
-				SystemRole:  "You are a translation quality reviewer.",
+				AdditionalNotes: "Review the translation and identify any issues.",
 			},
 			{
 				Name:        "improvement",
@@ -107,8 +105,7 @@ func createDefaultStepSetConfigV2() *StepSetConfigV2 {
 				Temperature: 0.3,
 				MaxTokens:   4096,
 				Timeout:     30,
-				Prompt:      "Improve the translation based on feedback:\n\nOriginal: {{original}}\nTranslation: {{translation}}\nFeedback: {{feedback}}",
-				SystemRole:  "You are a professional translator.",
+				AdditionalNotes: "Improve the translation based on feedback.",
 			},
 		},
 	}

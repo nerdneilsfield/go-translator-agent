@@ -306,7 +306,7 @@ func (s *step) executeWithLLM(ctx context.Context, input StepInput) (*StepOutput
 	messages := []ChatMessage{
 		{
 			Role:    "system",
-			Content: s.getSystemRole(),
+			Content: s.config.SystemRole,
 		},
 		{
 			Role:    "user",
@@ -360,63 +360,36 @@ func (s *step) GetConfig() *StepConfig {
 	return s.config
 }
 
-// getAdditionalNotes 获取用户自定义说明
-func (s *step) getAdditionalNotes() string {
-	return s.config.AdditionalNotes
-}
-
-// getSystemRole 根据步骤名称自动生成系统角色
-func (s *step) getSystemRole() string {
-	stepName := strings.ToLower(s.config.Name)
-	
-	if strings.Contains(stepName, "reflection") || strings.Contains(stepName, "review") {
-		return "You are a translation quality reviewer and linguistic expert."
-	} else if strings.Contains(stepName, "improvement") || strings.Contains(stepName, "polish") {
-		return "You are a professional translator focusing on quality improvement."
-	} else {
-		// 默认翻译角色
-		return "You are a professional translator."
-	}
-}
-
 // preparePrompt 准备提示词
 func (s *step) preparePrompt(input StepInput) string {
-	// 根据步骤名称自动选择内置模板
-	var templateType TemplateType
-	stepName := strings.ToLower(s.config.Name)
-	
-	if strings.Contains(stepName, "reflection") || strings.Contains(stepName, "review") {
-		templateType = TemplateTypeReflection
-	} else if strings.Contains(stepName, "improvement") || strings.Contains(stepName, "polish") {
-		templateType = TemplateTypeImprovement
-	} else {
-		// 默认使用标准翻译模板
-		templateType = TemplateTypeStandard
-	}
-	
-	promptTemplate := GetBuiltinTemplate(templateType)
+	prompt := s.config.Prompt
 
-	// 创建模板数据
-	data := map[string]interface{}{
-		"text":            input.Text,
-		"source_language": input.SourceLanguage,
-		"target_language": input.TargetLanguage,
-		"source":          input.SourceLanguage,
-		"target":          input.TargetLanguage,
-		"country":         "China", // 默认值，可以从配置中获取
+	// 替换基本变量
+	replacements := map[string]string{
+		"{{text}}":            input.Text,
+		"{{source_language}}": input.SourceLanguage,
+		"{{target_language}}": input.TargetLanguage,
+		"{{source}}":          input.SourceLanguage,
+		"{{target}}":          input.TargetLanguage,
 	}
 
 	// 添加上下文变量
 	for k, v := range input.Context {
-		data[k] = v
+		replacements[fmt.Sprintf("{{%s}}", k)] = v
 	}
 
-	// 添加步骤配置的 additional_notes
-	if additionalNotes := s.getAdditionalNotes(); additionalNotes != "" {
-		data["additional_notes"] = additionalNotes
+	// 添加配置的变量
+	for k, v := range s.config.Variables {
+		replacements[fmt.Sprintf("{{%s}}", k)] = v
 	}
 
-	// 处理内容保护和批量翻译的保护说明
+	// 执行替换
+	for k, v := range replacements {
+		prompt = strings.ReplaceAll(prompt, k, v)
+	}
+
+	// 检查上下文中是否有额外的保护说明标记
+	// 将保护说明插入到 "Please translate" 之前
 	if input.Context != nil {
 		var preserveInstructions []string
 		
@@ -430,60 +403,97 @@ func (s *step) preparePrompt(input StepInput) string {
 			preserveInstructions = append(preserveInstructions, GetNodeMarkerPrompt(DefaultNodeMarkerConfig))
 		}
 		
-		// 将保护说明作为 additional_notes 添加
+		// 插入保护说明到合适的位置
 		if len(preserveInstructions) > 0 {
-			existingNotes, _ := data["additional_notes"].(string)
-			if existingNotes != "" {
-				data["additional_notes"] = existingNotes + "\n\n" + strings.Join(preserveInstructions, "\n\n")
-			} else {
-				data["additional_notes"] = strings.Join(preserveInstructions, "\n\n")
+			// 根据步骤名称确定插入位置
+			stepName := strings.ToLower(s.config.Name)
+			var markers []string
+			
+			// 根据不同的步骤选择不同的标记
+			if strings.Contains(stepName, "initial") || strings.Contains(stepName, "translation") {
+				// 初始翻译步骤
+				markers = []string{
+					"Please translate the following text:",
+					"Please translate:",
+					"Translate the following text:",
+					"Translate:",
+					"请翻译以下文本：",
+					"请翻译：",
+				}
+			} else if strings.Contains(stepName, "reflection") || strings.Contains(stepName, "review") {
+				// 反思/审查步骤
+				markers = []string{
+					"Please analyze this translation and identify any issues",
+					"Please analyze this translation",
+					"You are reviewing a translation",
+					"Review the translation",
+					"请分析这个翻译",
+					"审查翻译",
+				}
+			} else if strings.Contains(stepName, "improvement") || strings.Contains(stepName, "improve") || strings.Contains(stepName, "polish") {
+				// 改进步骤
+				markers = []string{
+					"Please provide an improved translation",
+					"You are improving a translation",
+					"Improve the translation",
+					"请提供改进的翻译",
+					"改进翻译",
+				}
+			}
+			
+			// 如果没有匹配的步骤类型，使用通用标记
+			if len(markers) == 0 {
+				markers = []string{
+					"Please translate",
+					"Translate",
+					"Please",
+					"{{text}}",
+				}
+			}
+			
+			inserted := false
+			instructions := strings.Join(preserveInstructions, "\n\n")
+			
+			// 尝试在标记之前插入
+			for _, marker := range markers {
+				if idx := strings.Index(prompt, marker); idx != -1 {
+					// 在标记之前插入，确保有合适的换行
+					prompt = prompt[:idx] + instructions + "\n\n" + prompt[idx:]
+					inserted = true
+					break
+				}
+			}
+			
+			// 如果没找到标记，查找 {{text}} 占位符
+			if !inserted && strings.Contains(prompt, "{{text}}") {
+				// 在 {{text}} 之前插入
+				prompt = strings.Replace(prompt, "{{text}}", instructions + "\n\n{{text}}", 1)
+				inserted = true
+			}
+			
+			// 如果还是没找到合适的位置，添加到提示词开头（在格式规则之后）
+			if !inserted {
+				// 查找 "Formatting Rules:" 或类似的部分
+				if idx := strings.Index(prompt, "Formatting Rules:"); idx != -1 {
+					// 找到格式规则结束的位置（两个换行）
+					if endIdx := strings.Index(prompt[idx:], "\n\n"); endIdx != -1 {
+						insertPos := idx + endIdx + 2
+						prompt = prompt[:insertPos] + instructions + "\n\n" + prompt[insertPos:]
+						inserted = true
+					}
+				}
+			}
+			
+			// 最后的备选方案：添加到开头
+			if !inserted {
+				prompt = instructions + "\n\n" + prompt
 			}
 		}
 	}
 
-	// 使用 text/template 处理模板
-	tmpl, err := template.New("prompt").Parse(promptTemplate)
-	if err != nil {
-		// 如果模板解析失败，回退到简单字符串替换（向后兼容）
-		return s.fallbackStringReplace(promptTemplate, data)
-	}
-
-	var buf bytes.Buffer
-	err = tmpl.Execute(&buf, data)
-	if err != nil {
-		// 如果模板执行失败，回退到简单字符串替换（向后兼容）
-		return s.fallbackStringReplace(promptTemplate, data)
-	}
-
-	return buf.String()
-}
-
-// fallbackStringReplace 回退到简单字符串替换（向后兼容）
-func (s *step) fallbackStringReplace(promptTemplate string, data map[string]interface{}) string {
-	prompt := promptTemplate
-	
-	// 基本变量替换
-	if text, ok := data["text"].(string); ok {
-		prompt = strings.ReplaceAll(prompt, "{{text}}", text)
-	}
-	if sourceLang, ok := data["source_language"].(string); ok {
-		prompt = strings.ReplaceAll(prompt, "{{source_language}}", sourceLang)
-		prompt = strings.ReplaceAll(prompt, "{{source}}", sourceLang)
-	}
-	if targetLang, ok := data["target_language"].(string); ok {
-		prompt = strings.ReplaceAll(prompt, "{{target_language}}", targetLang)
-		prompt = strings.ReplaceAll(prompt, "{{target}}", targetLang)
-	}
-	
-	// 其他变量替换
-	for k, v := range data {
-		if str, ok := v.(string); ok {
-			prompt = strings.ReplaceAll(prompt, fmt.Sprintf("{{%s}}", k), str)
-		}
-	}
-	
 	return prompt
 }
+
 // getCacheKey 生成缓存键
 func (s *step) getCacheKey(prompt string) string {
 	// 简单的缓存键生成，实际使用中可能需要更复杂的逻辑

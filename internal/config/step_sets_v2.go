@@ -2,15 +2,13 @@ package config
 
 // StepConfigV2 新的步骤配置，支持提供商
 type StepConfigV2 struct {
-	Name        string            `mapstructure:"name" json:"name"`
-	Provider    string            `mapstructure:"provider" json:"provider"`       // 提供商（如 openai, deepl, google）
-	ModelName   string            `mapstructure:"model_name" json:"model_name"`   // 模型名称
-	Temperature float64           `mapstructure:"temperature" json:"temperature"` // 温度参数
-	MaxTokens   int               `mapstructure:"max_tokens" json:"max_tokens"`   // 最大令牌数
-	Timeout     int               `mapstructure:"timeout" json:"timeout"`         // 超时时间（秒）
-	Prompt      string            `mapstructure:"prompt" json:"prompt"`           // 提示词模板
-	SystemRole  string            `mapstructure:"system_role" json:"system_role"` // 系统角色
-	Variables   map[string]string `mapstructure:"variables" json:"variables"`     // 额外变量
+	Name            string `mapstructure:"name" json:"name"`
+	Provider        string `mapstructure:"provider" json:"provider"`               // 提供商（如 openai, deepl, google）
+	ModelName       string `mapstructure:"model_name" json:"model_name"`           // 模型名称
+	Temperature     float64 `mapstructure:"temperature" json:"temperature"`        // 温度参数
+	MaxTokens       int     `mapstructure:"max_tokens" json:"max_tokens"`          // 最大令牌数
+	Timeout         int     `mapstructure:"timeout" json:"timeout"`                // 超时时间（秒）
+	AdditionalNotes string  `mapstructure:"additional_notes" json:"additional_notes"` // 用户自定义说明
 }
 
 // StepSetConfigV2 新的步骤集配置，支持灵活的步骤数量
@@ -85,8 +83,6 @@ func GetDefaultStepSetsV2() map[string]StepSetConfigV2 {
 					ModelName:   "gpt-3.5-turbo",
 					Temperature: 0.5,
 					MaxTokens:   4096,
-					Prompt:      "Translate the following {{source}} text to {{target}}. Maintain the original meaning, tone, and style:\n\n{{text}}",
-					SystemRole:  "You are a professional translator.",
 				},
 				{
 					Name:        "reflection",
@@ -94,8 +90,6 @@ func GetDefaultStepSetsV2() map[string]StepSetConfigV2 {
 					ModelName:   "gpt-3.5-turbo",
 					Temperature: 0.3,
 					MaxTokens:   2048,
-					Prompt:      "Review this translation and identify any issues:\n\nOriginal: {{original_text}}\nTranslation: {{translation}}\n\nProvide specific feedback.",
-					SystemRole:  "You are a translation quality reviewer.",
 				},
 				{
 					Name:        "improvement",
@@ -103,8 +97,6 @@ func GetDefaultStepSetsV2() map[string]StepSetConfigV2 {
 					ModelName:   "gpt-3.5-turbo",
 					Temperature: 0.5,
 					MaxTokens:   4096,
-					Prompt:      "Improve this translation based on the feedback:\n\nOriginal: {{original_text}}\nTranslation: {{translation}}\nFeedback: {{feedback}}\n\nProvide an improved translation.",
-					SystemRole:  "You are a professional translator focusing on quality improvement.",
 				},
 			},
 			FastModeThreshold: 300,
@@ -119,7 +111,6 @@ func GetDefaultStepSetsV2() map[string]StepSetConfigV2 {
 					Provider:    "deepl",
 					ModelName:   "deepl",
 					Temperature: 0,
-					Prompt:      "{{text}}", // DeepL 不需要复杂提示词
 				},
 				{
 					Name:        "reflection",
@@ -127,8 +118,7 @@ func GetDefaultStepSetsV2() map[string]StepSetConfigV2 {
 					ModelName:   "gpt-4",
 					Temperature: 0.3,
 					MaxTokens:   2048,
-					Prompt:      "Review this professional translation from {{source}} to {{target}}:\n\nOriginal: {{original_text}}\nTranslation: {{translation}}\n\nIdentify any cultural nuances, terminology issues, or areas for improvement.",
-					SystemRole:  "You are an expert linguist specializing in {{source}} to {{target}} translation.",
+					AdditionalNotes: "Pay special attention to cultural nuances and terminology consistency.",
 				},
 				{
 					Name:        "improvement",
@@ -136,8 +126,7 @@ func GetDefaultStepSetsV2() map[string]StepSetConfigV2 {
 					ModelName:   "gpt-4",
 					Temperature: 0.3,
 					MaxTokens:   4096,
-					Prompt:      "Refine this translation based on the feedback, ensuring it sounds natural in {{target}}:\n\nOriginal: {{original_text}}\nTranslation: {{translation}}\nFeedback: {{feedback}}\n\nProvide a polished final translation.",
-					SystemRole:  "You are a native {{target}} speaker and professional editor.",
+					AdditionalNotes: "Ensure the final translation sounds natural and professional.",
 				},
 			},
 			FastModeThreshold: 300,
@@ -152,14 +141,12 @@ func GetDefaultStepSetsV2() map[string]StepSetConfigV2 {
 					Provider:    "deepl",
 					ModelName:   "deepl",
 					Temperature: 0,
-					Prompt:      "{{text}}",
 				},
 				{
 					Name:        "initial_translation_google",
 					Provider:    "google",
 					ModelName:   "google-translate",
 					Temperature: 0,
-					Prompt:      "{{text}}",
 				},
 				{
 					Name:        "comparison",
@@ -167,8 +154,7 @@ func GetDefaultStepSetsV2() map[string]StepSetConfigV2 {
 					ModelName:   "gpt-4",
 					Temperature: 0.2,
 					MaxTokens:   3000,
-					Prompt:      "Compare these two translations and create the best version:\n\nOriginal ({{source}}): {{original_text}}\n\nTranslation 1 (DeepL): {{initial_translation_deepl}}\nTranslation 2 (Google): {{initial_translation_google}}\n\nCombine the strengths of both to create an optimal {{target}} translation.",
-					SystemRole:  "You are an expert translator and linguist.",
+					AdditionalNotes: "Compare these two translations and create the best version.",
 				},
 				{
 					Name:        "polish",
@@ -176,8 +162,7 @@ func GetDefaultStepSetsV2() map[string]StepSetConfigV2 {
 					ModelName:   "gpt-4",
 					Temperature: 0.3,
 					MaxTokens:   4096,
-					Prompt:      "Polish this final translation to ensure it reads naturally in {{target}}:\n\nTranslation: {{comparison}}\n\nMake any final adjustments for fluency and naturalness.",
-					SystemRole:  "You are a native {{target}} speaker and professional editor.",
+					AdditionalNotes: "Polish this final translation to ensure it reads naturally.",
 				},
 			},
 			FastModeThreshold: 500,
@@ -192,7 +177,6 @@ func GetDefaultStepSetsV2() map[string]StepSetConfigV2 {
 					Provider:    "deeplx", // 或 "libretranslate" 用于完全免费
 					ModelName:   "deeplx",
 					Temperature: 0,
-					Prompt:      "{{text}}",
 				},
 			},
 			FastModeThreshold: 10000,
@@ -208,8 +192,7 @@ func GetDefaultStepSetsV2() map[string]StepSetConfigV2 {
 					ModelName:   "gpt-4",
 					Temperature: 0.3,
 					MaxTokens:   8192,
-					Prompt:      "Translate the following {{source}} text to {{target}}. Pay careful attention to nuance, cultural context, and maintain the author's voice:\n\n{{text}}",
-					SystemRole:  "You are a master translator with deep cultural knowledge of both {{source}} and {{target}} languages.",
+					AdditionalNotes: "Pay careful attention to nuance, cultural context, and maintain the author's voice.",
 				},
 				{
 					Name:        "reflection",
@@ -217,8 +200,7 @@ func GetDefaultStepSetsV2() map[string]StepSetConfigV2 {
 					ModelName:   "claude-3-opus",
 					Temperature: 0.1,
 					MaxTokens:   4096,
-					Prompt:      "Critically analyze this translation for accuracy, cultural appropriateness, and stylistic fidelity:\n\nOriginal: {{original_text}}\nTranslation: {{translation}}\n\nProvide detailed feedback on any issues.",
-					SystemRole:  "You are a translation critic and linguistic expert.",
+					AdditionalNotes: "Critically analyze this translation for accuracy, cultural appropriateness, and stylistic fidelity.",
 				},
 				{
 					Name:        "improvement",
@@ -226,8 +208,7 @@ func GetDefaultStepSetsV2() map[string]StepSetConfigV2 {
 					ModelName:   "gpt-4",
 					Temperature: 0.3,
 					MaxTokens:   8192,
-					Prompt:      "Create the final, polished translation incorporating all feedback:\n\nOriginal: {{original_text}}\nDraft: {{translation}}\nFeedback: {{feedback}}\n\nEnsure the final version is publication-ready.",
-					SystemRole:  "You are a senior translator and editor with decades of experience.",
+					AdditionalNotes: "Create the final, polished translation incorporating all feedback. Ensure the final version is publication-ready.",
 				},
 			},
 			FastModeThreshold: 200,

@@ -36,25 +36,35 @@ func CreateTestConfig(progressPath string) *config.Config {
 		
 		// 步骤集配置
 		ActiveStepSet: "test-stepset",
-		StepSets: map[string]config.StepSetConfig{
+		StepSets: map[string]config.StepSetConfigV2{
 			"test-stepset": {
-				ID:   "test-stepset",
-				Name: "Test Step Set",
-				InitialTranslation: config.StepConfig{
-					Name:        "initial",
-					ModelName:   "test-model",
-					Temperature: 0.3,
+				ID:          "test-stepset",
+				Name:        "Test Step Set",
+				Description: "Test configuration",
+				Steps: []config.StepConfigV2{
+					{
+						Name:        "initial",
+						Provider:    "openai",
+						ModelName:   "test-model",
+						Temperature: 0.3,
+						MaxTokens:   4096,
+					},
+					{
+						Name:        "reflect",
+						Provider:    "openai",
+						ModelName:   "test-model",
+						Temperature: 0.1,
+						MaxTokens:   2048,
+					},
+					{
+						Name:        "improve",
+						Provider:    "openai",
+						ModelName:   "test-model",
+						Temperature: 0.3,
+						MaxTokens:   4096,
+					},
 				},
-				Reflection: config.StepConfig{
-					Name:        "reflect",
-					ModelName:   "test-model",
-					Temperature: 0.1,
-				},
-				Improvement: config.StepConfig{
-					Name:        "improve",
-					ModelName:   "test-model",
-					Temperature: 0.3,
-				},
+				FastModeThreshold: 300,
 			},
 		},
 		

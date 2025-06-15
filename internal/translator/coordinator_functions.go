@@ -124,15 +124,14 @@ func createTranslationService(cfg *config.Config, progressPath string, logger *z
 		}
 		
 		translationSteps[i] = translation.StepConfig{
-			Name:        step.Name,
-			Provider:    step.Provider,
-			Model:       step.ModelName,
-			Temperature: float32(step.Temperature),
-			MaxTokens:   step.MaxTokens,
-			Prompt:      step.Prompt,
-			Variables:   step.Variables,
-			SystemRole:  step.SystemRole,
-			IsLLM:       isLLM,
+			Name:            step.Name,
+			Provider:        step.Provider,
+			Model:           step.ModelName,
+			Temperature:     float32(step.Temperature),
+			MaxTokens:       step.MaxTokens,
+			AdditionalNotes: step.AdditionalNotes,
+			Variables:       make(map[string]string), // 初始化空的 variables
+			IsLLM:           isLLM,
 		}
 	}
 
