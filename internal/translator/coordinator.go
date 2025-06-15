@@ -282,69 +282,8 @@ func (c *TranslationCoordinator) TranslateText(ctx context.Context, text string)
 
 // translateNode 翻译单个节点
 func (c *TranslationCoordinator) translateNode(ctx context.Context, node *document.NodeInfo) error {
-	// 检查翻译服务是否可用
-	if c.translationService == nil {
-		// 模拟翻译（用于测试）
-		node.TranslatedText = "Translated: " + node.OriginalText
-		node.Status = document.NodeStatusSuccess
-
-		c.logger.Debug("mock translation completed",
-			zap.Int("nodeID", node.ID),
-			zap.String("originalText", node.OriginalText))
-
-		return nil
-	}
-
-	// 创建翻译请求
-	req := &translation.Request{
-		Text:           node.OriginalText,
-		SourceLanguage: c.config.SourceLang,
-		TargetLanguage: c.config.TargetLang,
-		Metadata: map[string]interface{}{
-			"node_id": fmt.Sprintf("%d", node.ID),
-			"path":    node.Path,
-		},
-	}
-
-	// 执行翻译
-	resp, err := c.translationService.Translate(ctx, req)
-	if err != nil {
-		node.Error = err
-		node.Status = document.NodeStatusFailed
-		c.logger.Error("node translation failed",
-			zap.Int("nodeID", node.ID),
-			zap.Error(err))
-		return err
-	}
-
-	// 应用翻译后处理
-	translatedText := resp.Text
-	if c.postProcessor != nil && c.config.EnablePostProcessing {
-		processedText, err := c.postProcessor.ProcessTranslation(ctx, node.OriginalText, translatedText, req.Metadata)
-		if err != nil {
-			c.logger.Warn("translation post processing failed",
-				zap.Int("nodeID", node.ID),
-				zap.Error(err))
-			// 不让后处理失败阻止翻译过程
-		} else {
-			translatedText = processedText
-			c.logger.Debug("translation post processing applied",
-				zap.Int("nodeID", node.ID),
-				zap.Int("originalLength", len(resp.Text)),
-				zap.Int("processedLength", len(translatedText)))
-		}
-	}
-
-	// 设置翻译结果
-	node.TranslatedText = translatedText
-	node.Status = document.NodeStatusSuccess
-
-	c.logger.Debug("node translation succeeded",
-		zap.Int("nodeID", node.ID),
-		zap.Int("originalLength", len(node.OriginalText)),
-		zap.Int("translatedLength", len(node.TranslatedText)))
-
-	return nil
+	// 使用带保护块的翻译
+	return c.translateNodeWithPreserve(ctx, node)
 }
 
 // GetProgress 获取翻译进度

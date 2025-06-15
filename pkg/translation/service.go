@@ -3,6 +3,7 @@ package translation
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -180,8 +181,20 @@ func (s *service) Translate(ctx context.Context, req *Request) (*Response, error
 				})
 			}
 
+			// 为翻译链创建包含元数据的上下文
+			chainCtx := ctx
+			if req.Metadata != nil {
+				// 将元数据注入到上下文中，供 chain 使用
+				for k, v := range req.Metadata {
+					if strings.HasPrefix(k, "_") {
+						// 以 _ 开头的是内部标记，需要传递给 chain
+						chainCtx = context.WithValue(chainCtx, k, v)
+					}
+				}
+			}
+			
 			// 执行翻译链
-			chainResult, err := s.chain.Execute(ctx, text)
+			chainResult, err := s.chain.Execute(chainCtx, text)
 			if err != nil {
 				if s.options.errorHandler != nil {
 					s.options.errorHandler(err)

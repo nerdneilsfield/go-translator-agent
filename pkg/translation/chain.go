@@ -13,6 +13,11 @@ type chain struct {
 	steps   []Step
 	options chainOptions
 	mu      sync.RWMutex
+	// 执行时的状态
+	executionState struct {
+		originalText string
+		results      []StepResult
+	}
 }
 
 // NewChain 创建新的翻译链
@@ -47,11 +52,16 @@ func (c *chain) Execute(ctx context.Context, input string) (*ChainResult, error)
 
 	startTime := time.Now()
 	currentInput := input
+	
+	// 保存执行状态
+	c.executionState.originalText = input
+	c.executionState.results = make([]StepResult, 0, len(c.steps))
 
 	// 执行每个步骤
 	for i, step := range c.steps {
 		stepResult, err := c.executeStep(ctx, step, currentInput, i)
 		result.Steps = append(result.Steps, *stepResult)
+		c.executionState.results = append(c.executionState.results, *stepResult)
 
 		if err != nil {
 			result.Success = false
@@ -110,19 +120,45 @@ func (c *chain) executeStep(ctx context.Context, step Step, input string, index 
 		TargetLanguage: stepConfig.Variables["target_language"],
 	}
 
-	// 如果是反思或改进步骤，添加之前的输出作为上下文
-	if index > 0 && len(c.steps) > 1 {
-		if index == 1 { // 反思步骤
-			stepInput.Context = map[string]string{
-				"original_text": c.steps[0].GetConfig().Variables["original_text"],
-				"translation":   input,
-			}
-		} else if index == 2 { // 改进步骤
-			stepInput.Context = map[string]string{
-				"original_text": c.steps[0].GetConfig().Variables["original_text"],
-				"translation":   c.steps[0].GetConfig().Variables["translation"],
-				"feedback":      input,
-			}
+	// 设置上下文
+	stepInput.Context = make(map[string]string)
+	
+	// 添加基本的占位符
+	stepInput.Context["text"] = input
+	stepInput.Context["source_language"] = stepConfig.Variables["source_language"]
+	stepInput.Context["target_language"] = stepConfig.Variables["target_language"]
+	
+	// 从 context 中提取元数据标记
+	if ctx.Value("_is_batch") != nil {
+		stepInput.Context["_is_batch"] = fmt.Sprintf("%v", ctx.Value("_is_batch"))
+	}
+	if ctx.Value("_preserve_enabled") != nil {
+		stepInput.Context["_preserve_enabled"] = fmt.Sprintf("%v", ctx.Value("_preserve_enabled"))
+	}
+	
+	// 根据步骤类型添加特定的上下文
+	if index == 0 {
+		// 初始翻译：原文就是输入
+		stepInput.Context["original_text"] = input
+	} else if index == 1 && len(c.executionState.results) > 0 {
+		// 反思步骤：需要原文和初始翻译
+		stepInput.Context["original_text"] = c.executionState.originalText
+		stepInput.Context["translation"] = c.executionState.results[0].Output
+		stepInput.Context["initial_translation"] = c.executionState.results[0].Output
+	} else if index == 2 && len(c.executionState.results) > 1 {
+		// 改进步骤：需要原文、初始翻译和反思
+		stepInput.Context["original_text"] = c.executionState.originalText
+		stepInput.Context["translation"] = c.executionState.results[0].Output
+		stepInput.Context["initial_translation"] = c.executionState.results[0].Output
+		stepInput.Context["reflection"] = c.executionState.results[1].Output
+		stepInput.Context["feedback"] = c.executionState.results[1].Output
+		stepInput.Context["ai_review"] = c.executionState.results[1].Output
+	}
+	
+	// 如果配置中有额外的变量，也添加进去
+	for k, v := range stepConfig.Variables {
+		if k != "source_language" && k != "target_language" {
+			stepInput.Context[k] = v
 		}
 	}
 
@@ -348,6 +384,20 @@ func (s *step) preparePrompt(input StepInput) string {
 	// 执行替换
 	for k, v := range replacements {
 		prompt = strings.ReplaceAll(prompt, k, v)
+	}
+
+
+	// 检查上下文中是否有额外的保护说明标记
+	if input.Context != nil {
+		// 如果是批量翻译，添加节点标记保护说明
+		if isBatch, ok := input.Context["_is_batch"]; ok && isBatch == "true" {
+			prompt = AppendNodeMarkerPrompt(prompt, DefaultNodeMarkerConfig)
+		}
+		
+		// 如果有内容保护配置，添加保护块说明
+		if preserveEnabled, ok := input.Context["_preserve_enabled"]; ok && preserveEnabled == "true" {
+			prompt = AppendPreservePrompt(prompt, DefaultPreserveConfig)
+		}
 	}
 
 	return prompt

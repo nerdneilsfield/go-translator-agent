@@ -75,6 +75,22 @@ func (pm *PreserveManager) Restore(text string) string {
 	return text
 }
 
+// ProtectPattern 使用正则表达式保护匹配的内容
+func (pm *PreserveManager) ProtectPattern(text string, pattern string) string {
+	if !pm.config.Enabled {
+		return text
+	}
+
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return text
+	}
+
+	return re.ReplaceAllStringFunc(text, func(match string) string {
+		return pm.Protect(match)
+	})
+}
+
 // GetPreservePrompt 获取保护块相关的 prompt 说明
 func GetPreservePrompt(config PreserveConfig) string {
 	if !config.Enabled {

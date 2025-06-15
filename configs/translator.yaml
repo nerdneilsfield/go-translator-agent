@@ -10,7 +10,7 @@ country: "China"
 default_model_name: "gpt-3.5-turbo"
 
 # 活跃步骤集
-active_step_set: "basic"
+active_step_set: "llm_translation"
 
 # 性能和并发设置
 max_tokens_per_chunk: 2000
@@ -87,7 +87,7 @@ models:
     model_id: "gpt-3.5-turbo"
     api_type: "openai"
     base_url: ""
-    key: ""
+    key: "sk-test-dummy-key"
     max_output_tokens: 4096
     max_input_tokens: 4096
     temperature: 0.7
@@ -97,11 +97,11 @@ models:
     is_reasoning: false
 
   gpt-4o:
-    name: "gpt-4"
-    model_id: "gpt-4"
+    name: "gpt-4o"
+    model_id: "gpt-4o"
     api_type: "openai"
     base_url: ""
-    key: ""
+    key: "sk-test-dummy-key"
     max_output_tokens: 8192
     max_input_tokens: 8192
     temperature: 0.7
@@ -342,50 +342,50 @@ step_sets_v2:
         temperature: 0.2
         max_tokens: 3000
         prompt: |
-          You are reviewing a translation from {{source_lang}} to {{target_lang}}.
+          You are reviewing a translation from {{source_language}} to {{target_language}}.
 
           Original text:
           {{original_text}}
 
           Initial translation:
-          {{initial_translation}}
+          {{translation}}
 
           Please analyze this translation and identify any issues. Consider:
           1. Accuracy: Does the translation convey the exact meaning of the original?
-          2. Fluency: Does the translation read naturally in {{target_lang}}?
+          2. Fluency: Does the translation read naturally in {{target_language}}?
           3. Terminology: Are technical terms, proper nouns, and specialized vocabulary translated appropriately?
           4. Formatting: Is all original formatting preserved (Markdown, LaTeX, HTML tags, etc.)?
           5. Consistency: Is the translation consistent throughout?
           6. Regional appropriateness: Is the language appropriate for {{country}}?
 
           Provide a detailed analysis of any issues found. If the translation is perfect, simply state that no issues were found.
-        system_role: "You are an expert translation reviewer specializing in {{source_lang}} to {{target_lang}} translation quality assessment."
+        system_role: "You are an expert translation reviewer specializing in {{source_language}} to {{target_language}} translation quality assessment."
       - name: "final_polish"
         provider: "openai"
         model_name: "gpt-4o"
         temperature: 0.3
         max_tokens: 4096
         prompt: |
-          You are improving a translation from {{source_lang}} to {{target_lang}} based on the following reflection.
+          You are improving a translation from {{source_language}} to {{target_language}} based on the following reflection.
 
           Original text:
           {{original_text}}
 
           Initial translation:
-          {{initial_translation}}
+          {{translation}}
 
           Reflection/Issues identified:
           {{ai_review}}
 
           Please provide an improved translation that addresses all the issues mentioned in the reflection while:
           1. Maintaining the exact meaning of the original text
-          2. Ensuring natural fluency in {{target_lang}}
+          2. Ensuring natural fluency in {{target_language}}
           3. Preserving all original formatting (Markdown, LaTeX, HTML tags, etc.)
           4. Using appropriate terminology and expressions
           5. Using language appropriate for {{country}}
 
           Provide only the improved translation without any explanation or commentary.
-        system_role: "You are a professional {{target_lang}} editor specializing in translation refinement and quality improvement."
+        system_role: "You are a professional {{target_language}} editor specializing in translation refinement and quality improvement."
     fast_mode_threshold: 500
 
   multi_engine:
@@ -409,7 +409,7 @@ step_sets_v2:
         temperature: 0.2
         max_tokens: 4096
         prompt: |
-          You have multiple translation engine results. Please compare and synthesize the best translation from {{source_lang}} to {{target_lang}}.
+          You have multiple translation engine results. Please compare and synthesize the best translation from {{source_language}} to {{target_language}}.
 
           Original text:
           {{original_text}}
@@ -420,13 +420,13 @@ step_sets_v2:
 
           Please analyze each translation considering:
           1. Accuracy: Which translation better captures the original meaning?
-          2. Fluency: Which reads more naturally in {{target_lang}}?
+          2. Fluency: Which reads more naturally in {{target_language}}?
           3. Terminology: Which handles technical terms and proper nouns better?
           4. Formatting: Which preserves the original formatting better?
 
           Based on your analysis, provide a final synthesized translation that combines the best aspects of all translations while:
           - Maintaining perfect accuracy to the original meaning
-          - Ensuring natural fluency in {{target_lang}}
+          - Ensuring natural fluency in {{target_language}}
           - Preserving all original formatting (Markdown, LaTeX, HTML tags, etc.)
           - Using appropriate language for {{country}}
 
@@ -446,7 +446,7 @@ step_sets_v2:
         temperature: 0.3
         max_tokens: 4096
         prompt: |
-          This is a translation task from {{source_lang}} to {{target_lang}}.
+          This is a translation task from {{source_language}} to {{target_language}}.
 
           Formatting Rules:
           1. Preserve all original formatting exactly:
@@ -458,58 +458,64 @@ step_sets_v2:
           3. Preserve document structure, including line breaks, paragraph spacing, lists, and tables.
           4. Use terminology and expressions appropriate for {{country}}.
 
+          IMPORTANT: Special Markers
+          - If you see markers like @@PRESERVE_N@@ (where N is a number), keep them exactly as they are.
+          - If you see markers like @@NODE_START_N@@ and @@NODE_END_N@@, preserve them exactly.
+          - These markers protect content that should not be translated or indicate text boundaries.
+          - Translate only the actual content, not these special markers.
+
           Please translate the following text:
 
           {{text}}
-        system_role: "You are a professional translator specializing in {{source_lang}} to {{target_lang}} translation with expertise in preserving formatting and technical accuracy."
+        system_role: "You are a professional translator specializing in {{source_language}} to {{target_language}} translation with expertise in preserving formatting and technical accuracy."
       - name: "reflection"
         provider: "openai"
         model_name: "gpt-4o"
         temperature: 0.2
         max_tokens: 3000
         prompt: |
-          You are reviewing a translation from {{source_lang}} to {{target_lang}}.
+          You are reviewing a translation from {{source_language}} to {{target_language}}.
 
           Original text:
           {{original_text}}
 
           Initial translation:
-          {{initial_translation}}
+          {{translation}}
 
           Please analyze this translation and identify any issues. Consider:
           1. Accuracy: Does the translation convey the exact meaning of the original?
-          2. Fluency: Does the translation read naturally in {{target_lang}}?
+          2. Fluency: Does the translation read naturally in {{target_language}}?
           3. Terminology: Are technical terms, proper nouns, and specialized vocabulary translated appropriately?
           4. Formatting: Is all original formatting preserved (Markdown, LaTeX, HTML tags, etc.)?
           5. Consistency: Is the translation consistent throughout?
           6. Regional appropriateness: Is the language appropriate for {{country}}?
 
           Provide a detailed analysis of any issues found. If the translation is perfect, simply state that no issues were found.
-        system_role: "You are an expert translation reviewer specializing in {{source_lang}} to {{target_lang}} translation quality assessment."
+        system_role: "You are an expert translation reviewer specializing in {{source_language}} to {{target_language}} translation quality assessment."
       - name: "improvement"
         provider: "openai"
         model_name: "gpt-4o"
         temperature: 0.3
         max_tokens: 4096
         prompt: |
-          You are improving a translation from {{source_lang}} to {{target_lang}} based on the following reflection.
+          You are improving a translation from {{source_language}} to {{target_language}} based on the following reflection.
 
           Original text:
           {{original_text}}
 
           Initial translation:
-          {{initial_translation}}
+          {{translation}}
 
           Reflection/Issues identified:
           {{reflection}}
 
           Please provide an improved translation that addresses all the issues mentioned in the reflection while:
           1. Maintaining the exact meaning of the original text
-          2. Ensuring natural fluency in {{target_lang}}
+          2. Ensuring natural fluency in {{target_language}}
           3. Preserving all original formatting (Markdown, LaTeX, HTML tags, etc.)
           4. Using appropriate terminology and expressions
           5. Using language appropriate for {{country}}
 
           Provide only the improved translation without any explanation or commentary.
-        system_role: "You are a professional {{target_lang}} editor specializing in translation refinement and quality improvement."
+        system_role: "You are a professional {{target_language}} editor specializing in translation refinement and quality improvement."
     fast_mode_threshold: 300
