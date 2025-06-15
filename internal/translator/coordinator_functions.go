@@ -1,11 +1,11 @@
 package translator
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
+	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/factory"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -40,20 +40,44 @@ func createTranslationService(cfg *config.Config, progressPath string, logger *z
 		return nil, fmt.Errorf("step set '%s' has no steps configured", stepSetName)
 	}
 
-	// 使用第一个步骤的模型配置
-	firstStep := stepSet.Steps[0]
-	modelConfig, exists := cfg.ModelConfigs[firstStep.ModelName]
-	if !exists {
-		return nil, fmt.Errorf("model '%s' not found in configuration", firstStep.ModelName)
-	}
+	// 创建提供商映射
+	providerMap := make(map[string]translation.TranslationProvider)
+	providerFactory := factory.New()
 	
-	// 创建 Zap 日志包装器
-	loggerWrapper := &zapLoggerWrapper{logger: logger}
+	// 为每个步骤创建对应的提供商
+	for _, step := range stepSet.Steps {
+		// 检查模型配置是否存在
+		modelConfig, exists := cfg.ModelConfigs[step.ModelName]
+		if !exists {
+			// 调试信息：显示所有可用的模型配置
+			availableModels := make([]string, 0, len(cfg.ModelConfigs))
+			for modelName := range cfg.ModelConfigs {
+				availableModels = append(availableModels, modelName)
+			}
+			logger.Error("模型配置未找到",
+				zap.String("requested", step.ModelName),
+				zap.Strings("available", availableModels),
+				zap.Int("total", len(cfg.ModelConfigs)))
+			return nil, fmt.Errorf("model '%s' not found in configuration. Available models: %v", step.ModelName, availableModels)
+		}
 
-	// 创建简单的 LLM 客户端
-	llmClient := &simpleLLMClient{
-		config: &modelConfig,
-		logger: loggerWrapper,
+		// 检查提供商特性
+		capabilities := factory.GetProviderCapabilities(step.Provider)
+		
+		// 使用工厂创建提供商
+		provider, err := providerFactory.CreateProvider(step.Provider, modelConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create provider for step %s: %w", step.Name, err)
+		}
+
+		providerMap[step.Provider] = provider
+		
+		logger.Info("创建提供商成功",
+			zap.String("step", step.Name),
+			zap.String("provider", step.Provider),
+			zap.String("model", step.ModelName),
+			zap.Bool("supports_prompts", capabilities.SupportsPrompts),
+			zap.Bool("requires_api_key", capabilities.RequiresAPIKey))
 	}
 
 	// 转换步骤配置
@@ -62,7 +86,7 @@ func createTranslationService(cfg *config.Config, progressPath string, logger *z
 		translationSteps[i] = translation.StepConfig{
 			Name:        step.Name,
 			Provider:    step.Provider,
-			Model:       step.ModelName, // 注意：translation包使用Model而不是ModelName
+			Model:       step.ModelName,
 			Temperature: float32(step.Temperature),
 			MaxTokens:   step.MaxTokens,
 			Prompt:      step.Prompt,
@@ -84,11 +108,12 @@ func createTranslationService(cfg *config.Config, progressPath string, logger *z
 		MaxConcurrency: cfg.Concurrency,
 		EnableCache:    cfg.UseCache,
 		CacheDir:       cfg.CacheDir,
-		Steps:          translationSteps, // 添加步骤配置
+		Steps:          translationSteps,
 	}
 
-	return translation.New(translationConfig, translation.WithLLMClient(llmClient))
+	return translation.New(translationConfig, translation.WithProviders(providerMap))
 }
+
 
 // zapLoggerWrapper 包装 Zap logger 以符合翻译服务的接口
 type zapLoggerWrapper struct {
@@ -119,37 +144,3 @@ func (w *zapLoggerWrapper) With(fields ...zapcore.Field) logger.Logger {
 	return &zapLoggerWrapper{logger: w.logger.With(fields...)}
 }
 
-// simpleLLMClient 简单的 LLM 客户端实现
-type simpleLLMClient struct {
-	config *config.ModelConfig
-	logger logger.Logger
-}
-
-func (c *simpleLLMClient) Complete(ctx context.Context, req *translation.CompletionRequest) (*translation.CompletionResponse, error) {
-	// 实现文本补全
-	return &translation.CompletionResponse{
-		Text: "Completion not implemented",
-	}, fmt.Errorf("completion not implemented")
-}
-
-func (c *simpleLLMClient) Chat(ctx context.Context, req *translation.ChatRequest) (*translation.ChatResponse, error) {
-	// 实现对话接口
-	return &translation.ChatResponse{
-		Message: translation.ChatMessage{
-			Role:    "assistant",
-			Content: "Chat not implemented",
-		},
-	}, fmt.Errorf("chat not implemented")
-}
-
-func (c *simpleLLMClient) GetModel() string {
-	if c.config != nil {
-		return c.config.ModelID
-	}
-	return "unknown"
-}
-
-func (c *simpleLLMClient) HealthCheck(ctx context.Context) error {
-	// 简单的健康检查
-	return nil
-}

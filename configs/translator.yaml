@@ -229,7 +229,7 @@ models:
     model_id: "deepl"
     api_type: "deepl"
     base_url: "https://api.deepl.com/v2"
-    key: ""
+    key: "test-key-for-demonstration"
     max_output_tokens: 130000
     max_input_tokens: 130000
     temperature: 0
