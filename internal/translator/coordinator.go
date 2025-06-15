@@ -182,8 +182,31 @@ func (c *TranslationCoordinator) TranslateFile(ctx context.Context, inputPath, o
 		return nil, fmt.Errorf("failed to parse document: %w", err)
 	}
 
+	// 计算总字符数并创建进度条
+	totalChars := int64(0)
+	for _, node := range nodes {
+		totalChars += int64(len(node.OriginalText))
+	}
+	
+	// 创建进度条
+	progressBar := NewProgressBar(totalChars, fmt.Sprintf("翻译 %s", inputPath))
+	defer progressBar.Finish()
+
+	// 创建带进度条的翻译函数
+	translateNodeWithProgress := func(ctx context.Context, node *document.NodeInfo) error {
+		// 调用原始翻译函数
+		err := c.translateNode(ctx, node)
+		
+		// 更新进度条
+		if err == nil {
+			progressBar.Update(int64(len(node.OriginalText)))
+		}
+		
+		return err
+	}
+
 	// 执行翻译
-	err = c.nodeTranslator.TranslateDocument(ctx, docID, inputPath, nodes, c.translateNode)
+	err = c.nodeTranslator.TranslateDocument(ctx, docID, inputPath, nodes, translateNodeWithProgress)
 	if err != nil {
 		return c.createFailedResult(docID, inputPath, outputPath, startTime, err), err
 	}
