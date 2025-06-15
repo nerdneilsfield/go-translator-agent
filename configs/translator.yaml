@@ -95,6 +95,7 @@ models:
     output_token_price: 1.5
     price_unit: "USD"
     is_reasoning: false
+    is_llm: true
 
   gpt-4o:
     name: "gpt-4o"
@@ -109,6 +110,7 @@ models:
     output_token_price: 10
     price_unit: "USD"
     is_reasoning: false
+    is_llm: true
 
   gpt-4.1-nano:
     name: "openai/gpt-4.1-nano"
@@ -123,6 +125,7 @@ models:
     output_token_price: 3.0
     price_unit: "USD"
     is_reasoning: false
+    is_llm: true
 
   o1-preview:
     name: "o1-preview"
@@ -137,6 +140,7 @@ models:
     output_token_price: 60
     price_unit: "USD"
     is_reasoning: true
+    is_llm: true
 
   o1-mini:
     name: "o1-mini"
@@ -151,6 +155,7 @@ models:
     output_token_price: 12
     price_unit: "USD"
     is_reasoning: true
+    is_llm: true
 
   deepseek-r1:
     name: "deepseek-r1"
@@ -165,6 +170,7 @@ models:
     output_token_price: 2.19
     price_unit: "USD"
     is_reasoning: true
+    is_llm: true
     reasoning_tags: ["<think>", "</think>"]
 
   qwq-32b:
@@ -177,6 +183,7 @@ models:
     max_input_tokens: 32768
     temperature: 0.7
     is_reasoning: true
+    is_llm: true
     reasoning_tags: ["<think>", "</think>"]
 
   qwen-plus:
@@ -189,6 +196,7 @@ models:
     max_input_tokens: 8192
     temperature: 0.7
     is_reasoning: false
+    is_llm: true
 
   claude-3-opus:
     name: "claude-3-opus"
@@ -200,6 +208,7 @@ models:
     max_input_tokens: 4096
     temperature: 0.7
     is_reasoning: false
+    is_llm: true
 
   claude-3-sonnet:
     name: "claude-3-sonnet"
@@ -211,6 +220,7 @@ models:
     max_input_tokens: 4096
     temperature: 0.7
     is_reasoning: false
+    is_llm: true
 
   mistral-large:
     name: "mistral-large"
@@ -222,6 +232,7 @@ models:
     max_input_tokens: 8192
     temperature: 0.7
     is_reasoning: false
+    is_llm: true
 
   # 专业翻译服务配置
   deepl:
@@ -237,6 +248,7 @@ models:
     output_token_price: 0
     price_unit: "USD"
     is_reasoning: false
+    is_llm: false
 
   deeplx:
     name: "deeplx"
@@ -251,6 +263,7 @@ models:
     output_token_price: 0
     price_unit: "USD"
     is_reasoning: false
+    is_llm: false
 
   google-translate:
     name: "google-translate"
@@ -265,6 +278,7 @@ models:
     output_token_price: 0
     price_unit: "USD"
     is_reasoning: false
+    is_llm: false
 
   libretranslate:
     name: "libretranslate"
@@ -279,6 +293,7 @@ models:
     output_token_price: 0
     price_unit: "USD"
     is_reasoning: false
+    is_llm: false
 
 # 步骤集配置（新格式）
 step_sets:
@@ -345,6 +360,69 @@ step_sets:
           Provide only the improved translation without any explanation or commentary.
         system_role: "You are a professional {{target_language}} editor specializing in translation refinement and quality improvement."
     fast_mode_threshold: 500
+
+  test_invalid:
+    id: "test_invalid"
+    name: "测试无效配置"
+    description: "第二步使用非LLM模型测试验证"
+    steps:
+      - name: "initial_translation"
+        provider: "deepl"
+        model_name: "deepl"
+        temperature: 0
+        max_tokens: 4096
+        prompt: "{{text}}"
+        system_role: ""
+      - name: "invalid_review"
+        provider: "deepl"
+        model_name: "deepl"  # 这应该失败，因为第二步必须使用LLM
+        temperature: 0
+        max_tokens: 3000
+        prompt: "Review this"
+        system_role: ""
+    fast_mode_threshold: 100
+
+  test_raw:
+    id: "test_raw"
+    name: "测试raw选项"
+    description: "所有步骤都使用raw/none进行测试"
+    steps:
+      - name: "initial_translation"
+        provider: "raw"
+        model_name: "raw"  # 第一步也使用raw进行测试
+        temperature: 0
+        max_tokens: 0
+        prompt: ""
+        system_role: ""
+      - name: "raw_review"
+        provider: "raw"
+        model_name: "raw"  # 使用raw直接返回原文
+        temperature: 0
+        max_tokens: 0
+        prompt: ""
+        system_role: ""
+      - name: "none_polish"
+        provider: "none"
+        model_name: "none"  # 使用none跳过此步骤
+        temperature: 0
+        max_tokens: 0
+        prompt: ""
+        system_role: ""
+    fast_mode_threshold: 100
+
+  test_invalid_raw:
+    id: "test_invalid_raw"
+    name: "测试无效raw配置"
+    description: "第一步使用raw应该失败"
+    steps:
+      - name: "invalid_initial"
+        provider: "raw"
+        model_name: "raw"  # 这应该失败，第一步不能使用raw
+        temperature: 0
+        max_tokens: 0
+        prompt: ""
+        system_role: ""
+    fast_mode_threshold: 100
 
   multi_engine:
     id: "multi_engine"

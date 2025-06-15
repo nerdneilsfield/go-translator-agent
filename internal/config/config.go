@@ -23,6 +23,7 @@ type ModelConfig struct {
 	PriceUnit        string   `mapstructure:"price_unit"`         // 价格单位
 	IsReasoning      bool     `mapstructure:"is_reasoning"`       // 是否是推理模型
 	ReasoningTags    []string `mapstructure:"reasoning_tags"`     // 推理过程标记（如 ["<think>", "</think>"]）
+	IsLLM            bool     `mapstructure:"is_llm"`             // 是否是LLM模型（支持复杂推理和对话）
 }
 
 // Deprecated: Use StepConfigV2 instead

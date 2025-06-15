@@ -45,6 +45,7 @@ type StepConfig struct {
 	Prompt      string            `json:"prompt"`      // 提示词模板
 	Variables   map[string]string `json:"variables"`   // 提示词变量
 	SystemRole  string            `json:"system_role"` // 系统角色
+	IsLLM       bool              `json:"is_llm"`      // 是否是LLM模型（支持复杂推理和对话）
 }
 
 // DefaultConfig 返回默认配置
@@ -111,10 +112,30 @@ func (c *Config) Validate() error {
 	}
 
 	// 验证每个步骤
+	var hasRawStep bool
+	
 	for i, step := range c.Steps {
 		if step.Name == "" {
 			return errors.New("step name is required")
 		}
+		
+		// 检查是否使用了 raw 步骤（raw 和 none 都视为 raw）
+		if step.Model == "raw" || step.Model == "none" {
+			if !hasRawStep {
+				hasRawStep = true
+			}
+		} else {
+			// 验证 raw 规则：一旦使用了 raw，后续步骤必须是 raw 或 none
+			if hasRawStep {
+				return errors.New("once a step uses 'raw' or 'none' model, all subsequent steps must use 'raw' or 'none' models")
+			}
+			
+			// 验证第二步和第三步必须使用 LLM 模型（除非是特殊选项）
+			if i > 0 && !step.IsLLM {
+				return errors.New("reflection and improvement steps (position 2+) must use LLM models (is_llm: true) or special options (raw/none)")
+			}
+		}
+		
 		// Provider-based steps might not need model and prompt
 		if step.Provider == "" {
 			// Only require model and prompt for LLM-based steps

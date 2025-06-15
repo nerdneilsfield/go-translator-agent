@@ -36,8 +36,8 @@ func New(config *Config, opts ...Option) (Service, error) {
 		opt(&options)
 	}
 
-	// 检查必要的依赖
-	if options.llmClient == nil {
+	// 检查必要的依赖 - 至少需要 LLM client 或者 providers
+	if options.llmClient == nil && len(options.providers) == 0 {
 		return nil, ErrNoLLMClient
 	}
 
@@ -82,13 +82,17 @@ func (s *service) buildChain() error {
 			// 使用指定的提供商
 			if provider, ok := s.options.providers[cfg.Provider]; ok {
 				step = NewProviderStep(&cfg, provider, s.options.cache)
-			} else {
-				// 如果找不到指定的提供商，回退到 LLM
+			} else if s.options.llmClient != nil {
+				// 如果找不到指定的提供商，回退到 LLM（如果有的话）
 				step = NewStep(&cfg, s.options.llmClient, s.options.cache)
+			} else {
+				return fmt.Errorf("provider '%s' not found and no LLM client available", cfg.Provider)
 			}
-		} else {
+		} else if s.options.llmClient != nil {
 			// 使用默认的 LLM
 			step = NewStep(&cfg, s.options.llmClient, s.options.cache)
+		} else {
+			return fmt.Errorf("no provider specified for step '%s' and no LLM client available", cfg.Name)
 		}
 
 		s.chain.AddStep(step)

@@ -13,6 +13,7 @@ import (
 
 // createTranslationService 创建翻译服务
 func createTranslationService(cfg *config.Config, progressPath string, logger *zap.Logger) (translation.Service, error) {
+	logger.Info("开始创建翻译服务")
 	// 检查是否配置了步骤集
 	if cfg.ActiveStepSet == "" {
 		return nil, fmt.Errorf("no active step set configured")
@@ -46,6 +47,37 @@ func createTranslationService(cfg *config.Config, progressPath string, logger *z
 	
 	// 为每个步骤创建对应的提供商
 	for _, step := range stepSet.Steps {
+		
+		// 检查特殊步骤选项（raw 或 none）
+		if step.ModelName == "raw" || step.ModelName == "none" {
+			logger.Info("使用特殊步骤选项",
+				zap.String("step", step.Name),
+				zap.String("option", step.ModelName))
+			
+			// 为 raw/none 步骤创建 raw 提供商（使用虚拟模型配置）
+			virtualModelConfig := config.ModelConfig{
+				Name:     "raw",
+				ModelID:  "raw",
+				APIType:  "raw",
+				IsLLM:    false,
+			}
+			
+			provider, err := providerFactory.CreateProvider("raw", virtualModelConfig)
+			if err != nil {
+				logger.Error("创建 Raw 提供商失败",
+					zap.String("step", step.Name),
+					zap.Error(err))
+				return nil, fmt.Errorf("failed to create raw provider for step %s: %w", step.Name, err)
+			}
+			
+			providerMap[step.Provider] = provider
+			
+			logger.Info("创建 Raw 提供商成功",
+				zap.String("step", step.Name),
+				zap.String("provider", step.Provider))
+			continue
+		}
+		
 		// 检查模型配置是否存在
 		modelConfig, exists := cfg.ModelConfigs[step.ModelName]
 		if !exists {
@@ -83,6 +115,14 @@ func createTranslationService(cfg *config.Config, progressPath string, logger *z
 	// 转换步骤配置
 	translationSteps := make([]translation.StepConfig, len(stepSet.Steps))
 	for i, step := range stepSet.Steps {
+		// 获取模型的 IsLLM 信息
+		var isLLM bool
+		if step.ModelName == "raw" || step.ModelName == "none" {
+			isLLM = false // 特殊选项不是 LLM
+		} else if modelConfig, exists := cfg.ModelConfigs[step.ModelName]; exists {
+			isLLM = modelConfig.IsLLM
+		}
+		
 		translationSteps[i] = translation.StepConfig{
 			Name:        step.Name,
 			Provider:    step.Provider,
@@ -92,13 +132,21 @@ func createTranslationService(cfg *config.Config, progressPath string, logger *z
 			Prompt:      step.Prompt,
 			Variables:   step.Variables,
 			SystemRole:  step.SystemRole,
+			IsLLM:       isLLM,
 		}
 	}
 
+	// 调试：输出提供商映射
+	providerNames := make([]string, 0, len(providerMap))
+	for name := range providerMap {
+		providerNames = append(providerNames, name)
+	}
+	
 	// 创建翻译服务
-	logger.Info("creating translation service with step set", 
+	logger.Info("创建翻译服务",
 		zap.String("step_set", stepSetName),
-		zap.Int("steps_count", len(translationSteps)))
+		zap.Int("steps_count", len(translationSteps)),
+		zap.Strings("providers", providerNames))
 	
 	translationConfig := &translation.Config{
 		SourceLanguage: cfg.SourceLang,

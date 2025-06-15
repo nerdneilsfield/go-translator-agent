@@ -11,6 +11,7 @@ import (
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/google"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/libretranslate"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/openai"
+	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/raw"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
 )
 
@@ -39,6 +40,8 @@ func (f *ProviderFactory) CreateProvider(providerType string, modelConfig config
 		return f.createGoogleProvider(modelConfig)
 	case "libretranslate":
 		return f.createLibreTranslateProvider(modelConfig)
+	case "raw", "none":
+		return f.createRawProvider(modelConfig)
 	default:
 		return nil, fmt.Errorf("unsupported provider type: %s", providerType)
 	}
@@ -158,6 +161,13 @@ func (f *ProviderFactory) createLibreTranslateProvider(modelConfig config.ModelC
 	return provider, nil
 }
 
+// createRawProvider 创建 Raw 提供商（raw 和 none 都使用相同的实现）
+func (f *ProviderFactory) createRawProvider(modelConfig config.ModelConfig) (translation.TranslationProvider, error) {
+	config := raw.DefaultConfig()
+	provider := raw.New(config)
+	return provider, nil
+}
+
 // GetSupportedProviders 获取支持的提供商列表
 func (f *ProviderFactory) GetSupportedProviders() []string {
 	return []string{
@@ -166,6 +176,8 @@ func (f *ProviderFactory) GetSupportedProviders() []string {
 		"deeplx",
 		"google",
 		"libretranslate",
+		"raw",
+		"none",
 	}
 }
 
@@ -174,7 +186,7 @@ func IsLLMProvider(providerType string) bool {
 	switch providerType {
 	case "openai", "anthropic", "mistral", "gemini":
 		return true
-	case "deepl", "deeplx", "google", "libretranslate":
+	case "deepl", "deeplx", "google", "libretranslate", "raw", "none":
 		return false
 	default:
 		return false
@@ -233,6 +245,15 @@ func GetProviderCapabilities(providerType string) ProviderCapabilities {
 			SupportsMultiStep:   false,
 			RequiresAPIKey:      false,
 			DefaultModel:        "libretranslate",
+		}
+	case "raw", "none":
+		return ProviderCapabilities{
+			SupportsPrompts:     false,
+			SupportsSystemRole:  false,
+			SupportsTemperature: false,
+			SupportsMultiStep:   true,
+			RequiresAPIKey:      false,
+			DefaultModel:        "raw",
 		}
 	default:
 		return ProviderCapabilities{}
