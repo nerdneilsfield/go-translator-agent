@@ -295,7 +295,7 @@ models:
     is_reasoning: false
     is_llm: false
 
-# 步骤集配置（新格式）
+# 步骤集配置（新格式 - 使用内置模板）
 step_sets:
   professional:
     id: "professional"
@@ -307,58 +307,18 @@ step_sets:
         model_name: "deepl"
         temperature: 0
         max_tokens: 4096
-        prompt: "{{text}}"
-        system_role: ""
-      - name: "ai_review"
+      - name: "reflection"
         provider: "openai"
         model_name: "gpt-4o"
         temperature: 0.2
         max_tokens: 3000
-        prompt: |
-          You are reviewing a translation from {{source_language}} to {{target_language}}.
-
-          Original text:
-          {{original_text}}
-
-          Initial translation:
-          {{translation}}
-
-          Please analyze this translation and identify any issues. Consider:
-          1. Accuracy: Does the translation convey the exact meaning of the original?
-          2. Fluency: Does the translation read naturally in {{target_language}}?
-          3. Terminology: Are technical terms, proper nouns, and specialized vocabulary translated appropriately?
-          4. Formatting: Is all original formatting preserved (Markdown, LaTeX, HTML tags, etc.)?
-          5. Consistency: Is the translation consistent throughout?
-          6. Regional appropriateness: Is the language appropriate for {{country}}?
-
-          Provide a detailed analysis of any issues found. If the translation is perfect, simply state that no issues were found.
-        system_role: "You are an expert translation reviewer specializing in {{source_language}} to {{target_language}} translation quality assessment."
-      - name: "final_polish"
+        additional_notes: "Pay special attention to technical terminology and cultural nuances."
+      - name: "improvement"
         provider: "openai"
         model_name: "gpt-4o"
         temperature: 0.3
         max_tokens: 4096
-        prompt: |
-          You are improving a translation from {{source_language}} to {{target_language}} based on the following reflection.
-
-          Original text:
-          {{original_text}}
-
-          Initial translation:
-          {{translation}}
-
-          Reflection/Issues identified:
-          {{ai_review}}
-
-          Please provide an improved translation that addresses all the issues mentioned in the reflection while:
-          1. Maintaining the exact meaning of the original text
-          2. Ensuring natural fluency in {{target_language}}
-          3. Preserving all original formatting (Markdown, LaTeX, HTML tags, etc.)
-          4. Using appropriate terminology and expressions
-          5. Using language appropriate for {{country}}
-
-          Provide only the improved translation without any explanation or commentary.
-        system_role: "You are a professional {{target_language}} editor specializing in translation refinement and quality improvement."
+        additional_notes: "Ensure the final translation sounds natural and professional."
     fast_mode_threshold: 500
 
   test_invalid:
@@ -371,15 +331,11 @@ step_sets:
         model_name: "deepl"
         temperature: 0
         max_tokens: 4096
-        prompt: "{{text}}"
-        system_role: ""
       - name: "invalid_review"
         provider: "deepl"
         model_name: "deepl"  # 这应该失败，因为第二步必须使用LLM
         temperature: 0
         max_tokens: 3000
-        prompt: "Review this"
-        system_role: ""
     fast_mode_threshold: 100
 
   test_raw:
@@ -392,22 +348,16 @@ step_sets:
         model_name: "raw"  # 第一步也使用raw进行测试
         temperature: 0
         max_tokens: 0
-        prompt: ""
-        system_role: ""
       - name: "raw_review"
         provider: "raw"
         model_name: "raw"  # 使用raw直接返回原文
         temperature: 0
         max_tokens: 0
-        prompt: ""
-        system_role: ""
       - name: "none_polish"
         provider: "none"
         model_name: "none"  # 使用none跳过此步骤
         temperature: 0
         max_tokens: 0
-        prompt: ""
-        system_role: ""
     fast_mode_threshold: 100
 
   test_invalid_raw:
@@ -420,8 +370,6 @@ step_sets:
         model_name: "raw"  # 这应该失败，第一步不能使用raw
         temperature: 0
         max_tokens: 0
-        prompt: ""
-        system_role: ""
     fast_mode_threshold: 100
 
   multi_engine:
@@ -433,122 +381,42 @@ step_sets:
         provider: "deepl"
         model_name: "deepl"
         temperature: 0
-        prompt: "{{text}}"
       - name: "google_translation"
         provider: "google"
         model_name: "google-translate"
         temperature: 0
-        prompt: "{{text}}"
-      - name: "ai_synthesis"
+      - name: "comparison"
         provider: "openai"
         model_name: "gpt-4o"
         temperature: 0.2
         max_tokens: 4096
-        prompt: |
-          You have multiple translation engine results. Please compare and synthesize the best translation from {{source_language}} to {{target_language}}.
-
-          Original text:
-          {{original_text}}
-
-          Translation results:
-          1. DeepL: {{deepl_translation}}
-          2. Google: {{google_translation}}
-
-          Please analyze each translation considering:
-          1. Accuracy: Which translation better captures the original meaning?
-          2. Fluency: Which reads more naturally in {{target_language}}?
-          3. Terminology: Which handles technical terms and proper nouns better?
-          4. Formatting: Which preserves the original formatting better?
-
-          Based on your analysis, provide a final synthesized translation that combines the best aspects of all translations while:
-          - Maintaining perfect accuracy to the original meaning
-          - Ensuring natural fluency in {{target_language}}
-          - Preserving all original formatting (Markdown, LaTeX, HTML tags, etc.)
-          - Using appropriate language for {{country}}
-
-          Provide only the final synthesized translation without any explanation or analysis.
-        system_role: "You are a professional translation expert specializing in multi-engine translation comparison and synthesis."
+        additional_notes: "Compare and synthesize the best translation from multiple engines, combining their strengths."
     fast_mode_threshold: 1000
 
-  # LLM-based translation with comprehensive prompts
+  # LLM-based translation using built-in templates
   llm_translation:
     id: "llm_translation"
     name: "LLM Complete Translation"
-    description: "Full three-step translation using LLM models with detailed prompts"
+    description: "Full three-step translation using LLM models with built-in templates"
     steps:
       - name: "initial_translation"
         provider: "openai"
         model_name: "gpt-4o"
         temperature: 0.3
         max_tokens: 4096
-        prompt: |
-          This is a translation task from {{source_language}} to {{target_language}}.
-
-          Formatting Rules:
-          1. Preserve all original formatting exactly:
-             - Do not modify any Markdown syntax (**, *, #, etc.).
-             - Do not translate any content within LaTeX formulas ($...$, $$...$$, \( ... \), \[ ... \]) or any LaTeX commands.
-             - For LaTeX files, preserve all commands, environments (such as \begin{...} and \end{...}), and macros exactly as they are.
-             - Keep all HTML tags intact.
-          2. Do not alter abbreviations, technical terms, or code identifiers.
-          3. Preserve document structure, including line breaks, paragraph spacing, lists, and tables.
-          4. Use terminology and expressions appropriate for {{country}}.
-
-
-          Please translate the following text:
-
-          {{text}}
-        system_role: "You are a professional translator specializing in {{source_language}} to {{target_language}} translation with expertise in preserving formatting and technical accuracy."
+        additional_notes: "Pay careful attention to technical terminology and preserve all formatting."
       - name: "reflection"
         provider: "openai"
         model_name: "gpt-4o"
         temperature: 0.2
         max_tokens: 3000
-        prompt: |
-          You are reviewing a translation from {{source_language}} to {{target_language}}.
-
-          Original text:
-          {{original_text}}
-
-          Initial translation:
-          {{translation}}
-
-          Please analyze this translation and identify any issues. Consider:
-          1. Accuracy: Does the translation convey the exact meaning of the original?
-          2. Fluency: Does the translation read naturally in {{target_language}}?
-          3. Terminology: Are technical terms, proper nouns, and specialized vocabulary translated appropriately?
-          4. Formatting: Is all original formatting preserved (Markdown, LaTeX, HTML tags, etc.)?
-          5. Consistency: Is the translation consistent throughout?
-          6. Regional appropriateness: Is the language appropriate for {{country}}?
-
-          Provide a detailed analysis of any issues found. If the translation is perfect, simply state that no issues were found.
-        system_role: "You are an expert translation reviewer specializing in {{source_language}} to {{target_language}} translation quality assessment."
+        additional_notes: "Focus on accuracy, fluency, terminology consistency, and formatting preservation."
       - name: "improvement"
         provider: "openai"
         model_name: "gpt-4o"
         temperature: 0.3
         max_tokens: 4096
-        prompt: |
-          You are improving a translation from {{source_language}} to {{target_language}} based on the following reflection.
-
-          Original text:
-          {{original_text}}
-
-          Initial translation:
-          {{translation}}
-
-          Reflection/Issues identified:
-          {{reflection}}
-
-          Please provide an improved translation that addresses all the issues mentioned in the reflection while:
-          1. Maintaining the exact meaning of the original text
-          2. Ensuring natural fluency in {{target_language}}
-          3. Preserving all original formatting (Markdown, LaTeX, HTML tags, etc.)
-          4. Using appropriate terminology and expressions
-          5. Using language appropriate for {{country}}
-
-          Provide only the improved translation without any explanation or commentary.
-        system_role: "You are a professional {{target_language}} editor specializing in translation refinement and quality improvement."
+        additional_notes: "Create a polished final version that addresses all identified issues."
     fast_mode_threshold: 300
 
   test_nano:
@@ -561,5 +429,4 @@ step_sets:
         model_name: "gpt-4.1-nano"
         temperature: 0
         max_tokens: 8192
-        prompt: "Translate the following {{source_language}} text to {{target_language}}:\n\n{{text}}"
-        system_role: "You are a professional translator."
+        additional_notes: "Use simple and direct translation approach."
