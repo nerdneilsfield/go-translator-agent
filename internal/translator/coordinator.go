@@ -37,19 +37,17 @@ type TranslationResult struct {
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`
 }
 
-// TranslationCoordinator 翻译协调器，直接集成所有新组件
+// TranslationCoordinator 翻译协调器，集成完善的翻译系统
 type TranslationCoordinator struct {
-	config             *config.Config
-	nodeTranslator     *document.NodeInfoTranslator
-	progressTracker    *progress.Tracker
-	progressReporter   *progress.Tracker
-	formatManager      *formatter.Manager
-	formatFixRegistry  *formatfix.FixerRegistry
-	translationService translation.Service
-	postProcessor      *TranslationPostProcessor
-	batchTranslator    *BatchTranslator
-	statsDB            *stats.Database
-	logger             *zap.Logger
+	config               *config.Config
+	translationService   translation.Service    // 完善的翻译服务
+	progressTracker      *progress.Tracker
+	progressReporter     *progress.Tracker
+	formatManager        *formatter.Manager
+	formatFixRegistry    *formatfix.FixerRegistry
+	postProcessor        *TranslationPostProcessor
+	statsDB              *stats.Database
+	logger               *zap.Logger
 }
 
 // NewTranslationCoordinator 创建翻译协调器
@@ -71,13 +69,14 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 	// 创建 progress reporter
 	progressReporter := progressTracker
 
-	// 创建 node translator
-	nodeTranslator := document.NewNodeInfoTranslatorWithProgress(
-		cfg.ChunkSize,     // maxChunkSize
-		2,                 // contextDistance
-		cfg.RetryAttempts, // maxRetries
-		progressReporter,  // progressReporter
-	)
+	// 使用文档处理器注册表
+	formats := document.GetRegisteredFormats()
+	formatStrings := make([]string, len(formats))
+	for i, format := range formats {
+		formatStrings[i] = string(format)
+	}
+	logger.Info("document processor registry initialized",
+		zap.Strings("supported_formats", formatStrings))
 
 	// 创建 format manager
 	formatManager := formatter.NewFormatterManager()
@@ -116,14 +115,16 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 		statsDB = nil
 	}
 
-	// 创建翻译服务
+	// 创建完善的翻译服务
 	translationService, err := createTranslationService(cfg, progressPath, logger)
 	if err != nil {
-		logger.Warn("failed to create translation service, will use mock translation",
-			zap.Error(err))
-		// 继续使用 nil，在 translateNode 中会使用模拟翻译
-		translationService = nil
+		return nil, fmt.Errorf("failed to create translation service: %w", err)
 	}
+	logger.Info("translation service initialized successfully",
+		zap.String("source_lang", cfg.SourceLang),
+		zap.String("target_lang", cfg.TargetLang),
+		zap.Int("chunk_size", cfg.ChunkSize),
+		zap.Int("concurrency", cfg.Concurrency))
 
 	// 创建翻译后处理器
 	var postProcessor *TranslationPostProcessor
@@ -134,26 +135,17 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 			zap.Bool("content_protection", cfg.ContentProtection),
 			zap.Bool("terminology_consistency", cfg.TerminologyConsistency))
 	}
-	
-	// 创建批量翻译器
-	var batchTranslator *BatchTranslator
-	if translationService != nil {
-		batchTranslator = NewBatchTranslator(cfg, translationService, logger)
-		logger.Info("batch translator initialized")
-	}
 
 	return &TranslationCoordinator{
-		config:             cfg,
-		nodeTranslator:     nodeTranslator,
-		progressTracker:    progressTracker,
-		progressReporter:   progressReporter,
-		formatManager:      formatManager,
-		formatFixRegistry:  formatFixRegistry,
+		config:            cfg,
 		translationService: translationService,
-		postProcessor:      postProcessor,
-		batchTranslator:    batchTranslator,
-		statsDB:            statsDB,
-		logger:             logger,
+		progressTracker:   progressTracker,
+		progressReporter:  progressReporter,
+		formatManager:     formatManager,
+		formatFixRegistry: formatFixRegistry,
+		postProcessor:     postProcessor,
+		statsDB:           statsDB,
+		logger:            logger,
 	}, nil
 }
 
@@ -184,10 +176,43 @@ func (c *TranslationCoordinator) TranslateFile(ctx context.Context, inputPath, o
 	}
 	content := string(contentBytes)
 
-	// 检测文件格式并解析
-	nodes, err := c.parseDocument(inputPath, content)
+	// 使用完善的document processor替代简化解析
+	processorOpts := document.ProcessorOptions{
+		ChunkSize:    c.config.ChunkSize,
+		ChunkOverlap: 100,
+		Metadata: map[string]interface{}{
+			"source_language": c.config.SourceLang,
+			"target_language": c.config.TargetLang,
+		},
+	}
+
+	// 获取适当的document processor
+	processor, err := document.GetProcessorByExtension(inputPath, processorOpts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get document processor: %w", err)
+	}
+
+	c.logger.Info("using document processor",
+		zap.String("format", string(processor.GetFormat())),
+		zap.Int("chunk_size", processorOpts.ChunkSize))
+
+	// 解析文档
+	parseCtx := context.Background()
+	doc, err := processor.Parse(parseCtx, strings.NewReader(content))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse document: %w", err)
+	}
+
+	// 从文档中提取节点进行翻译
+	nodes := c.extractNodesFromDocument(doc)
+	if len(nodes) == 0 {
+		c.logger.Info("no translatable nodes found in document")
+		// 直接写入原始内容
+		err = c.writeFile(outputPath, content)
+		if err != nil {
+			return c.createFailedResult(docID, inputPath, outputPath, startTime, err), err
+		}
+		return c.createSuccessResult(docID, inputPath, outputPath, startTime, time.Now(), nodes), nil
 	}
 
 	// 计算总字符数并创建进度条
@@ -213,30 +238,26 @@ func (c *TranslationCoordinator) TranslateFile(ctx context.Context, inputPath, o
 		return err
 	}
 
-	// 执行翻译
-	if c.batchTranslator != nil {
-		// 直接使用 BatchTranslator 进行并行翻译
-		err = c.batchTranslator.TranslateNodes(ctx, nodes)
-		if err != nil {
-			return c.createFailedResult(docID, inputPath, outputPath, startTime, err), err
+	// 使用完善的翻译服务执行翻译
+	for _, node := range nodes {
+		select {
+		case <-ctx.Done():
+			return c.createFailedResult(docID, inputPath, outputPath, startTime, ctx.Err()), ctx.Err()
+		default:
 		}
 		
-		// 更新进度条
-		for _, node := range nodes {
-			if node.Status == document.NodeStatusSuccess {
-				progressBar.Update(int64(len(node.OriginalText)))
-			}
-		}
-	} else {
-		// 使用原有的节点翻译器
-		err = c.nodeTranslator.TranslateDocument(ctx, docID, inputPath, nodes, translateNodeWithProgress)
+		err := translateNodeWithProgress(ctx, node)
 		if err != nil {
-			return c.createFailedResult(docID, inputPath, outputPath, startTime, err), err
+			c.logger.Warn("failed to translate node",
+				zap.Int("nodeID", node.ID),
+				zap.String("path", node.Path),
+				zap.Error(err))
+			// 继续处理其他节点
 		}
 	}
 
-	// 重新组装文档
-	translatedContent, err := c.assembleDocument(inputPath, nodes)
+	// 重建文档结构并渲染
+	translatedContent, err := c.assembleDocumentWithProcessor(inputPath, doc, nodes)
 	if err != nil {
 		return c.createFailedResult(docID, inputPath, outputPath, startTime, err), err
 	}
@@ -289,17 +310,23 @@ func (c *TranslationCoordinator) TranslateText(ctx context.Context, text string)
 		zap.String("docID", docID),
 		zap.Int("textLength", len(text)))
 
-	// 创建简单的文本节点
-	nodes := c.createTextNodes(text)
+	// 直接使用翻译服务翻译文本
+	req := &translation.Request{
+		Text:           text,
+		SourceLanguage: c.config.SourceLang,
+		TargetLanguage: c.config.TargetLang,
+		Metadata: map[string]interface{}{
+			"docID":    docID,
+			"fileName": fileName,
+		},
+	}
 
-	// 执行翻译
-	err := c.nodeTranslator.TranslateDocument(ctx, docID, fileName, nodes, c.translateNode)
+	resp, err := c.translationService.Translate(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("text translation failed: %w", err)
 	}
 
-	// 组装结果
-	result := c.assembleTextResult(nodes)
+	result := resp.Text
 
 	c.logger.Debug("text translation completed",
 		zap.String("docID", docID),
@@ -318,21 +345,15 @@ func (c *TranslationCoordinator) translateNode(ctx context.Context, node *docume
 		return nil
 	}
 
-	// 如果有批量翻译器，使用批量翻译器的单节点翻译
-	if c.batchTranslator != nil {
-		group := &document.NodeGroup{
-			Nodes: []*document.NodeInfo{node},
-		}
-		return c.batchTranslator.translateGroup(ctx, group)
-	}
-
-	// 否则使用基本翻译
+	// 使用完善的翻译服务
 	req := &translation.Request{
 		Text:           node.OriginalText,
 		SourceLanguage: c.config.SourceLang,
 		TargetLanguage: c.config.TargetLang,
 		Metadata: map[string]interface{}{
-			"node_id": node.ID,
+			"node_id":   node.ID,
+			"block_id":  node.BlockID,
+			"node_path": node.Path,
 		},
 	}
 
@@ -340,11 +361,22 @@ func (c *TranslationCoordinator) translateNode(ctx context.Context, node *docume
 	if err != nil {
 		node.Status = document.NodeStatusFailed
 		node.Error = err
+		c.logger.Error("node translation failed",
+			zap.Int("nodeID", node.ID),
+			zap.String("path", node.Path),
+			zap.Error(err))
 		return err
 	}
 
 	node.TranslatedText = resp.Text
 	node.Status = document.NodeStatusSuccess
+	
+	c.logger.Debug("node translation completed",
+		zap.Int("nodeID", node.ID),
+		zap.String("path", node.Path),
+		zap.Int("inputLength", len(node.OriginalText)),
+		zap.Int("outputLength", len(resp.Text)))
+	
 	return nil
 }
 

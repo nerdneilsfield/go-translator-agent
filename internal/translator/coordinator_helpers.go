@@ -1,6 +1,7 @@
 package translator
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 	"github.com/nerdneilsfield/go-translator-agent/internal/progress"
+	"go.uber.org/zap"
 )
 
 // readFile 读取文件内容
@@ -50,162 +52,9 @@ func (c *TranslationCoordinator) writeFile(filePath, content string) error {
 	return nil
 }
 
-// parseDocument 解析文档为节点
-func (c *TranslationCoordinator) parseDocument(filePath, content string) ([]*document.NodeInfo, error) {
-	ext := strings.ToLower(filepath.Ext(filePath))
 
-	switch ext {
-	case ".md", ".markdown":
-		return c.parseMarkdown(content)
-	case ".txt":
-		return c.parseText(content)
-	case ".html", ".htm":
-		return c.parseHTML(content)
-	default:
-		// 默认按文本处理
-		return c.parseText(content)
-	}
-}
-
-// parseMarkdown 解析 Markdown 文档
-func (c *TranslationCoordinator) parseMarkdown(content string) ([]*document.NodeInfo, error) {
-	// 简单的段落分割
-	paragraphs := strings.Split(content, "\n\n")
-	var nodes []*document.NodeInfo
-
-	for i, paragraph := range paragraphs {
-		paragraph = strings.TrimSpace(paragraph)
-		if paragraph == "" {
-			continue
-		}
-
-		node := &document.NodeInfo{
-			ID:           i + 1,
-			OriginalText: paragraph,
-			Status:       document.NodeStatusPending,
-			Path:         fmt.Sprintf("paragraph-%d", i+1),
-			Metadata: map[string]interface{}{
-				"type":     "paragraph",
-				"format":   "markdown",
-				"position": i,
-			},
-		}
-		nodes = append(nodes, node)
-	}
-
-	return nodes, nil
-}
-
-// parseText 解析纯文本文档
-func (c *TranslationCoordinator) parseText(content string) ([]*document.NodeInfo, error) {
-	// 按段落分割
-	paragraphs := strings.Split(content, "\n\n")
-	var nodes []*document.NodeInfo
-
-	for i, paragraph := range paragraphs {
-		paragraph = strings.TrimSpace(paragraph)
-		if paragraph == "" {
-			continue
-		}
-
-		node := &document.NodeInfo{
-			ID:           i + 1,
-			OriginalText: paragraph,
-			Status:       document.NodeStatusPending,
-			Path:         fmt.Sprintf("paragraph-%d", i+1),
-			Metadata: map[string]interface{}{
-				"type":     "paragraph",
-				"format":   "text",
-				"position": i,
-			},
-		}
-		nodes = append(nodes, node)
-	}
-
-	return nodes, nil
-}
-
-// parseHTML 解析 HTML 文档
-func (c *TranslationCoordinator) parseHTML(content string) ([]*document.NodeInfo, error) {
-	// 简化实现，按 <p> 标签分割
-	// 在实际应用中，应该使用更复杂的 HTML 解析器
-	lines := strings.Split(content, "\n")
-	var nodes []*document.NodeInfo
-	nodeID := 1
-
-	for i, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		// 简单检查是否包含文本内容
-		if strings.Contains(line, "<p>") || (len(line) > 10 && !strings.HasPrefix(line, "<")) {
-			node := &document.NodeInfo{
-				ID:           nodeID,
-				OriginalText: line,
-				Status:       document.NodeStatusPending,
-				Path:         fmt.Sprintf("line-%d", i+1),
-				Metadata: map[string]interface{}{
-					"type":     "html-line",
-					"format":   "html",
-					"position": i,
-				},
-			}
-			nodes = append(nodes, node)
-			nodeID++
-		}
-	}
-
-	return nodes, nil
-}
-
-// createTextNodes 为文本创建节点
-func (c *TranslationCoordinator) createTextNodes(text string) []*document.NodeInfo {
-	// 简单按段落分割
-	paragraphs := strings.Split(text, "\n\n")
-	var nodes []*document.NodeInfo
-
-	for i, paragraph := range paragraphs {
-		paragraph = strings.TrimSpace(paragraph)
-		if paragraph == "" {
-			continue
-		}
-
-		node := &document.NodeInfo{
-			ID:           i + 1,
-			OriginalText: paragraph,
-			Status:       document.NodeStatusPending,
-			Path:         fmt.Sprintf("inline-paragraph-%d", i+1),
-			Metadata: map[string]interface{}{
-				"type":   "inline-text",
-				"format": "text",
-			},
-		}
-		nodes = append(nodes, node)
-	}
-
-	return nodes
-}
-
-// assembleDocument 重新组装翻译后的文档
+// assembleDocument 简化组装方法（作为回退）
 func (c *TranslationCoordinator) assembleDocument(originalPath string, nodes []*document.NodeInfo) (string, error) {
-	ext := strings.ToLower(filepath.Ext(originalPath))
-
-	switch ext {
-	case ".md", ".markdown":
-		return c.assembleMarkdown(nodes), nil
-	case ".txt":
-		return c.assembleText(nodes), nil
-	case ".html", ".htm":
-		return c.assembleHTML(nodes), nil
-	default:
-		return c.assembleText(nodes), nil
-	}
-}
-
-// assembleMarkdown 组装 Markdown 文档
-func (c *TranslationCoordinator) assembleMarkdown(nodes []*document.NodeInfo) string {
 	var parts []string
 
 	for _, node := range nodes {
@@ -217,52 +66,14 @@ func (c *TranslationCoordinator) assembleMarkdown(nodes []*document.NodeInfo) st
 		}
 	}
 
-	return strings.Join(parts, "\n\n")
-}
-
-// assembleText 组装纯文本文档
-func (c *TranslationCoordinator) assembleText(nodes []*document.NodeInfo) string {
-	var parts []string
-
-	for _, node := range nodes {
-		if node.Status == document.NodeStatusSuccess && node.TranslatedText != "" {
-			parts = append(parts, node.TranslatedText)
-		} else {
-			parts = append(parts, node.OriginalText)
-		}
+	// 根据文件类型决定连接方式
+	ext := strings.ToLower(filepath.Ext(originalPath))
+	switch ext {
+	case ".html", ".htm":
+		return strings.Join(parts, "\n"), nil
+	default:
+		return strings.Join(parts, "\n\n"), nil
 	}
-
-	return strings.Join(parts, "\n\n")
-}
-
-// assembleHTML 组装 HTML 文档
-func (c *TranslationCoordinator) assembleHTML(nodes []*document.NodeInfo) string {
-	var parts []string
-
-	for _, node := range nodes {
-		if node.Status == document.NodeStatusSuccess && node.TranslatedText != "" {
-			parts = append(parts, node.TranslatedText)
-		} else {
-			parts = append(parts, node.OriginalText)
-		}
-	}
-
-	return strings.Join(parts, "\n")
-}
-
-// assembleTextResult 组装文本翻译结果
-func (c *TranslationCoordinator) assembleTextResult(nodes []*document.NodeInfo) string {
-	var parts []string
-
-	for _, node := range nodes {
-		if node.Status == document.NodeStatusSuccess && node.TranslatedText != "" {
-			parts = append(parts, node.TranslatedText)
-		} else {
-			parts = append(parts, node.OriginalText)
-		}
-	}
-
-	return strings.Join(parts, "\n\n")
 }
 
 // createSuccessResult 创建成功结果
@@ -329,6 +140,94 @@ func (c *TranslationCoordinator) createSuccessResult(docID, inputFile, outputFil
 		Duration:       endTime.Sub(startTime),
 		Metadata:       metadata,
 	}
+}
+
+// extractNodesFromDocument 从Document中提取NodeInfo节点
+func (c *TranslationCoordinator) extractNodesFromDocument(doc *document.Document) []*document.NodeInfo {
+	var nodes []*document.NodeInfo
+	nodeID := 1
+
+	for i, block := range doc.Blocks {
+		if !block.IsTranslatable() {
+			continue
+		}
+
+		node := &document.NodeInfo{
+			ID:           nodeID,
+			BlockID:      fmt.Sprintf("block-%d", i),
+			OriginalText: block.GetContent(),
+			Status:       document.NodeStatusPending,
+			Path:         fmt.Sprintf("/block[%d]", i+1),
+			Metadata: map[string]interface{}{
+				"blockIndex": i,
+				"blockType":  string(block.GetType()),
+				"document":   doc.ID,
+				"format":     string(doc.Format),
+			},
+		}
+		nodes = append(nodes, node)
+		nodeID++
+	}
+
+	c.logger.Info("extracted nodes from document",
+		zap.String("docID", doc.ID),
+		zap.String("format", string(doc.Format)),
+		zap.Int("totalBlocks", len(doc.Blocks)),
+		zap.Int("translatableNodes", len(nodes)))
+
+	return nodes
+}
+
+// assembleDocumentWithProcessor 使用document processor重建并渲染文档
+func (c *TranslationCoordinator) assembleDocumentWithProcessor(inputPath string, doc *document.Document, nodes []*document.NodeInfo) (string, error) {
+	// 创建节点映射，按BlockID索引
+	nodeMap := make(map[string]*document.NodeInfo)
+	for _, node := range nodes {
+		nodeMap[node.BlockID] = node
+	}
+
+	// 更新文档中的块内容
+	for i, block := range doc.Blocks {
+		blockID := fmt.Sprintf("block-%d", i)
+		if node, exists := nodeMap[blockID]; exists && node.Status == document.NodeStatusSuccess {
+			// 更新块内容为翻译后的文本
+			block.SetContent(node.TranslatedText)
+		}
+		// 如果没有翻译或翻译失败，保留原始内容
+	}
+
+	// 重新获取processor进行渲染
+	processorOpts := document.ProcessorOptions{
+		ChunkSize:    c.config.ChunkSize,
+		ChunkOverlap: 100,
+		Metadata: map[string]interface{}{
+			"source_language": c.config.SourceLang,
+			"target_language": c.config.TargetLang,
+		},
+	}
+
+	processor, err := document.GetProcessorByExtension(inputPath, processorOpts)
+	if err != nil {
+		c.logger.Warn("failed to get processor for rendering, using fallback", zap.Error(err))
+		// 使用简化的组装方法作为回退
+		return c.assembleDocument(inputPath, nodes)
+	}
+
+	// 使用processor渲染文档
+	var buffer strings.Builder
+	err = processor.Render(context.Background(), doc, &buffer)
+	if err != nil {
+		c.logger.Warn("failed to render document with processor, using fallback", zap.Error(err))
+		// 使用简化的组装方法作为回退
+		return c.assembleDocument(inputPath, nodes)
+	}
+
+	c.logger.Info("document assembled with processor",
+		zap.String("format", string(doc.Format)),
+		zap.Int("totalBlocks", len(doc.Blocks)),
+		zap.Int("outputLength", buffer.Len()))
+
+	return buffer.String(), nil
 }
 
 // createFailedResult 创建失败结果
