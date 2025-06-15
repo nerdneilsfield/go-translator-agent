@@ -110,6 +110,20 @@ models:
     price_unit: "USD"
     is_reasoning: false
 
+  gpt-4.1-nano:
+    name: "openai/gpt-4.1-nano"
+    model_id: "openai/gpt-4.1-nano"
+    api_type: "openai"
+    base_url: ""
+    key: ""
+    max_output_tokens: 8192
+    max_input_tokens: 8192
+    temperature: 0.7
+    input_token_price: 1.0
+    output_token_price: 3.0
+    price_unit: "USD"
+    is_reasoning: false
+
   o1-preview:
     name: "o1-preview"
     model_id: "o1-preview"
@@ -458,3 +472,16 @@ step_sets:
           Provide only the improved translation without any explanation or commentary.
         system_role: "You are a professional {{target_language}} editor specializing in translation refinement and quality improvement."
     fast_mode_threshold: 300
+
+  test_nano:
+    id: "test_nano"
+    name: "测试nano模型"
+    description: "使用gpt-4.1-nano进行测试翻译"
+    steps:
+      - name: "initial_translation"
+        provider: "openai"
+        model_name: "gpt-4.1-nano"
+        temperature: 0
+        max_tokens: 8192
+        prompt: "Translate the following {{source_language}} text to {{target_language}}:\n\n{{text}}"
+        system_role: "You are a professional translator."
