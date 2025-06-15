@@ -30,7 +30,7 @@ go.work.sum
 dist/
 go-template
 configs/test.yaml
-translator
+/translator
 go-translator.exe
 go-translator
 releases/
