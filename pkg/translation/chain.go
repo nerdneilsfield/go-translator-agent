@@ -416,31 +416,6 @@ func (s *step) preparePrompt(input StepInput) string {
 		data["additional_notes"] = additionalNotes
 	}
 
-	// 处理内容保护和批量翻译的保护说明
-	if input.Context != nil {
-		var preserveInstructions []string
-		
-		// 如果有内容保护配置，添加保护块说明
-		if preserveEnabled, ok := input.Context["_preserve_enabled"]; ok && preserveEnabled == "true" {
-			preserveInstructions = append(preserveInstructions, GetPreservePrompt(DefaultPreserveConfig))
-		}
-		
-		// 如果是批量翻译，添加节点标记保护说明
-		if isBatch, ok := input.Context["_is_batch"]; ok && isBatch == "true" {
-			preserveInstructions = append(preserveInstructions, GetNodeMarkerPrompt(DefaultNodeMarkerConfig))
-		}
-		
-		// 将保护说明作为 additional_notes 添加
-		if len(preserveInstructions) > 0 {
-			existingNotes, _ := data["additional_notes"].(string)
-			if existingNotes != "" {
-				data["additional_notes"] = existingNotes + "\n\n" + strings.Join(preserveInstructions, "\n\n")
-			} else {
-				data["additional_notes"] = strings.Join(preserveInstructions, "\n\n")
-			}
-		}
-	}
-
 	// 使用 text/template 处理模板
 	tmpl, err := template.New("prompt").Parse(promptTemplate)
 	if err != nil {

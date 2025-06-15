@@ -155,7 +155,7 @@ func TestNewService(t *testing.T) {
 				ChunkSize:      1000,
 				MaxConcurrency: 3,
 				Steps: []translation.StepConfig{
-					{Name: "translate", Model: "gpt-4", Prompt: "translate"},
+					{Name: "translate", Model: "gpt-4", AdditionalNotes: "translate"},
 				},
 			},
 			opts:    []translation.Option{},
@@ -340,23 +340,23 @@ func TestChainExecution(t *testing.T) {
 
 	steps := []translation.StepConfig{
 		{
-			Name:   "translate",
-			Model:  "gpt-4",
-			Prompt: "Translate the following text",
+			Name:            "translate",
+			Model:           "gpt-4",
+			AdditionalNotes: "Translate the following text",
 			Variables: map[string]string{
 				"source_language": "English",
 				"target_language": "Chinese",
 			},
 		},
 		{
-			Name:   "reflect",
-			Model:  "gpt-4",
-			Prompt: "Review this translation",
+			Name:            "reflect",
+			Model:           "gpt-4",
+			AdditionalNotes: "Review this translation",
 		},
 		{
-			Name:   "improve",
-			Model:  "gpt-4",
-			Prompt: "Improve the translation",
+			Name:            "improve",
+			Model:           "gpt-4",
+			AdditionalNotes: "Improve the translation",
 		},
 	}
 

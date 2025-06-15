@@ -3,52 +3,88 @@ package translation
 // BuiltinTemplates 内置模板定义
 const (
 	// StandardTranslationTemplate 标准翻译模板
-	// 用户只需要提供 additional_notes，其他格式化规则都是内置的
+	// 内置完整的保护规则和输出要求
 	StandardTranslationTemplate = `This is a translation task from {{.source_language}} to {{.target_language}}.
 
-Formatting Rules:
+CRITICAL OUTPUT REQUIREMENT:
+- Provide ONLY the translated text
+- Do NOT include any explanations, comments, or additional text
+- Do NOT add phrases like "Here is the translation:" or "The translation is:"
+
+Content Protection Rules:
 1. Preserve all original formatting exactly:
-   - Do not modify any Markdown syntax (**, *, #, etc.).
-   - Do not translate any content within LaTeX formulas ($...$, $$...$$, \( ... \), \[ ... \]) or any LaTeX commands.
-   - For LaTeX files, preserve all commands, environments (such as \begin{...} and \end{...}), and macros exactly as they are.
-   - Keep all HTML tags intact.
-2. Do not alter abbreviations, technical terms, or code identifiers.
-3. Preserve document structure, including line breaks, paragraph spacing, lists, and tables.
-4. Use terminology and expressions appropriate for {{.country}}.
+   - Do not modify any Markdown syntax (**, *, #, etc.)
+   - Do not translate any content within LaTeX formulas ($...$, $$...$$, \( ... \), \[ ... \]) or any LaTeX commands
+   - For LaTeX files, preserve all commands, environments (such as \begin{...} and \end{...}), and macros exactly as they are
+   - Keep all HTML tags intact
+   - Preserve any XML/HTML-like tags or special markers
+2. Do not alter abbreviations, technical terms, or code identifiers
+3. Preserve document structure, including line breaks, paragraph spacing, lists, and tables
+4. Do not translate URLs, file paths, or code blocks
+5. Preserve any special node markers or processing instructions
+6. Use terminology and expressions appropriate for {{.country}}
 {{if .additional_notes}}
+
 Additional Notes:
 {{.additional_notes}}
 {{end}}
 
-Please translate the following text:
+Text to translate:
 
-{{.text}}`
+{{.text}}
+
+Remember: Output ONLY the translated text, nothing else.`
 
 	// SimpleTranslationTemplate 简单翻译模板（无格式化规则）
 	SimpleTranslationTemplate = `Translate the following {{.source_language}} text to {{.target_language}}.
+
+CRITICAL OUTPUT REQUIREMENT:
+- Provide ONLY the translated text
+- Do NOT include any explanations or additional text
+
 {{if .additional_notes}}
 Additional Notes: {{.additional_notes}}
 {{end}}
 
-{{.text}}`
+{{.text}}
+
+Remember: Output ONLY the translated text, nothing else.`
 
 	// StandardReflectionTemplate 标准反思模板
 	StandardReflectionTemplate = `Review the following translation from {{.source_language}} to {{.target_language}}.
-Identify any issues with accuracy, fluency, cultural appropriateness, or style.
+
+CRITICAL OUTPUT REQUIREMENT:
+- Provide ONLY your reflection and feedback
+- Do NOT include any explanations or introductory text
+- Do NOT add phrases like "Here is my analysis:" or "My review is:"
 
 Original text:
 {{.original_text}}
 
 Translation:
 {{.translation}}
+
+Please analyze this translation considering:
+1. Accuracy: Does it convey the exact meaning of the original?
+2. Fluency: Does it read naturally in {{.target_language}}?
+3. Terminology: Are technical terms and specialized vocabulary appropriate?
+4. Formatting: Is all original formatting preserved?
+5. Consistency: Is the translation consistent throughout?
+6. Cultural appropriateness: Is the language suitable for {{.country}}?
 {{if .additional_notes}}
+
 Additional Notes: {{.additional_notes}}
 {{end}}
 
-Provide specific feedback on any issues found.`
+Output ONLY your specific feedback on any issues found, or state "No issues found" if perfect.`
 
 	// StandardImprovementTemplate 标准改进模板
-	StandardImprovementTemplate = `Based on the feedback provided, improve the following translation from {{.source_language}} to {{.target_language}}.
+	StandardImprovementTemplate = `Improve the following translation from {{.source_language}} to {{.target_language}} based on the feedback provided.
+
+CRITICAL OUTPUT REQUIREMENT:
+- Provide ONLY the improved translation
+- Do NOT include any explanations, comments, or additional text
+- Do NOT add phrases like "Here is the improved translation:" or "The corrected version is:"
 
 Original text:
 {{.original_text}}
@@ -59,10 +95,18 @@ Current translation:
 Feedback:
 {{.feedback}}
 {{if .additional_notes}}
+
 Additional Notes: {{.additional_notes}}
 {{end}}
 
-Provide an improved translation.`
+Requirements for the improved translation:
+1. Address all issues mentioned in the feedback
+2. Maintain the exact meaning of the original text
+3. Ensure natural fluency in {{.target_language}}
+4. Preserve all original formatting
+5. Use appropriate terminology and expressions for {{.country}}
+
+Output ONLY the improved translation, nothing else.`
 )
 
 // TemplateType 模板类型

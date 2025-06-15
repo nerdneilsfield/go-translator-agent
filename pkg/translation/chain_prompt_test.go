@@ -5,88 +5,74 @@ import (
 	"testing"
 )
 
-func TestPreparePromptWithProtection(t *testing.T) {
+func TestPreparePromptWithBuiltinTemplates(t *testing.T) {
 	tests := []struct {
 		name           string
 		stepName       string
-		prompt         string
 		context        map[string]string
+		additionalNotes string
 		wantContains   []string
 		wantNotContains []string
 	}{
 		{
-			name:     "initial translation with protection",
+			name:     "initial translation with builtin template",
 			stepName: "initial_translation",
-			prompt: `This is a translation task from {{source_language}} to {{target_language}}.
-
-Formatting Rules:
-1. Preserve all original formatting exactly.
-
-Please translate the following text:
-
-{{text}}`,
 			context: map[string]string{
-				"text":              "Test text",
-				"source_language":   "English",
-				"target_language":   "Chinese",
-				"_preserve_enabled": "true",
-				"_is_batch":         "true",
+				"text":            "Test text",
+				"source_language": "English",
+				"target_language": "Chinese",
+				"country":         "China",
 			},
+			additionalNotes: "Pay attention to technical terms",
 			wantContains: []string{
-				"PRESERVE",
-				"NODE_START",
-				"NODE_END",
-				"Please translate the following text:",
+				"CRITICAL OUTPUT REQUIREMENT",
+				"Provide ONLY the translated text",
+				"Content Protection Rules",
+				"Do not modify any Markdown syntax",
+				"Test text",
+				"Pay attention to technical terms",
+				"Output ONLY the translated text, nothing else",
 			},
 		},
 		{
-			name:     "reflection step with protection",
+			name:     "reflection step with builtin template",
 			stepName: "reflection",
-			prompt: `You are reviewing a translation from {{source_language}} to {{target_language}}.
-
-Original text:
-{{original_text}}
-
-Initial translation:
-{{translation}}
-
-Please analyze this translation and identify any issues.`,
 			context: map[string]string{
-				"original_text":     "Test",
-				"translation":       "测试",
-				"source_language":   "English",
-				"target_language":   "Chinese",
-				"_preserve_enabled": "true",
-				"_is_batch":         "true",
+				"original_text":   "Test",
+				"translation":     "测试",
+				"source_language": "English",
+				"target_language": "Chinese",
 			},
+			additionalNotes: "Focus on cultural nuances",
 			wantContains: []string{
-				"PRESERVE",
-				"NODE_START",
-				"NODE_END",
-				"Please analyze this translation and identify any issues",
+				"CRITICAL OUTPUT REQUIREMENT",
+				"Provide ONLY your reflection and feedback",
+				"Original text:",
+				"Translation:",
+				"Accuracy:",
+				"Fluency:",
+				"Focus on cultural nuances",
+				"Output ONLY your specific feedback",
 			},
 		},
 		{
-			name:     "improvement step with protection",
+			name:     "improvement step with builtin template",
 			stepName: "improvement",
-			prompt: `You are improving a translation.
-
-Original text:
-{{original_text}}
-
-Please provide an improved translation.`,
 			context: map[string]string{
-				"original_text":     "Test",
-				"source_language":   "English",
-				"target_language":   "Chinese",
-				"_preserve_enabled": "true",
-				"_is_batch":         "true",
+				"original_text":   "Test",
+				"translation":     "测试",
+				"feedback":        "Good translation",
+				"source_language": "English",
+				"target_language": "Chinese",
 			},
+			additionalNotes: "Ensure natural flow",
 			wantContains: []string{
-				"PRESERVE",
-				"NODE_START",
-				"NODE_END",
-				"Please provide an improved translation",
+				"CRITICAL OUTPUT REQUIREMENT",
+				"Provide ONLY the improved translation",
+				"Current translation:",
+				"Feedback:",
+				"Ensure natural flow",
+				"Output ONLY the improved translation, nothing else",
 			},
 		},
 	}
@@ -95,8 +81,8 @@ Please provide an improved translation.`,
 		t.Run(tt.name, func(t *testing.T) {
 			// 创建步骤配置
 			config := &StepConfig{
-				Name:   tt.stepName,
-				Prompt: tt.prompt,
+				Name:            tt.stepName,
+				AdditionalNotes: tt.additionalNotes,
 			}
 
 			// 创建步骤
@@ -130,25 +116,10 @@ Please provide an improved translation.`,
 				}
 			}
 
-			// 确保保护指令在正确的位置（在主要指令之前）
-			if tt.context["_preserve_enabled"] == "true" {
-				preserveIdx := strings.Index(result, "PRESERVE")
-				mainInstructionIdx := -1
-				
-				// 找到主要指令的位置
-				for _, instruction := range tt.wantContains {
-					if strings.HasPrefix(instruction, "Please") || strings.HasPrefix(instruction, "You are") {
-						idx := strings.Index(result, instruction)
-						if idx != -1 {
-							mainInstructionIdx = idx
-							break
-						}
-					}
-				}
-
-				if preserveIdx != -1 && mainInstructionIdx != -1 && preserveIdx > mainInstructionIdx {
-					t.Errorf("Protection instructions should come before main instructions")
-					t.Logf("PRESERVE index: %d, Main instruction index: %d", preserveIdx, mainInstructionIdx)
+			// 确保保护规则和输出要求都在模板中
+			if strings.Contains(result, "CRITICAL OUTPUT REQUIREMENT") {
+				if !strings.Contains(result, "ONLY") {
+					t.Errorf("Output requirement should contain 'ONLY' instruction")
 				}
 			}
 		})

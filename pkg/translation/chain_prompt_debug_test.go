@@ -87,8 +87,8 @@ Please provide an improved translation.`,
 			// 创建步骤
 			step := &step{
 				config: &StepConfig{
-					Name:   cfg.name,
-					Prompt: cfg.prompt,
+					Name:            cfg.name,
+					AdditionalNotes: "Debug test",
 				},
 			}
 
