@@ -54,6 +54,9 @@ Examples:
   # Show file format statistics  
   translator stats --formats
 
+  # Show detailed node processing statistics
+  translator stats --nodes
+
   # Export statistics to JSON
   translator stats --export stats.json
 
@@ -77,6 +80,7 @@ Examples:
 	statsCmd.Flags().Bool("languages", false, "Show only language pair statistics")
 	statsCmd.Flags().Bool("formats", false, "Show only file format statistics")
 	statsCmd.Flags().Bool("performance", false, "Show only performance statistics")
+	statsCmd.Flags().Bool("nodes", false, "Show detailed node processing statistics")
 
 	return statsCmd
 }
@@ -84,7 +88,7 @@ Examples:
 // runStatsCommand 执行 stats 命令
 func runStatsCommand(cmd *cobra.Command, args []string) error {
 	// 初始化日志
-	log := logger.NewLogger(debugMode)
+	log := logger.NewLoggerWithVerbose(debugMode, verboseMode)
 	defer func() {
 		_ = log.Sync()
 	}()
@@ -135,6 +139,7 @@ func runStatsCommand(cmd *cobra.Command, args []string) error {
 	showLanguages, _ := cmd.Flags().GetBool("languages")
 	showFormats, _ := cmd.Flags().GetBool("formats")
 	showPerformance, _ := cmd.Flags().GetBool("performance")
+	showNodes, _ := cmd.Flags().GetBool("nodes")
 
 	// 显示统计信息
 	if showCache {
@@ -153,6 +158,10 @@ func runStatsCommand(cmd *cobra.Command, args []string) error {
 
 	if showPerformance {
 		return showPerformanceStats(db)
+	}
+
+	if showNodes {
+		return showNodeStats(db)
 	}
 
 	// 默认显示概览和最近翻译
@@ -470,4 +479,197 @@ func formatTime(t time.Time) string {
 	}
 
 	return t.Format("2006-01-02 15:04")
+}
+
+// showNodeStats 显示节点处理统计
+func showNodeStats(db *stats.Database) error {
+	statsData := db.GetStats()
+
+	title := color.New(color.FgGreen, color.Bold)
+	title.Println("🔧 Node Processing Statistics")
+	title.Println(strings.Repeat("=", 50))
+
+	// 计算总体节点统计
+	var totalNodes, completedNodes, failedNodes int64
+	var pendingNodes int64
+
+	for _, record := range statsData.RecentTranslations {
+		totalNodes += int64(record.TotalNodes)
+		completedNodes += int64(record.CompletedNodes)
+		failedNodes += int64(record.FailedNodes)
+	}
+	pendingNodes = totalNodes - completedNodes - failedNodes
+
+	// 显示总体统计
+	fmt.Printf("📊 Overall Node Statistics:\n")
+	fmt.Printf("  Total Nodes Processed: %s\n", formatNumber(totalNodes))
+	fmt.Printf("  Completed Nodes: %s (%.1f%%)\n", formatNumber(completedNodes), 
+		safePercentage(completedNodes, totalNodes))
+	fmt.Printf("  Failed Nodes: %s (%.1f%%)\n", formatNumber(failedNodes), 
+		safePercentage(failedNodes, totalNodes))
+	fmt.Printf("  Pending Nodes: %s (%.1f%%)\n", formatNumber(pendingNodes), 
+		safePercentage(pendingNodes, totalNodes))
+
+	// 计算成功率
+	if totalNodes > 0 {
+		successRate := float64(completedNodes) / float64(totalNodes) * 100
+		fmt.Printf("  Success Rate: %.1f%%\n", successRate)
+	}
+
+	// 显示最近翻译的节点详情
+	fmt.Printf("\n📈 Recent Translation Node Details:\n")
+	fmt.Println(strings.Repeat("-", 60))
+	fmt.Printf("%-20s %-10s %-10s %-10s %-8s\n", "File", "Total", "Complete", "Failed", "Progress")
+	fmt.Println(strings.Repeat("-", 60))
+
+	for i, record := range statsData.RecentTranslations {
+		if i >= 15 { // 显示最近15条记录
+			break
+		}
+
+		// 获取文件名（去掉路径）
+		fileName := record.InputFile
+		if len(fileName) > 18 {
+			fileName = "..." + fileName[len(fileName)-15:]
+		}
+
+		progress := record.Progress
+		if record.TotalNodes > 0 && progress == 0 {
+			progress = float64(record.CompletedNodes) / float64(record.TotalNodes) * 100
+		}
+
+		fmt.Printf("%-20s %-10d %-10d %-10d %6.1f%%\n",
+			fileName,
+			record.TotalNodes,
+			record.CompletedNodes,
+			record.FailedNodes,
+			progress,
+		)
+	}
+
+	// 按状态分组统计
+	fmt.Printf("\n🔍 Translation Status Breakdown:\n")
+	fmt.Println(strings.Repeat("-", 40))
+
+	statusCounts := make(map[string]int)
+	statusNodes := make(map[string]struct{Total, Completed, Failed int64})
+
+	for _, record := range statsData.RecentTranslations {
+		status := record.Status
+		if status == "" {
+			if record.FailedNodes > 0 {
+				status = "partial_failure"
+			} else if record.CompletedNodes == record.TotalNodes {
+				status = "completed"
+			} else {
+				status = "in_progress"
+			}
+		}
+
+		statusCounts[status]++
+		current := statusNodes[status]
+		current.Total += int64(record.TotalNodes)
+		current.Completed += int64(record.CompletedNodes)
+		current.Failed += int64(record.FailedNodes)
+		statusNodes[status] = current
+	}
+
+	for status, count := range statusCounts {
+		nodes := statusNodes[status]
+		fmt.Printf("  %s: %d translations\n", getStatusIcon(status), count)
+		fmt.Printf("    Nodes: %d total, %d completed, %d failed\n",
+			nodes.Total, nodes.Completed, nodes.Failed)
+	}
+
+	// 性能指标
+	if len(statsData.RecentTranslations) > 0 {
+		fmt.Printf("\n⚡ Node Processing Performance:\n")
+		fmt.Println(strings.Repeat("-", 40))
+
+		// 计算平均节点处理速度
+		var totalDuration time.Duration
+		var totalNodesWithTime int64
+
+		for _, record := range statsData.RecentTranslations {
+			if record.Duration > 0 && record.CompletedNodes > 0 {
+				totalDuration += record.Duration
+				totalNodesWithTime += int64(record.CompletedNodes)
+			}
+		}
+
+		if totalDuration > 0 && totalNodesWithTime > 0 {
+			avgNodeTime := totalDuration / time.Duration(totalNodesWithTime)
+			nodesPerSecond := float64(time.Second) / float64(avgNodeTime)
+			fmt.Printf("  Average Node Processing Time: %s\n", formatDuration(avgNodeTime))
+			fmt.Printf("  Average Nodes Per Second: %.2f\n", nodesPerSecond)
+		}
+
+		// 找出最慢和最快的翻译
+		var fastestNodeRate, slowestNodeRate float64
+		var fastestFile, slowestFile string
+
+		for _, record := range statsData.RecentTranslations {
+			if record.Duration > 0 && record.CompletedNodes > 0 {
+				rate := float64(record.CompletedNodes) / record.Duration.Seconds()
+				
+				if fastestNodeRate == 0 || rate > fastestNodeRate {
+					fastestNodeRate = rate
+					fastestFile = record.InputFile
+				}
+				
+				if slowestNodeRate == 0 || rate < slowestNodeRate {
+					slowestNodeRate = rate
+					slowestFile = record.InputFile
+				}
+			}
+		}
+
+		if fastestNodeRate > 0 {
+			fmt.Printf("  Fastest Processing: %.2f nodes/sec (%s)\n", fastestNodeRate, getBaseName(fastestFile))
+		}
+		if slowestNodeRate > 0 {
+			fmt.Printf("  Slowest Processing: %.2f nodes/sec (%s)\n", slowestNodeRate, getBaseName(slowestFile))
+		}
+	}
+
+	return nil
+}
+
+// safePercentage 安全计算百分比（避免除零错误）
+func safePercentage(part, total int64) float64 {
+	if total == 0 {
+		return 0
+	}
+	return float64(part) / float64(total) * 100
+}
+
+// getStatusIcon 根据状态返回图标
+func getStatusIcon(status string) string {
+	switch status {
+	case "completed", "success":
+		return "✅ Completed"
+	case "failed", "error":
+		return "❌ Failed"
+	case "partial_failure":
+		return "⚠️  Partial Failure"
+	case "in_progress", "running":
+		return "🔄 In Progress"
+	case "cancelled":
+		return "🛑 Cancelled"
+	default:
+		return "❓ " + status
+	}
+}
+
+// getBaseName 获取文件的基本名称
+func getBaseName(filePath string) string {
+	parts := strings.Split(filePath, "/")
+	if len(parts) > 0 {
+		name := parts[len(parts)-1]
+		if len(name) > 25 {
+			return "..." + name[len(name)-22:]
+		}
+		return name
+	}
+	return filePath
 }

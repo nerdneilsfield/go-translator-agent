@@ -13,7 +13,11 @@ import (
 )
 
 func NewLogger(debug bool) *zap.Logger {
-	return NewLoggerWithPath(debug, "")
+	return NewLoggerWithPath(debug, false, "")
+}
+
+func NewLoggerWithVerbose(debug, verbose bool) *zap.Logger {
+	return NewLoggerWithPath(debug, verbose, "")
 }
 
 // 你的回调函数类型
@@ -130,8 +134,8 @@ func myCustomLogCallback(entry zapcore.Entry, fields []zapcore.Field) {
 	fmt.Println("---")
 }
 
-// NewLogger 创建一个新的日志记录器
-func NewLoggerWithPath(debug bool, outputPath string) *zap.Logger {
+// NewLoggerWithPath 创建一个新的日志记录器
+func NewLoggerWithPath(debug, verbose bool, outputPath string) *zap.Logger {
 	// 控制台输出配置（彩色）
 	consoleConfig := zap.NewDevelopmentEncoderConfig()
 	consoleConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
@@ -145,6 +149,9 @@ func NewLoggerWithPath(debug bool, outputPath string) *zap.Logger {
 	// 设置日志级别
 	level := zapcore.InfoLevel
 	if debug {
+		level = zapcore.DebugLevel
+	} else if verbose {
+		// verbose 模式显示 DEBUG 级别，但只在控制台输出时
 		level = zapcore.DebugLevel
 	}
 
@@ -183,9 +190,19 @@ func NewLoggerWithPath(debug bool, outputPath string) *zap.Logger {
 
 	// 创建基础的 cores (控制台和文件)
 	var baseCores []zapcore.Core
-	baseCores = append(baseCores, zapcore.NewCore(consoleEncoder, consoleWriter, level))
+	
+	// 控制台输出级别
+	consoleLevel := level
+	
+	// 文件输出级别（verbose 模式下文件仍然只记录 INFO 及以上）
+	fileLevel := zapcore.InfoLevel
+	if debug {
+		fileLevel = zapcore.DebugLevel
+	}
+	
+	baseCores = append(baseCores, zapcore.NewCore(consoleEncoder, consoleWriter, consoleLevel))
 	if enableFileOutput {
-		baseCores = append(baseCores, zapcore.NewCore(fileEncoder, fileWriter, level))
+		baseCores = append(baseCores, zapcore.NewCore(fileEncoder, fileWriter, fileLevel))
 	}
 	underlyingCore := zapcore.NewTee(baseCores...)
 
@@ -220,6 +237,13 @@ type ZapLogger struct {
 func NewZapLogger(debug bool) *ZapLogger {
 	return &ZapLogger{
 		logger: NewLogger(debug),
+	}
+}
+
+// NewZapLoggerWithVerbose 创建支持 verbose 模式的 ZapLogger 实例
+func NewZapLoggerWithVerbose(debug, verbose bool) *ZapLogger {
+	return &ZapLogger{
+		logger: NewLoggerWithVerbose(debug, verbose),
 	}
 }
 

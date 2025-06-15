@@ -98,7 +98,7 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 		},
 		Run: func(cmd *cobra.Command, args []string) {
 			// 初始化日志
-			log := logger.NewLogger(debugMode)
+			log := logger.NewLoggerWithVerbose(debugMode, verboseMode)
 			defer func() {
 				_ = log.Sync()
 			}()

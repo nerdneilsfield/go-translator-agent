@@ -39,7 +39,7 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 	
 	// 第一轮：分组翻译所有节点
 	groups := bt.groupNodes(nodes)
-	bt.logger.Info("initial grouping for translation", 
+	bt.logger.Debug("initial grouping for translation", 
 		zap.Int("totalGroups", len(groups)),
 		zap.Int("concurrency", bt.config.Concurrency))
 	
@@ -68,7 +68,7 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 			break
 		}
 		
-		bt.logger.Info("collecting failed nodes for retry",
+		bt.logger.Debug("collecting failed nodes for retry",
 			zap.Int("retryRound", retry),
 			zap.Int("failedNodes", len(failedNodes)))
 		
@@ -85,7 +85,7 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 			totalRetryNodes += len(group.Nodes)
 		}
 		
-		bt.logger.Info("retry grouping with context",
+		bt.logger.Debug("retry grouping with context",
 			zap.Int("retryRound", retry),
 			zap.Int("failedNodes", len(failedNodes)),
 			zap.Int("retryGroups", len(retryGroups)),
@@ -113,10 +113,15 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 		}
 	}
 	
-	bt.logger.Info("batch translation completed",
-		zap.Int("totalNodes", len(nodes)),
-		zap.Int("successNodes", successCount),
-		zap.Int("failedNodes", failedCount))
+	// 计算进度百分比
+	progressPercent := float64(successCount) / float64(len(nodes)) * 100
+	
+	// 使用 INFO 级别显示翻译完成信息（仅显示重要信息）
+	bt.logger.Info("translation completed",
+		zap.Int("completed", successCount),
+		zap.Int("failed", failedCount),
+		zap.Int("total", len(nodes)),
+		zap.Float64("progress", progressPercent))
 	
 	return nil
 }
@@ -128,15 +133,36 @@ func (bt *BatchTranslator) processGroups(ctx context.Context, groups []*document
 		concurrency = 4
 	}
 	
-	// 创建工作队列
+	// 创建工作队列和进度追踪
 	groupChan := make(chan *document.NodeGroup, len(groups))
 	errChan := make(chan error, len(groups))
+	progressChan := make(chan int, len(groups))
+	
+	// 计算总节点数
+	totalNodes := 0
+	for _, group := range groups {
+		totalNodes += len(group.Nodes)
+	}
 	
 	// 将所有组放入队列
 	for _, group := range groups {
 		groupChan <- group
 	}
 	close(groupChan)
+	
+	// 启动进度监控 goroutine
+	processedGroups := 0
+	go func() {
+		for completed := range progressChan {
+			processedGroups++
+			progress := float64(processedGroups) / float64(len(groups)) * 100
+			bt.logger.Info("translation progress",
+				zap.Int("completed_groups", processedGroups),
+				zap.Int("total_groups", len(groups)),
+				zap.Int("nodes_in_group", completed),
+				zap.Float64("progress", progress))
+		}
+	}()
 	
 	// 启动工作 goroutines
 	var wg sync.WaitGroup
@@ -156,6 +182,9 @@ func (bt *BatchTranslator) processGroups(ctx context.Context, groups []*document
 						zap.Int("groupSize", len(group.Nodes)))
 					errChan <- err
 				}
+				
+				// 发送进度更新
+				progressChan <- len(group.Nodes)
 			}
 		}(i)
 	}
@@ -163,6 +192,7 @@ func (bt *BatchTranslator) processGroups(ctx context.Context, groups []*document
 	// 等待所有工作完成
 	wg.Wait()
 	close(errChan)
+	close(progressChan)
 }
 
 // translateGroup 翻译一个节点组
@@ -243,7 +273,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 	}
 	
 	if bt.config.Verbose && len(nodeIDsToTranslate) > 0 {
-		bt.logger.Info("nodes to translate in this group",
+		bt.logger.Debug("nodes to translate in this group",
 			zap.Ints("nodeIDs", nodeIDsToTranslate))
 	}
 	
@@ -269,7 +299,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 	}
 	
 	// 在发送前记录详细的请求内容
-	bt.logger.Info("sending batch translation request",
+	bt.logger.Debug("sending batch translation request",
 		zap.Int("requestLength", len(combinedText)),
 		zap.Int("nodeCount", len(group.Nodes)),
 		zap.String("requestPreview", truncateText(combinedText, 500)))
@@ -284,7 +314,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 				nodeMarkers = append(nodeMarkers, line)
 			}
 		}
-		bt.logger.Info("node markers in request",
+		bt.logger.Debug("node markers in request",
 			zap.Strings("markers", nodeMarkers))
 	}
 	
@@ -304,7 +334,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 	
 	// 记录响应详情
 	translatedText := resp.Text
-	bt.logger.Info("received translation response",
+	bt.logger.Debug("received translation response",
 		zap.Int("responseLength", len(translatedText)),
 		zap.String("responsePreview", truncateText(translatedText, 500)))
 	
@@ -315,7 +345,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 	// 检查响应是否包含节点标记
 	hasStartMarkers := strings.Contains(translatedText, "@@NODE_START_")
 	hasEndMarkers := strings.Contains(translatedText, "@@NODE_END_")
-	bt.logger.Info("response format check",
+	bt.logger.Debug("response format check",
 		zap.Bool("hasStartMarkers", hasStartMarkers),
 		zap.Bool("hasEndMarkers", hasEndMarkers),
 		zap.Bool("isJSON", isJSON),
@@ -343,7 +373,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 				responseMarkers = append(responseMarkers, fmt.Sprintf("Line %d: %s", i+1, line))
 			}
 		}
-		bt.logger.Info("node markers in response",
+		bt.logger.Debug("node markers in response",
 			zap.Strings("markers", responseMarkers))
 		
 		// 记录前几行和后几行
@@ -360,14 +390,14 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 				lastStart = 0
 			}
 			lastLines := lines[lastStart:]
-			bt.logger.Info("response structure",
+			bt.logger.Debug("response structure",
 				zap.Strings("firstLines", firstLines),
 				zap.Strings("lastLines", lastLines))
 		}
 	}
 	
-	// 解析翻译结果
-	pattern := regexp2.MustCompile(`(?s)@@NODE_START_(\d+)@@\n(.*?)\n@@NODE_END_\1@@`, 0)
+	// 解析翻译结果 - 修复正则表达式以处理 NODE 标记后的空格
+	pattern := regexp2.MustCompile(`(?s)@@NODE_START_(\d+)@@\s*\n(.*?)\n\s*@@NODE_END_\1@@`, 0)
 	
 	// 创建结果映射
 	translationMap := make(map[int]string)
@@ -382,7 +412,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 			simpleMatchCount++
 			simpleMatch, _ = simplePattern.FindNextMatch(simpleMatch)
 		}
-		bt.logger.Info("simple pattern match test",
+		bt.logger.Debug("simple pattern match test",
 			zap.Int("simpleMatchCount", simpleMatchCount))
 	}
 	
@@ -399,7 +429,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		groups := match.Groups()
 		if bt.config.Verbose && matchCount < 3 {
 			// 记录前几个匹配的详细信息
-			bt.logger.Info("regex match details",
+			bt.logger.Debug("regex match details",
 				zap.Int("matchNumber", matchCount+1),
 				zap.Int("groupCount", len(groups)),
 				zap.String("fullMatch", groups[0].String()))
@@ -421,7 +451,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 			foundNodeIDs = append(foundNodeIDs, nodeID)
 			
 			if bt.config.Verbose && matchCount <= 3 {
-				bt.logger.Info("parsed node translation",
+				bt.logger.Debug("parsed node translation",
 					zap.Int("nodeID", nodeID),
 					zap.String("contentPreview", truncateText(content, 100)))
 			}
@@ -430,7 +460,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 	}
 	
 	if bt.config.Verbose {
-		bt.logger.Info("parsed translation results",
+		bt.logger.Debug("parsed translation results",
 			zap.Int("matchCount", matchCount),
 			zap.Int("expectedNodes", len(group.Nodes)),
 			zap.Int("translatedTextLength", len(translatedText)),
@@ -440,7 +470,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		
 		// 显示翻译片段
 		if matchCount > 0 {
-			bt.logger.Info("translation snippets",
+			bt.logger.Debug("translation snippets",
 				zap.Int("totalMatches", matchCount),
 				zap.String("firstSnippet", truncateText(translatedText, 300)))
 		}
@@ -451,7 +481,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 			for id := range translationMap {
 				parsedIDs = append(parsedIDs, id)
 			}
-			bt.logger.Info("parsed node IDs",
+			bt.logger.Debug("parsed node IDs",
 				zap.Ints("nodeIDs", parsedIDs))
 		}
 		
@@ -474,7 +504,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 				zap.Int("missingCount", len(missingNodeIDs)))
 		}
 	} else {
-		bt.logger.Info("parsed translation results",
+		bt.logger.Debug("parsed translation results",
 			zap.Int("matchCount", matchCount),
 			zap.Int("expectedNodes", len(group.Nodes)))
 	}
@@ -542,7 +572,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 				
 				// 在 verbose 模式下显示成功翻译的片段
 				if bt.config.Verbose {
-					bt.logger.Info("translation success",
+					bt.logger.Debug("translation success",
 						zap.Int("nodeID", node.ID),
 						zap.String("original", truncateText(node.OriginalText, 100)),
 						zap.String("translated", truncateText(restoredText, 100)))
@@ -573,7 +603,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 					}
 				}
 				
-				bt.logger.Info("node translation not found",
+				bt.logger.Debug("node translation not found",
 					zap.Int("nodeID", node.ID),
 					zap.String("originalText", truncateText(node.OriginalText, 100)),
 					zap.Bool("isContext", isContext),
@@ -760,7 +790,7 @@ func (bt *BatchTranslator) groupFailedNodesWithContext(allNodes []*document.Node
 		}
 	}
 	
-	bt.logger.Info("context nodes added for retry",
+	bt.logger.Debug("context nodes added for retry",
 		zap.Int("contextNodes", contextNodeCount),
 		zap.Int("totalNodesForRetry", len(includeSet)))
 	

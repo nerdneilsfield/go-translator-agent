@@ -50,6 +50,10 @@ func (p *MarkdownProcessor) Parse(ctx context.Context, input io.Reader) (*Docume
 
 	text := string(content)
 
+	// 修复转义的星号标记
+	text = strings.ReplaceAll(text, `\*\*`, `**`)
+	text = strings.ReplaceAll(text, `\*`, `*`)
+
 	// 创建文档
 	doc := &Document{
 		ID:     fmt.Sprintf("markdown-%d", time.Now().Unix()),
