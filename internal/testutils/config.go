@@ -28,7 +28,7 @@ func CreateTestConfig(progressPath string) *config.Config {
 		
 		// 翻译后处理配置
 		EnablePostProcessing:      true,
-		GlossaryPath:             "../../configs/glossary_example.yaml",
+		GlossaryPath:             "configs/glossary_example.yaml",
 		ContentProtection:        true,
 		TerminologyConsistency:   true,
 		MixedLanguageSpacing:     true,
@@ -107,7 +107,7 @@ func CreateIntegrationTestConfig(progressPath string) *config.Config {
 func CreatePostProcessingTestConfig(progressPath string) *config.Config {
 	cfg := CreateTestConfig(progressPath)
 	cfg.EnablePostProcessing = true
-	cfg.GlossaryPath = "../../configs/glossary_example.yaml"
+	cfg.GlossaryPath = "configs/glossary_example.yaml"
 	cfg.ContentProtection = true
 	cfg.TerminologyConsistency = true
 	return cfg

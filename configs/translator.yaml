@@ -1,0 +1,293 @@
+# Go Translator Agent - 新系统配置文件
+# 基于最新的配置系统架构
+
+# 基本语言设置
+source_lang: "English"
+target_lang: "Chinese"
+country: "China"
+
+# 默认模型配置
+default_model_name: "gpt-3.5-turbo"
+
+# 步骤集配置
+active_step_set: "basic"
+
+# 性能配置
+concurrency: 4                    # 并行翻译请求数
+html_concurrency: 2              # HTML文件内部并行请求数
+epub_concurrency: 5              # EPUB文件并行HTML处理数
+max_tokens_per_chunk: 2000       # 每个块的最大token数
+chunk_size: 1000                 # 文本块大小
+
+# 超时配置
+request_timeout: 300              # 请求超时（秒）
+translation_timeout: 1800        # 翻译总超时（秒）
+auto_save_interval: 300          # 自动保存间隔（秒）
+retry_attempts: 3                # 重试次数
+max_retries: 3                   # 最大重试次数
+
+# 缓存配置
+use_cache: true
+cache_dir: ""                    # 空字符串使用默认缓存目录
+
+# 调试配置
+debug: false
+save_debug_info: false
+keep_intermediate_files: false
+
+# 文本处理配置
+min_split_size: 100              # 最小分割大小（字符数）
+max_split_size: 1000             # 最大分割大小（字符数）
+retry_failed_parts: true        # 重试失败的部分
+filter_reasoning: true           # 过滤推理过程
+preserve_math: true              # 保留数学公式
+translate_figure_captions: true  # 翻译图表标题
+
+# 后处理配置
+post_process_markdown: true      # Markdown后处理
+fix_math_formulas: true         # 修复数学公式
+fix_table_format: true         # 修复表格格式
+fix_mixed_content: true        # 修复混合内容
+fix_picture: true              # 修复图片
+
+# 格式修复配置
+enable_format_fix: true         # 启用格式修复
+format_fix_interactive: true   # 交互式格式修复
+pre_translation_fix: false     # 翻译前格式修复
+post_translation_fix: false    # 翻译后格式修复
+use_external_tools: true       # 使用外部工具
+format_fix_markdown: true      # Markdown格式修复
+format_fix_text: true         # Text格式修复
+format_fix_html: true         # HTML格式修复
+format_fix_epub: true         # EPUB格式修复
+
+# 翻译后处理配置
+enable_post_processing: true                 # 启用翻译后处理
+glossary_path: "configs/glossary_example.yaml"  # 词汇表路径
+content_protection: true                     # 内容保护
+terminology_consistency: true               # 术语一致性
+mixed_language_spacing: true                # 混合语言间距
+machine_translation_cleanup: true           # 机器翻译清理
+
+# 货币配置
+target_currency: "USD"
+usd_rmb_rate: 7.4
+
+# 模型配置
+models:
+  # OpenAI 模型
+  gpt-3.5-turbo:
+    name: "gpt-3.5-turbo"
+    model_id: "gpt-3.5-turbo"
+    api_type: "openai"
+    base_url: "https://api.openai.com/v1"
+    key: "${OPENAI_API_KEY}"
+    max_output_tokens: 4096
+    max_input_tokens: 4096
+    temperature: 0.7
+    input_token_price: 0.5
+    output_token_price: 1.5
+    price_unit: "USD"
+    is_reasoning: false
+
+  gpt-4:
+    name: "gpt-4"
+    model_id: "gpt-4"
+    api_type: "openai"
+    base_url: "https://api.openai.com/v1"
+    key: "${OPENAI_API_KEY}"
+    max_output_tokens: 8192
+    max_input_tokens: 8192
+    temperature: 0.7
+    input_token_price: 30
+    output_token_price: 60
+    price_unit: "USD"
+    is_reasoning: false
+
+  gpt-4-turbo:
+    name: "gpt-4-turbo"
+    model_id: "gpt-4-turbo"
+    api_type: "openai"
+    base_url: "https://api.openai.com/v1"
+    key: "${OPENAI_API_KEY}"
+    max_output_tokens: 4096
+    max_input_tokens: 8192
+    temperature: 0.7
+    input_token_price: 10
+    output_token_price: 30
+    price_unit: "USD"
+    is_reasoning: false
+
+  # OpenAI 推理模型
+  o1-preview:
+    name: "o1-preview"
+    model_id: "o1-preview"
+    api_type: "openai"
+    base_url: "https://api.openai.com/v1"
+    key: "${OPENAI_API_KEY}"
+    max_output_tokens: 32768
+    max_input_tokens: 128000
+    temperature: 1
+    input_token_price: 15
+    output_token_price: 60
+    price_unit: "USD"
+    is_reasoning: true
+
+  o1-mini:
+    name: "o1-mini"
+    model_id: "o1-mini"
+    api_type: "openai"
+    base_url: "https://api.openai.com/v1"
+    key: "${OPENAI_API_KEY}"
+    max_output_tokens: 65536
+    max_input_tokens: 128000
+    temperature: 1
+    input_token_price: 3
+    output_token_price: 12
+    price_unit: "USD"
+    is_reasoning: true
+
+  # Anthropic Claude 模型
+  claude-3-sonnet:
+    name: "claude-3-sonnet"
+    model_id: "claude-3-sonnet-20240229"
+    api_type: "anthropic"
+    base_url: "https://api.anthropic.com"
+    key: "${ANTHROPIC_API_KEY}"
+    max_output_tokens: 4096
+    max_input_tokens: 200000
+    temperature: 0.7
+
+  claude-3-opus:
+    name: "claude-3-opus"
+    model_id: "claude-3-opus-20240229"
+    api_type: "anthropic"
+    base_url: "https://api.anthropic.com"
+    key: "${ANTHROPIC_API_KEY}"
+    max_output_tokens: 4096
+    max_input_tokens: 200000
+    temperature: 0.7
+
+  # DeepSeek 推理模型
+  deepseek-r1:
+    name: "deepseek-r1"
+    model_id: "deepseek-r1"
+    api_type: "openai"
+    base_url: "https://api.deepseek.com/v1"
+    key: "${DEEPSEEK_API_KEY}"
+    max_output_tokens: 8192
+    max_input_tokens: 32768
+    temperature: 0.7
+    input_token_price: 0.14
+    output_token_price: 2.19
+    price_unit: "USD"
+    is_reasoning: true
+    reasoning_tags: ["<think>", "</think>"]
+
+  # 本地测试模型
+  test-model:
+    name: "test-model"
+    model_id: "test-model"
+    api_type: "openai"
+    base_url: "http://localhost:8080"
+    key: "test-key"
+    max_output_tokens: 4096
+    max_input_tokens: 4096
+    temperature: 0.7
+
+# 步骤集配置
+step_sets:
+  # 基本三步翻译
+  basic:
+    id: "basic"
+    name: "基本翻译"
+    description: "基本的三步翻译过程"
+    initial_translation:
+      name: "初始翻译"
+      model_name: "gpt-3.5-turbo"
+      temperature: 0.5
+    reflection:
+      name: "反思"
+      model_name: "gpt-3.5-turbo"
+      temperature: 0.3
+    improvement:
+      name: "改进"
+      model_name: "gpt-3.5-turbo"
+      temperature: 0.5
+    fast_mode_threshold: 300
+
+  # 高质量翻译
+  quality:
+    id: "quality"
+    name: "高质量翻译"
+    description: "使用高级模型的翻译过程"
+    initial_translation:
+      name: "初始翻译"
+      model_name: "gpt-4"
+      temperature: 0.5
+    reflection:
+      name: "反思"
+      model_name: "claude-3-opus"
+      temperature: 0.3
+    improvement:
+      name: "改进"
+      model_name: "gpt-4"
+      temperature: 0.5
+    fast_mode_threshold: 300
+
+  # 推理模型翻译
+  reasoning:
+    id: "reasoning"
+    name: "推理翻译"
+    description: "使用推理模型的深度翻译"
+    initial_translation:
+      name: "推理翻译"
+      model_name: "deepseek-r1"
+      temperature: 0.3
+    reflection:
+      name: "质量评估"
+      model_name: "gpt-4"
+      temperature: 0.2
+    improvement:
+      name: "最终优化"
+      model_name: "o1-mini"
+      temperature: 0.3
+    fast_mode_threshold: 100
+
+  # 快速翻译
+  fast:
+    id: "fast"
+    name: "快速翻译"
+    description: "快速单步翻译"
+    initial_translation:
+      name: "快速翻译"
+      model_name: "gpt-3.5-turbo"
+      temperature: 0.7
+    reflection:
+      name: "跳过"
+      model_name: "gpt-3.5-turbo"
+      temperature: 0.3
+    improvement:
+      name: "跳过"
+      model_name: "gpt-3.5-turbo"
+      temperature: 0.3
+    fast_mode_threshold: 5000
+
+  # 测试步骤集
+  test-stepset:
+    id: "test-stepset"
+    name: "Test Step Set"
+    description: "For testing purposes"
+    initial_translation:
+      name: "initial"
+      model_name: "test-model"
+      temperature: 0.3
+    reflection:
+      name: "reflect"
+      model_name: "test-model"
+      temperature: 0.1
+    improvement:
+      name: "improve"
+      model_name: "test-model"
+      temperature: 0.3
+    fast_mode_threshold: 300
