@@ -300,6 +300,21 @@ func (s *service) Translate(ctx context.Context, req *Request) (*Response, error
 	return resp, nil
 }
 
+// TranslateText 简化的文本翻译接口，直接对文本进行多阶段翻译，无分块
+func (s *service) TranslateText(ctx context.Context, text string) (string, error) {
+	if text == "" {
+		return "", nil
+	}
+
+	// 直接执行翻译链，不分块
+	chainResult, err := s.chain.Execute(ctx, text)
+	if err != nil {
+		return "", err
+	}
+
+	return chainResult.FinalOutput, nil
+}
+
 // TranslateBatch 批量翻译
 func (s *service) TranslateBatch(ctx context.Context, reqs []*Request) ([]*Response, error) {
 	if len(reqs) == 0 {

@@ -41,6 +41,7 @@ type TranslationResult struct {
 type TranslationCoordinator struct {
 	config               *config.Config
 	translationService   translation.Service    // 完善的翻译服务
+	translator           Translator             // 节点翻译管理器
 	progressTracker      *progress.Tracker
 	progressReporter     *progress.Tracker
 	formatManager        *formatter.Manager
@@ -126,6 +127,21 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 		zap.Int("chunk_size", cfg.ChunkSize),
 		zap.Int("concurrency", cfg.Concurrency))
 
+	// 创建节点翻译管理器
+	translatorConfig := TranslatorConfig{
+		ChunkSize:   cfg.ChunkSize,
+		Concurrency: cfg.Concurrency,
+		MaxRetries:  cfg.RetryAttempts,
+		SourceLang:  cfg.SourceLang,
+		TargetLang:  cfg.TargetLang,
+		Verbose:     cfg.Verbose,
+	}
+	translator := NewBatchTranslator(translatorConfig, translationService, logger)
+	logger.Info("translator initialized",
+		zap.Int("chunk_size", translatorConfig.ChunkSize),
+		zap.Int("concurrency", translatorConfig.Concurrency),
+		zap.Int("max_retries", translatorConfig.MaxRetries))
+
 	// 创建翻译后处理器
 	var postProcessor *TranslationPostProcessor
 	if cfg.EnablePostProcessing {
@@ -139,6 +155,7 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 	return &TranslationCoordinator{
 		config:            cfg,
 		translationService: translationService,
+		translator:        translator,
 		progressTracker:   progressTracker,
 		progressReporter:  progressReporter,
 		formatManager:     formatManager,
@@ -227,35 +244,10 @@ func (c *TranslationCoordinator) TranslateFile(ctx context.Context, inputPath, o
 	progressBar := NewProgressBar(totalChars, fmt.Sprintf("翻译 %s", inputPath))
 	defer progressBar.Finish()
 
-	// 创建带进度条的翻译函数
-	translateNodeWithProgress := func(ctx context.Context, node *document.NodeInfo) error {
-		// 调用原始翻译函数
-		err := c.translateNode(ctx, node)
-		
-		// 更新进度条
-		if err == nil {
-			progressBar.Update(int64(len(node.OriginalText)))
-		}
-		
-		return err
-	}
-
-	// 使用完善的翻译服务执行翻译
-	for _, node := range nodes {
-		select {
-		case <-ctx.Done():
-			return c.createFailedResult(docID, inputPath, outputPath, startTime, ctx.Err()), ctx.Err()
-		default:
-		}
-		
-		err := translateNodeWithProgress(ctx, node)
-		if err != nil {
-			c.logger.Warn("failed to translate node",
-				zap.Int("nodeID", node.ID),
-				zap.String("path", node.Path),
-				zap.Error(err))
-			// 继续处理其他节点
-		}
+	// 使用Translator进行节点分组和并行翻译
+	err = c.translator.TranslateNodes(ctx, nodes)
+	if err != nil {
+		return c.createFailedResult(docID, inputPath, outputPath, startTime, err), err
 	}
 
 	// 重建文档结构并渲染

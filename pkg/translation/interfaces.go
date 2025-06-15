@@ -9,6 +9,9 @@ type Service interface {
 	// Translate 执行完整的翻译流程
 	Translate(ctx context.Context, req *Request) (*Response, error)
 
+	// TranslateText 简化的文本翻译接口（无分块）
+	TranslateText(ctx context.Context, text string) (string, error)
+
 	// TranslateBatch 批量翻译
 	TranslateBatch(ctx context.Context, reqs []*Request) ([]*Response, error)
 

@@ -8,22 +8,21 @@ import (
 	"sync"
 
 	"github.com/dlclark/regexp2"
-	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
 	"go.uber.org/zap"
 )
 
-// BatchTranslator 批量翻译器，集成所有保护功能
+// BatchTranslator 实现Translator接口，负责节点分组和并行翻译
 type BatchTranslator struct {
-	config             *config.Config
+	config             TranslatorConfig
 	translationService translation.Service
 	logger             *zap.Logger
 	preserveManager    *translation.PreserveManager
 }
 
 // NewBatchTranslator 创建批量翻译器
-func NewBatchTranslator(cfg *config.Config, service translation.Service, logger *zap.Logger) *BatchTranslator {
+func NewBatchTranslator(cfg TranslatorConfig, service translation.Service, logger *zap.Logger) *BatchTranslator {
 	return &BatchTranslator{
 		config:             cfg,
 		translationService: service,
@@ -302,21 +301,6 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		zap.Int("contextNodes", contextNodes),
 		zap.Int("textLength", len(combinedText)))
 	
-	// 创建翻译请求
-	req := &translation.Request{
-		Text:           combinedText,
-		SourceLanguage: bt.config.SourceLang,
-		TargetLanguage: bt.config.TargetLang,
-		Metadata: map[string]interface{}{
-			"is_batch":          true,
-			"node_count":        len(group.Nodes),
-			"nodes_to_translate": nodesToTranslate,
-			"context_nodes":     contextNodes,
-			"_is_batch":         "true",         // 内部标记
-			"_preserve_enabled": "true",         // 内部标记
-		},
-	}
-	
 	// 在发送前记录详细的请求内容
 	bt.logger.Debug("sending batch translation request",
 		zap.Int("requestLength", len(combinedText)),
@@ -337,8 +321,8 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 			zap.Strings("markers", nodeMarkers))
 	}
 	
-	// 执行翻译
-	resp, err := bt.translationService.Translate(ctx, req)
+	// 执行翻译 - 使用简化的接口，无分块
+	translatedText, err := bt.translationService.TranslateText(ctx, combinedText)
 	if err != nil {
 		bt.logger.Error("translation service error",
 			zap.Error(err),
@@ -352,11 +336,9 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 	}
 	
 	// 记录响应详情
-	translatedText := resp.Text
 	bt.logger.Debug("received translation response",
 		zap.Int("responseLength", len(translatedText)),
 		zap.String("responsePreview", truncateText(translatedText, 500)))
-	
 	// 检查响应格式
 	isJSON := strings.HasPrefix(strings.TrimSpace(translatedText), "{") || strings.HasPrefix(strings.TrimSpace(translatedText), "[")
 	isEmpty := len(strings.TrimSpace(translatedText)) == 0
