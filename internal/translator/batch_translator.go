@@ -3,10 +3,10 @@ package translator
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/dlclark/regexp2"
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
@@ -122,20 +122,27 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 	
 	// 解析翻译结果
 	translatedText := resp.Text
-	pattern := regexp.MustCompile(`(?s)@@NODE_START_(\d+)@@\n(.*?)\n@@NODE_END_\1@@`)
-	matches := pattern.FindAllStringSubmatch(translatedText, -1)
+	pattern := regexp2.MustCompile(`(?s)@@NODE_START_(\d+)@@\n(.*?)\n@@NODE_END_\1@@`, 0)
 	
 	// 创建结果映射
 	translationMap := make(map[int]string)
-	for _, match := range matches {
-		if len(match) >= 3 {
-			nodeID, err := strconv.Atoi(match[1])
+	
+	// 使用 regexp2 查找所有匹配
+	match, _ := pattern.FindStringMatch(translatedText)
+	for match != nil {
+		groups := match.Groups()
+		if len(groups) >= 3 {
+			nodeIDStr := groups[1].String()
+			nodeID, err := strconv.Atoi(nodeIDStr)
 			if err != nil {
-				bt.logger.Warn("invalid node ID", zap.String("nodeID", match[1]))
+				bt.logger.Warn("invalid node ID", zap.String("nodeID", nodeIDStr))
+				match, _ = pattern.FindNextMatch(match)
 				continue
 			}
-			translationMap[nodeID] = strings.TrimSpace(match[2])
+			content := groups[2].String()
+			translationMap[nodeID] = strings.TrimSpace(content)
 		}
+		match, _ = pattern.FindNextMatch(match)
 	}
 	
 	// 应用翻译结果
