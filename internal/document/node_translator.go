@@ -131,13 +131,7 @@ type NodeTranslationFunc func(ctx context.Context, node *NodeInfo) error
 
 // translateGroup 翻译节点组
 func (t *NodeInfoTranslator) translateGroup(ctx context.Context, docID string, group *NodeGroup, translator NodeTranslationFunc) error {
-	// 检查是否是批量翻译函数
-	if batchTranslator, ok := translator.(BatchNodeTranslationFunc); ok {
-		// 使用批量翻译
-		return batchTranslator.TranslateBatch(ctx, group.Nodes)
-	}
-	
-	// 否则逐个翻译
+	// 逐个翻译
 	for _, node := range group.Nodes {
 		err := t.translateNode(ctx, docID, node, translator)
 		if err != nil {
@@ -155,12 +149,6 @@ func (t *NodeInfoTranslator) translateGroup(ctx context.Context, docID string, g
 		}
 	}
 	return nil
-}
-
-// BatchNodeTranslationFunc 支持批量翻译的函数接口
-type BatchNodeTranslationFunc interface {
-	NodeTranslationFunc
-	TranslateBatch(ctx context.Context, nodes []*NodeInfo) error
 }
 
 // translateNode 翻译单个节点
