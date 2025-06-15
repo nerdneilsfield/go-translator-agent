@@ -3,7 +3,7 @@ package translation
 // BuiltinTemplates 内置模板定义
 const (
 	// StandardTranslationTemplate 标准翻译模板
-	// 内置完整的保护规则和输出要求
+	// 使用明确边界分隔指令和待翻译内容
 	StandardTranslationTemplate = `This is a translation task from {{.source_language}} to {{.target_language}}.
 
 CRITICAL OUTPUT REQUIREMENT:
@@ -29,11 +29,13 @@ Additional Notes:
 {{.additional_notes}}
 {{end}}
 
-Text to translate:
+The text to translate is enclosed between the markers below. Translate ONLY the content between these markers:
 
+===== CONTENT TO TRANSLATE BEGIN =====
 {{.text}}
+===== CONTENT TO TRANSLATE END =====
 
-Remember: Output ONLY the translated text, nothing else.`
+Output ONLY the translated text, nothing else.`
 
 	// SimpleTranslationTemplate 简单翻译模板（无格式化规则）
 	SimpleTranslationTemplate = `Translate the following {{.source_language}} text to {{.target_language}}.
@@ -46,9 +48,13 @@ CRITICAL OUTPUT REQUIREMENT:
 Additional Notes: {{.additional_notes}}
 {{end}}
 
-{{.text}}
+The text to translate is enclosed between the markers below. Translate ONLY the content between these markers:
 
-Remember: Output ONLY the translated text, nothing else.`
+===== CONTENT TO TRANSLATE BEGIN =====
+{{.text}}
+===== CONTENT TO TRANSLATE END =====
+
+Output ONLY the translated text, nothing else.`
 
 	// StandardReflectionTemplate 标准反思模板
 	StandardReflectionTemplate = `Review the following translation from {{.source_language}} to {{.target_language}}.
@@ -57,12 +63,6 @@ CRITICAL OUTPUT REQUIREMENT:
 - Provide ONLY your reflection and feedback
 - Do NOT include any explanations or introductory text
 - Do NOT add phrases like "Here is my analysis:" or "My review is:"
-
-Original text:
-{{.original_text}}
-
-Translation:
-{{.translation}}
 
 Please analyze this translation considering:
 1. Accuracy: Does it convey the exact meaning of the original?
@@ -76,6 +76,16 @@ Please analyze this translation considering:
 Additional Notes: {{.additional_notes}}
 {{end}}
 
+The content to review is enclosed between the markers below:
+
+===== ORIGINAL TEXT BEGIN =====
+{{.original_text}}
+===== ORIGINAL TEXT END =====
+
+===== TRANSLATION TO REVIEW BEGIN =====
+{{.translation}}
+===== TRANSLATION TO REVIEW END =====
+
 Output ONLY your specific feedback on any issues found, or state "No issues found" if perfect.`
 
 	// StandardImprovementTemplate 标准改进模板
@@ -86,25 +96,30 @@ CRITICAL OUTPUT REQUIREMENT:
 - Do NOT include any explanations, comments, or additional text
 - Do NOT add phrases like "Here is the improved translation:" or "The corrected version is:"
 
-Original text:
-{{.original_text}}
-
-Current translation:
-{{.translation}}
-
-Feedback:
-{{.feedback}}
-{{if .additional_notes}}
-
-Additional Notes: {{.additional_notes}}
-{{end}}
-
 Requirements for the improved translation:
 1. Address all issues mentioned in the feedback
 2. Maintain the exact meaning of the original text
 3. Ensure natural fluency in {{.target_language}}
 4. Preserve all original formatting
 5. Use appropriate terminology and expressions for {{.country}}
+{{if .additional_notes}}
+
+Additional Notes: {{.additional_notes}}
+{{end}}
+
+The content to improve is enclosed between the markers below:
+
+===== ORIGINAL TEXT BEGIN =====
+{{.original_text}}
+===== ORIGINAL TEXT END =====
+
+===== CURRENT TRANSLATION BEGIN =====
+{{.translation}}
+===== CURRENT TRANSLATION END =====
+
+===== FEEDBACK BEGIN =====
+{{.feedback}}
+===== FEEDBACK END =====
 
 Output ONLY the improved translation, nothing else.`
 )
