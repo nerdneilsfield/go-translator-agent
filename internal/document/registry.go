@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"go.uber.org/zap"
 )
 
 // Registry 格式处理器注册表
@@ -118,8 +120,35 @@ func (r *Registry) GetFormatByExtension(ext string) (Format, bool) {
 	return format, exists
 }
 
-// init 初始化默认扩展名映射
+// getLoggerFromOptions 从ProcessorOptions中获取logger，如果没有则返回默认logger
+func getLoggerFromOptions(opts ProcessorOptions) *zap.Logger {
+	if opts.Metadata != nil {
+		if logger, ok := opts.Metadata["logger"].(*zap.Logger); ok && logger != nil {
+			return logger
+		}
+	}
+	// 返回一个默认的nop logger
+	return zap.NewNop()
+}
+
+// init 初始化默认扩展名映射和处理器注册
 func init() {
+	// 注册处理器工厂
+	Register(FormatMarkdown, func(opts ProcessorOptions) (Processor, error) {
+		logger := getLoggerFromOptions(opts)
+		return NewMarkdownProcessor(opts, logger)
+	})
+	
+	Register(FormatText, func(opts ProcessorOptions) (Processor, error) {
+		logger := getLoggerFromOptions(opts)
+		return NewTextProcessor(opts, logger)
+	})
+	
+	Register(FormatHTML, func(opts ProcessorOptions) (Processor, error) {
+		logger := getLoggerFromOptions(opts)
+		return NewHTMLProcessor(opts, logger, HTMLModeNative)
+	})
+
 	// Markdown
 	RegisterExtension(".md", FormatMarkdown)
 	RegisterExtension(".markdown", FormatMarkdown)

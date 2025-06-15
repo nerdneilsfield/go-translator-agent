@@ -203,6 +203,7 @@ func (c *TranslationCoordinator) assembleDocumentWithProcessor(inputPath string,
 		Metadata: map[string]interface{}{
 			"source_language": c.config.SourceLang,
 			"target_language": c.config.TargetLang,
+			"logger":          c.logger,
 		},
 	}
 

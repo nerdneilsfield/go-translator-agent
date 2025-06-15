@@ -183,6 +183,7 @@ func (c *TranslationCoordinator) TranslateFile(ctx context.Context, inputPath, o
 		Metadata: map[string]interface{}{
 			"source_language": c.config.SourceLang,
 			"target_language": c.config.TargetLang,
+			"logger":          c.logger,
 		},
 	}
 
