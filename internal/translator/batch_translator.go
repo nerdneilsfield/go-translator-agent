@@ -31,9 +31,9 @@ func NewBatchTranslator(cfg *config.Config, service translation.Service, logger 
 	}
 }
 
-// TranslateNodes 翻译所有节点，包含失败重试机制
+// TranslateNodes 翻译所有节点（简化版，不包含重试逻辑）
 func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document.NodeInfo) error {
-	// 第一轮：批量翻译所有节点
+	// 批量翻译所有节点
 	bt.logger.Info("starting batch translation", zap.Int("totalNodes", len(nodes)))
 	
 	// 分组翻译
@@ -44,32 +44,6 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 				zap.Error(err),
 				zap.Int("groupSize", len(group.Nodes)))
 		}
-	}
-	
-	// 收集失败节点
-	failedNodes := bt.collectFailedNodes(nodes)
-	retryCount := 0
-	
-	// 重试失败节点（最多3次）
-	for len(failedNodes) > 0 && retryCount < bt.config.MaxRetries {
-		retryCount++
-		bt.logger.Info("retrying failed nodes",
-			zap.Int("failedCount", len(failedNodes)),
-			zap.Int("retryCount", retryCount))
-		
-		// 为失败节点添加上下文并重新分组
-		retryGroups := bt.groupFailedNodesWithContext(nodes, failedNodes)
-		
-		for _, group := range retryGroups {
-			if err := bt.translateGroup(ctx, group); err != nil {
-				bt.logger.Warn("retry group translation failed",
-					zap.Error(err),
-					zap.Int("retryCount", retryCount))
-			}
-		}
-		
-		// 重新收集失败节点
-		failedNodes = bt.collectFailedNodes(nodes)
 	}
 	
 	// 记录最终统计
@@ -295,52 +269,3 @@ func (bt *BatchTranslator) groupNodes(nodes []*document.NodeInfo) []*document.No
 	return groups
 }
 
-// collectFailedNodes 收集失败的节点
-func (bt *BatchTranslator) collectFailedNodes(nodes []*document.NodeInfo) []*document.NodeInfo {
-	var failed []*document.NodeInfo
-	for _, node := range nodes {
-		if node.Status != document.NodeStatusSuccess {
-			failed = append(failed, node)
-		}
-	}
-	return failed
-}
-
-// groupFailedNodesWithContext 为失败节点添加上下文并重新分组
-func (bt *BatchTranslator) groupFailedNodesWithContext(allNodes []*document.NodeInfo, failedNodes []*document.NodeInfo) []*document.NodeGroup {
-	// 创建节点ID到索引的映射
-	nodeIDToIndex := make(map[int]int)
-	for i, node := range allNodes {
-		nodeIDToIndex[node.ID] = i
-	}
-	
-	// 收集需要包含的节点（失败节点及其上下文）
-	includeSet := make(map[int]bool)
-	for _, failed := range failedNodes {
-		idx := nodeIDToIndex[failed.ID]
-		
-		// 添加前一个节点（如果存在）
-		if idx > 0 {
-			includeSet[allNodes[idx-1].ID] = true
-		}
-		
-		// 添加当前节点
-		includeSet[failed.ID] = true
-		
-		// 添加后一个节点（如果存在）
-		if idx < len(allNodes)-1 {
-			includeSet[allNodes[idx+1].ID] = true
-		}
-	}
-	
-	// 收集所有需要翻译的节点
-	var nodesToTranslate []*document.NodeInfo
-	for _, node := range allNodes {
-		if includeSet[node.ID] {
-			nodesToTranslate = append(nodesToTranslate, node)
-		}
-	}
-	
-	// 分组
-	return bt.groupNodes(nodesToTranslate)
-}

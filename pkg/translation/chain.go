@@ -403,31 +403,88 @@ func (s *step) preparePrompt(input StepInput) string {
 		
 		// 插入保护说明到合适的位置
 		if len(preserveInstructions) > 0 {
-			// 查找 "Please translate" 或类似的标记
-			markers := []string{
-				"Please translate the following text:",
-				"Please translate:",
-				"Translate the following text:",
-				"Translate:",
-				"请翻译以下文本：",
-				"请翻译：",
+			// 根据步骤名称确定插入位置
+			stepName := strings.ToLower(s.config.Name)
+			var markers []string
+			
+			// 根据不同的步骤选择不同的标记
+			if strings.Contains(stepName, "initial") || strings.Contains(stepName, "translation") {
+				// 初始翻译步骤
+				markers = []string{
+					"Please translate the following text:",
+					"Please translate:",
+					"Translate the following text:",
+					"Translate:",
+					"请翻译以下文本：",
+					"请翻译：",
+				}
+			} else if strings.Contains(stepName, "reflection") || strings.Contains(stepName, "review") {
+				// 反思/审查步骤
+				markers = []string{
+					"Please analyze this translation and identify any issues",
+					"Please analyze this translation",
+					"You are reviewing a translation",
+					"Review the translation",
+					"请分析这个翻译",
+					"审查翻译",
+				}
+			} else if strings.Contains(stepName, "improvement") || strings.Contains(stepName, "improve") || strings.Contains(stepName, "polish") {
+				// 改进步骤
+				markers = []string{
+					"Please provide an improved translation",
+					"You are improving a translation",
+					"Improve the translation",
+					"请提供改进的翻译",
+					"改进翻译",
+				}
+			}
+			
+			// 如果没有匹配的步骤类型，使用通用标记
+			if len(markers) == 0 {
+				markers = []string{
+					"Please translate",
+					"Translate",
+					"Please",
+					"{{text}}",
+				}
 			}
 			
 			inserted := false
+			instructions := strings.Join(preserveInstructions, "\n\n")
+			
+			// 尝试在标记之前插入
 			for _, marker := range markers {
-				if strings.Contains(prompt, marker) {
-					instructions := strings.Join(preserveInstructions, "\n\n")
-					prompt = strings.Replace(prompt, marker, instructions + "\n\n" + marker, 1)
+				if idx := strings.Index(prompt, marker); idx != -1 {
+					// 在标记之前插入，确保有合适的换行
+					prompt = prompt[:idx] + instructions + "\n\n" + prompt[idx:]
 					inserted = true
 					break
 				}
 			}
 			
-			// 如果没找到标记，添加到末尾
+			// 如果没找到标记，查找 {{text}} 占位符
+			if !inserted && strings.Contains(prompt, "{{text}}") {
+				// 在 {{text}} 之前插入
+				prompt = strings.Replace(prompt, "{{text}}", instructions + "\n\n{{text}}", 1)
+				inserted = true
+			}
+			
+			// 如果还是没找到合适的位置，添加到提示词开头（在格式规则之后）
 			if !inserted {
-				for _, instruction := range preserveInstructions {
-					prompt = prompt + "\n\n" + instruction
+				// 查找 "Formatting Rules:" 或类似的部分
+				if idx := strings.Index(prompt, "Formatting Rules:"); idx != -1 {
+					// 找到格式规则结束的位置（两个换行）
+					if endIdx := strings.Index(prompt[idx:], "\n\n"); endIdx != -1 {
+						insertPos := idx + endIdx + 2
+						prompt = prompt[:insertPos] + instructions + "\n\n" + prompt[insertPos:]
+						inserted = true
+					}
 				}
+			}
+			
+			// 最后的备选方案：添加到开头
+			if !inserted {
+				prompt = instructions + "\n\n" + prompt
 			}
 		}
 	}

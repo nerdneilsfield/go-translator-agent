@@ -216,16 +216,33 @@ func (c *TranslationCoordinator) TranslateFile(ctx context.Context, inputPath, o
 
 	// 执行翻译
 	if c.batchTranslator != nil {
-		// 使用批量翻译器（包含失败重试机制）
-		err = c.batchTranslator.TranslateNodes(ctx, nodes)
-		if err != nil {
-			return c.createFailedResult(docID, inputPath, outputPath, startTime, err), err
-		}
-		// 更新进度条
-		for _, node := range nodes {
+		// 使用批量翻译器结合 NodeInfoTranslator
+		// 创建批量翻译适配器
+		adapter := NewBatchTranslateAdapter(c.batchTranslator, 10)
+		
+		// 使用 NodeInfoTranslator 管理整体流程（包括重试）
+		err = c.nodeTranslator.TranslateDocument(ctx, docID, inputPath, nodes, func(ctx context.Context, node *document.NodeInfo) error {
+			// 使用适配器翻译
+			err := adapter.TranslateNode(ctx, node)
+			if err != nil {
+				return err
+			}
+			
+			// 更新进度条
 			if node.Status == document.NodeStatusSuccess {
 				progressBar.Update(int64(len(node.OriginalText)))
 			}
+			
+			return nil
+		})
+		
+		// 确保刷新最后的缓冲区
+		if err == nil {
+			err = adapter.Flush(ctx)
+		}
+		
+		if err != nil {
+			return c.createFailedResult(docID, inputPath, outputPath, startTime, err), err
 		}
 	} else {
 		// 使用原有的节点翻译器

@@ -458,11 +458,6 @@ step_sets_v2:
           3. Preserve document structure, including line breaks, paragraph spacing, lists, and tables.
           4. Use terminology and expressions appropriate for {{country}}.
 
-          IMPORTANT: Special Markers
-          - If you see markers like @@PRESERVE_N@@ (where N is a number), keep them exactly as they are.
-          - If you see markers like @@NODE_START_N@@ and @@NODE_END_N@@, preserve them exactly.
-          - These markers protect content that should not be translated or indicate text boundaries.
-          - Translate only the actual content, not these special markers.
 
           Please translate the following text:
 
@@ -482,20 +477,13 @@ step_sets_v2:
           Initial translation:
           {{translation}}
 
-          IMPORTANT: Special Markers and Protected Content
-          - The text may contain markers like @@PRESERVE_N@@ or @@NODE_START_N@@/@@NODE_END_N@@ where N is a number
-          - These markers MUST be preserved exactly as they appear
-          - They protect content that should not be translated or indicate text boundaries
-          - Verify that ALL such markers are preserved correctly in the translation
-
           Please analyze this translation and identify any issues. Consider:
           1. Accuracy: Does the translation convey the exact meaning of the original?
           2. Fluency: Does the translation read naturally in {{target_language}}?
           3. Terminology: Are technical terms, proper nouns, and specialized vocabulary translated appropriately?
           4. Formatting: Is all original formatting preserved (Markdown, LaTeX, HTML tags, etc.)?
-          5. Protected Content: Are all special markers (@@PRESERVE_N@@, @@NODE_START_N@@, etc.) preserved exactly?
-          6. Consistency: Is the translation consistent throughout?
-          7. Regional appropriateness: Is the language appropriate for {{country}}?
+          5. Consistency: Is the translation consistent throughout?
+          6. Regional appropriateness: Is the language appropriate for {{country}}?
 
           Provide a detailed analysis of any issues found. If the translation is perfect, simply state that no issues were found.
         system_role: "You are an expert translation reviewer specializing in {{source_language}} to {{target_language}} translation quality assessment."
@@ -516,19 +504,12 @@ step_sets_v2:
           Reflection/Issues identified:
           {{reflection}}
 
-          CRITICAL: Special Markers and Protected Content
-          - The text may contain markers like @@PRESERVE_N@@ or @@NODE_START_N@@/@@NODE_END_N@@ where N is a number
-          - These markers MUST be preserved EXACTLY as they appear in your improved translation
-          - Do NOT translate, modify, or remove these markers
-          - They protect content that should not be translated or indicate text boundaries
-
           Please provide an improved translation that addresses all the issues mentioned in the reflection while:
           1. Maintaining the exact meaning of the original text
           2. Ensuring natural fluency in {{target_language}}
           3. Preserving all original formatting (Markdown, LaTeX, HTML tags, etc.)
-          4. Preserving ALL special markers (@@PRESERVE_N@@, @@NODE_START_N@@, etc.) exactly as they appear
-          5. Using appropriate terminology and expressions
-          6. Using language appropriate for {{country}}
+          4. Using appropriate terminology and expressions
+          5. Using language appropriate for {{country}}
 
           Provide only the improved translation without any explanation or commentary.
         system_role: "You are a professional {{target_language}} editor specializing in translation refinement and quality improvement."
