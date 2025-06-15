@@ -433,3 +433,83 @@ step_sets_v2:
           Provide only the final synthesized translation without any explanation or analysis.
         system_role: "You are a professional translation expert specializing in multi-engine translation comparison and synthesis."
     fast_mode_threshold: 1000
+
+  # LLM-based translation with comprehensive prompts
+  llm_translation:
+    id: "llm_translation"
+    name: "LLM Complete Translation"
+    description: "Full three-step translation using LLM models with detailed prompts"
+    steps:
+      - name: "initial_translation"
+        provider: "openai"
+        model_name: "gpt-4o"
+        temperature: 0.3
+        max_tokens: 4096
+        prompt: |
+          This is a translation task from {{source_lang}} to {{target_lang}}.
+
+          Formatting Rules:
+          1. Preserve all original formatting exactly:
+             - Do not modify any Markdown syntax (**, *, #, etc.).
+             - Do not translate any content within LaTeX formulas ($...$, $$...$$, \( ... \), \[ ... \]) or any LaTeX commands.
+             - For LaTeX files, preserve all commands, environments (such as \begin{...} and \end{...}), and macros exactly as they are.
+             - Keep all HTML tags intact.
+          2. Do not alter abbreviations, technical terms, or code identifiers.
+          3. Preserve document structure, including line breaks, paragraph spacing, lists, and tables.
+          4. Use terminology and expressions appropriate for {{country}}.
+
+          Please translate the following text:
+
+          {{text}}
+        system_role: "You are a professional translator specializing in {{source_lang}} to {{target_lang}} translation with expertise in preserving formatting and technical accuracy."
+      - name: "reflection"
+        provider: "openai"
+        model_name: "gpt-4o"
+        temperature: 0.2
+        max_tokens: 3000
+        prompt: |
+          You are reviewing a translation from {{source_lang}} to {{target_lang}}.
+
+          Original text:
+          {{original_text}}
+
+          Initial translation:
+          {{initial_translation}}
+
+          Please analyze this translation and identify any issues. Consider:
+          1. Accuracy: Does the translation convey the exact meaning of the original?
+          2. Fluency: Does the translation read naturally in {{target_lang}}?
+          3. Terminology: Are technical terms, proper nouns, and specialized vocabulary translated appropriately?
+          4. Formatting: Is all original formatting preserved (Markdown, LaTeX, HTML tags, etc.)?
+          5. Consistency: Is the translation consistent throughout?
+          6. Regional appropriateness: Is the language appropriate for {{country}}?
+
+          Provide a detailed analysis of any issues found. If the translation is perfect, simply state that no issues were found.
+        system_role: "You are an expert translation reviewer specializing in {{source_lang}} to {{target_lang}} translation quality assessment."
+      - name: "improvement"
+        provider: "openai"
+        model_name: "gpt-4o"
+        temperature: 0.3
+        max_tokens: 4096
+        prompt: |
+          You are improving a translation from {{source_lang}} to {{target_lang}} based on the following reflection.
+
+          Original text:
+          {{original_text}}
+
+          Initial translation:
+          {{initial_translation}}
+
+          Reflection/Issues identified:
+          {{reflection}}
+
+          Please provide an improved translation that addresses all the issues mentioned in the reflection while:
+          1. Maintaining the exact meaning of the original text
+          2. Ensuring natural fluency in {{target_lang}}
+          3. Preserving all original formatting (Markdown, LaTeX, HTML tags, etc.)
+          4. Using appropriate terminology and expressions
+          5. Using language appropriate for {{country}}
+
+          Provide only the improved translation without any explanation or commentary.
+        system_role: "You are a professional {{target_lang}} editor specializing in translation refinement and quality improvement."
+    fast_mode_threshold: 300
