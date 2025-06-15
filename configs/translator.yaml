@@ -1,87 +1,93 @@
-# Go Translator Agent - 新系统配置文件
-# 基于最新的配置系统架构
+# Go Translator Agent 配置文件
+# 完全基于 internal/config/config.go 中的 Config 结构体
 
 # 基本语言设置
 source_lang: "English"
 target_lang: "Chinese"
 country: "China"
 
-# 默认模型配置
+# 默认模型设置
 default_model_name: "gpt-3.5-turbo"
 
-# 步骤集配置
+# 活跃步骤集
 active_step_set: "basic"
 
-# 性能配置
-concurrency: 4                    # 并行翻译请求数
-html_concurrency: 2              # HTML文件内部并行请求数
-epub_concurrency: 5              # EPUB文件并行HTML处理数
-max_tokens_per_chunk: 2000       # 每个块的最大token数
-chunk_size: 1000                 # 文本块大小
+# 性能和并发设置
+max_tokens_per_chunk: 2000
+concurrency: 4
+html_concurrency: 2
+epub_concurrency: 5
 
-# 超时配置
-request_timeout: 300              # 请求超时（秒）
-translation_timeout: 1800        # 翻译总超时（秒）
-auto_save_interval: 300          # 自动保存间隔（秒）
-retry_attempts: 3                # 重试次数
-max_retries: 3                   # 最大重试次数
+# 超时设置
+request_timeout: 300
+translation_timeout: 1800
+auto_save_interval: 300
 
-# 缓存配置
+# 分块设置
+min_split_size: 100
+max_split_size: 1000
+chunk_size: 1000
+
+# 重试设置
+retry_attempts: 3
+max_retries: 3
+retry_failed_parts: true
+
+# 缓存设置
 use_cache: true
-cache_dir: ""                    # 空字符串使用默认缓存目录
+cache_dir: ""
 
-# 调试配置
+# 调试设置
 debug: false
 save_debug_info: false
 keep_intermediate_files: false
+filter_reasoning: true
 
-# 文本处理配置
-min_split_size: 100              # 最小分割大小（字符数）
-max_split_size: 1000             # 最大分割大小（字符数）
-retry_failed_parts: true        # 重试失败的部分
-filter_reasoning: true           # 过滤推理过程
-preserve_math: true              # 保留数学公式
-translate_figure_captions: true  # 翻译图表标题
+# 内容处理设置
+preserve_math: true
+translate_figure_captions: true
 
-# 后处理配置
-post_process_markdown: true      # Markdown后处理
-fix_math_formulas: true         # 修复数学公式
-fix_table_format: true         # 修复表格格式
-fix_mixed_content: true        # 修复混合内容
-fix_picture: true              # 修复图片
+# Markdown 后处理设置
+post_process_markdown: true
+fix_math_formulas: true
+fix_table_format: true
+fix_mixed_content: true
+fix_picture: true
 
-# 格式修复配置
-enable_format_fix: true         # 启用格式修复
-format_fix_interactive: true   # 交互式格式修复
-pre_translation_fix: false     # 翻译前格式修复
-post_translation_fix: false    # 翻译后格式修复
-use_external_tools: true       # 使用外部工具
-format_fix_markdown: true      # Markdown格式修复
-format_fix_text: true         # Text格式修复
-format_fix_html: true         # HTML格式修复
-format_fix_epub: true         # EPUB格式修复
+# 格式修复设置
+enable_format_fix: true
+format_fix_interactive: true
+pre_translation_fix: false
+post_translation_fix: false
+use_external_tools: true
+format_fix_markdown: true
+format_fix_text: true
+format_fix_html: true
+format_fix_epub: true
 
-# 翻译后处理配置
-enable_post_processing: true                 # 启用翻译后处理
-glossary_path: "configs/glossary_example.yaml"  # 词汇表路径
-content_protection: true                     # 内容保护
-terminology_consistency: true               # 术语一致性
-mixed_language_spacing: true                # 混合语言间距
-machine_translation_cleanup: true           # 机器翻译清理
+# 翻译后处理设置
+enable_post_processing: true
+glossary_path: "configs/glossary_example.yaml"
+content_protection: true
+terminology_consistency: true
+mixed_language_spacing: true
+machine_translation_cleanup: true
 
-# 货币配置
+# 货币设置
 target_currency: "USD"
 usd_rmb_rate: 7.4
 
+# 元数据
+metadata: {}
+
 # 模型配置
 models:
-  # OpenAI 模型
   gpt-3.5-turbo:
     name: "gpt-3.5-turbo"
     model_id: "gpt-3.5-turbo"
     api_type: "openai"
-    base_url: "https://api.openai.com/v1"
-    key: "${OPENAI_API_KEY}"
+    base_url: ""
+    key: ""
     max_output_tokens: 4096
     max_input_tokens: 4096
     temperature: 0.7
@@ -90,41 +96,26 @@ models:
     price_unit: "USD"
     is_reasoning: false
 
-  gpt-4:
+  gpt-4o:
     name: "gpt-4"
     model_id: "gpt-4"
     api_type: "openai"
-    base_url: "https://api.openai.com/v1"
-    key: "${OPENAI_API_KEY}"
+    base_url: ""
+    key: ""
     max_output_tokens: 8192
     max_input_tokens: 8192
     temperature: 0.7
-    input_token_price: 30
-    output_token_price: 60
+    input_token_price: 2.5
+    output_token_price: 10
     price_unit: "USD"
     is_reasoning: false
 
-  gpt-4-turbo:
-    name: "gpt-4-turbo"
-    model_id: "gpt-4-turbo"
-    api_type: "openai"
-    base_url: "https://api.openai.com/v1"
-    key: "${OPENAI_API_KEY}"
-    max_output_tokens: 4096
-    max_input_tokens: 8192
-    temperature: 0.7
-    input_token_price: 10
-    output_token_price: 30
-    price_unit: "USD"
-    is_reasoning: false
-
-  # OpenAI 推理模型
   o1-preview:
     name: "o1-preview"
     model_id: "o1-preview"
     api_type: "openai"
-    base_url: "https://api.openai.com/v1"
-    key: "${OPENAI_API_KEY}"
+    base_url: ""
+    key: ""
     max_output_tokens: 32768
     max_input_tokens: 128000
     temperature: 1
@@ -137,8 +128,8 @@ models:
     name: "o1-mini"
     model_id: "o1-mini"
     api_type: "openai"
-    base_url: "https://api.openai.com/v1"
-    key: "${OPENAI_API_KEY}"
+    base_url: ""
+    key: ""
     max_output_tokens: 65536
     max_input_tokens: 128000
     temperature: 1
@@ -147,34 +138,12 @@ models:
     price_unit: "USD"
     is_reasoning: true
 
-  # Anthropic Claude 模型
-  claude-3-sonnet:
-    name: "claude-3-sonnet"
-    model_id: "claude-3-sonnet-20240229"
-    api_type: "anthropic"
-    base_url: "https://api.anthropic.com"
-    key: "${ANTHROPIC_API_KEY}"
-    max_output_tokens: 4096
-    max_input_tokens: 200000
-    temperature: 0.7
-
-  claude-3-opus:
-    name: "claude-3-opus"
-    model_id: "claude-3-opus-20240229"
-    api_type: "anthropic"
-    base_url: "https://api.anthropic.com"
-    key: "${ANTHROPIC_API_KEY}"
-    max_output_tokens: 4096
-    max_input_tokens: 200000
-    temperature: 0.7
-
-  # DeepSeek 推理模型
   deepseek-r1:
     name: "deepseek-r1"
     model_id: "deepseek-r1"
     api_type: "openai"
     base_url: "https://api.deepseek.com/v1"
-    key: "${DEEPSEEK_API_KEY}"
+    key: ""
     max_output_tokens: 8192
     max_input_tokens: 32768
     temperature: 0.7
@@ -184,51 +153,121 @@ models:
     is_reasoning: true
     reasoning_tags: ["<think>", "</think>"]
 
-  # DeepL 专业翻译服务
+  qwq-32b:
+    name: "qwq-32b"
+    model_id: "qwq-32b-preview"
+    api_type: "openai"
+    base_url: ""
+    key: ""
+    max_output_tokens: 32768
+    max_input_tokens: 32768
+    temperature: 0.7
+    is_reasoning: true
+    reasoning_tags: ["<think>", "</think>"]
+
+  qwen-plus:
+    name: "qwen-plus"
+    model_id: "qwen-plus"
+    api_type: "openai"
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    key: ""
+    max_output_tokens: 8192
+    max_input_tokens: 8192
+    temperature: 0.7
+    is_reasoning: false
+
+  claude-3-opus:
+    name: "claude-3-opus"
+    model_id: "claude-3-opus-20240229"
+    api_type: "anthropic"
+    base_url: ""
+    key: ""
+    max_output_tokens: 4096
+    max_input_tokens: 4096
+    temperature: 0.7
+    is_reasoning: false
+
+  claude-3-sonnet:
+    name: "claude-3-sonnet"
+    model_id: "claude-3-sonnet-20240229"
+    api_type: "anthropic"
+    base_url: ""
+    key: ""
+    max_output_tokens: 4096
+    max_input_tokens: 4096
+    temperature: 0.7
+    is_reasoning: false
+
+  mistral-large:
+    name: "mistral-large"
+    model_id: "mistral-large-latest"
+    api_type: "mistral"
+    base_url: ""
+    key: ""
+    max_output_tokens: 8192
+    max_input_tokens: 8192
+    temperature: 0.7
+    is_reasoning: false
+
+  # 专业翻译服务配置
   deepl:
     name: "deepl"
     model_id: "deepl"
     api_type: "deepl"
     base_url: "https://api.deepl.com/v2"
-    key: "${DEEPL_API_KEY}"
+    key: ""
+    max_output_tokens: 130000
+    max_input_tokens: 130000
+    temperature: 0
+    input_token_price: 0
+    output_token_price: 0
+    price_unit: "USD"
+    is_reasoning: false
 
-  # DeepLX 免费翻译服务
   deeplx:
     name: "deeplx"
     model_id: "deeplx"
     api_type: "deeplx"
-    base_url: "http://localhost:1188"
-    key: ""  # DeepLX 不需要密钥
+    base_url: "http://localhost:1188/translate"
+    key: ""
+    max_output_tokens: 5000
+    max_input_tokens: 5000
+    temperature: 0
+    input_token_price: 0
+    output_token_price: 0
+    price_unit: "USD"
+    is_reasoning: false
 
-  # Google 翻译服务
   google-translate:
     name: "google-translate"
     model_id: "google-translate"
     api_type: "google"
-    key: "${GOOGLE_API_KEY}"
+    base_url: "https://translation.googleapis.com/language/translate/v2"
+    key: ""
+    max_output_tokens: 5000
+    max_input_tokens: 5000
+    temperature: 0
+    input_token_price: 0
+    output_token_price: 0
+    price_unit: "USD"
+    is_reasoning: false
 
-  # LibreTranslate 开源翻译服务
   libretranslate:
     name: "libretranslate"
     model_id: "libretranslate"
     api_type: "libretranslate"
     base_url: "https://libretranslate.com"
-    key: "${LIBRETRANSLATE_API_KEY}"  # 某些实例可能需要
-
-  # 本地测试模型
-  test-model:
-    name: "test-model"
-    model_id: "test-model"
-    api_type: "openai"
-    base_url: "http://localhost:8080"
-    key: "test-key"
-    max_output_tokens: 4096
-    max_input_tokens: 4096
-    temperature: 0.7
+    key: ""
+    max_output_tokens: 5000
+    max_input_tokens: 5000
+    temperature: 0
+    input_token_price: 0
+    output_token_price: 0
+    price_unit: "USD"
+    is_reasoning: false
 
 # 步骤集配置
 step_sets:
-  # 基本三步翻译
   basic:
     id: "basic"
     name: "基本翻译"
@@ -247,14 +286,13 @@ step_sets:
       temperature: 0.5
     fast_mode_threshold: 300
 
-  # 高质量翻译
   quality:
     id: "quality"
     name: "高质量翻译"
     description: "使用高级模型的翻译过程"
     initial_translation:
       name: "初始翻译"
-      model_name: "gpt-4"
+      model_name: "gpt-4o"
       temperature: 0.5
     reflection:
       name: "反思"
@@ -262,11 +300,10 @@ step_sets:
       temperature: 0.3
     improvement:
       name: "改进"
-      model_name: "gpt-4"
+      model_name: "gpt-4o"
       temperature: 0.5
     fast_mode_threshold: 300
 
-  # 推理模型翻译
   reasoning:
     id: "reasoning"
     name: "推理翻译"
@@ -277,7 +314,7 @@ step_sets:
       temperature: 0.3
     reflection:
       name: "质量评估"
-      model_name: "gpt-4"
+      model_name: "gpt-4o"
       temperature: 0.2
     improvement:
       name: "最终优化"
@@ -285,220 +322,78 @@ step_sets:
       temperature: 0.3
     fast_mode_threshold: 100
 
-  # 快速翻译
-  fast:
-    id: "fast"
-    name: "快速翻译"
-    description: "快速单步翻译"
-    initial_translation:
-      name: "快速翻译"
-      model_name: "gpt-3.5-turbo"
-      temperature: 0.7
-    reflection:
-      name: "跳过"
-      model_name: "gpt-3.5-turbo"
-      temperature: 0.3
-    improvement:
-      name: "跳过"
-      model_name: "gpt-3.5-turbo"
-      temperature: 0.3
-    fast_mode_threshold: 5000
-
-  # 测试步骤集
-  test-stepset:
-    id: "test-stepset"
-    name: "Test Step Set"
-    description: "For testing purposes"
-    initial_translation:
-      name: "initial"
-      model_name: "test-model"
-      temperature: 0.3
-    reflection:
-      name: "reflect"
-      model_name: "test-model"
-      temperature: 0.1
-    improvement:
-      name: "improve"
-      model_name: "test-model"
-      temperature: 0.3
-    fast_mode_threshold: 300
-
-# 新格式步骤集配置 (Step Sets V2)
+# Step Sets V2 配置（新格式）
 step_sets_v2:
-  # 专业翻译模式 - 使用 DeepL + AI 优化
   professional:
     id: "professional"
     name: "专业翻译"
-    description: "使用 DeepL 专业翻译服务 + GPT-4 优化"
+    description: "使用专业翻译服务加AI优化"
     steps:
       - name: "initial_translation"
         provider: "deepl"
         model_name: "deepl"
         temperature: 0
-        prompt: "{{text}}"  # DeepL 只需要原文
-      
+        max_tokens: 4096
+        prompt: "{{text}}"
+        system_role: ""
       - name: "ai_review"
         provider: "openai"
-        model_name: "gpt-4"
+        model_name: "gpt-4o"
         temperature: 0.2
         max_tokens: 3000
         prompt: |
-          作为一位精通{{source}}和{{target}}的语言专家，请评估这个由 DeepL 生成的翻译：
+          作为一位精通{{source_language}}和{{target_language}}的语言专家，请评估这个翻译：
           
-          原文（{{source}}）：
-          {{original_text}}
+          原文：{{original_text}}
+          翻译：{{initial_translation}}
           
-          DeepL 翻译（{{target}}）：
-          {{initial_translation}}
-          
-          请从以下几个方面进行评估：
-          1. 准确性：翻译是否准确传达了原文的含义？
-          2. 流畅性：译文在{{target}}中是否自然流畅？
-          3. 文化适应性：是否考虑了文化差异？
-          4. 专业术语：专业术语的翻译是否恰当？
-          
-          如果有任何问题，请提供具体的改进建议。
-        system_role: "你是一位资深的翻译评论家，精通{{source}}和{{target}}两种语言。"
-      
+          请从准确性、流畅性、文化适应性、专业术语方面进行评估，并提供具体的改进建议。
+        system_role: "你是一位资深的翻译评论家。"
       - name: "final_polish"
         provider: "openai"
-        model_name: "gpt-4"
+        model_name: "gpt-4o"
         temperature: 0.3
         max_tokens: 4096
         prompt: |
           基于以下信息，提供最终的优化翻译：
           
           原文：{{original_text}}
-          DeepL 翻译：{{initial_translation}}
+          翻译：{{initial_translation}}
           评估反馈：{{ai_review}}
           
-          请综合 DeepL 的翻译和 AI 的反馈，生成一个更加准确、流畅的{{target}}翻译。
-          保持原文的语气和风格，同时确保符合{{target}}的表达习惯。
-        system_role: "你是一位专业的{{target}}编辑，负责润色和完善翻译。"
+          请生成一个更加准确、流畅的{{target_language}}翻译。
+        system_role: "你是一位专业的{{target_language}}编辑。"
     fast_mode_threshold: 500
 
-  # 多引擎对比模式
   multi_engine:
     id: "multi_engine"
     name: "多引擎对比翻译"
-    description: "使用多个翻译引擎，通过 AI 选择和综合最佳结果"
+    description: "使用多个翻译引擎进行对比"
     steps:
       - name: "deepl_translation"
         provider: "deepl"
         model_name: "deepl"
         temperature: 0
         prompt: "{{text}}"
-
       - name: "google_translation"
         provider: "google"
         model_name: "google-translate"
         temperature: 0
         prompt: "{{text}}"
-
-      - name: "deeplx_translation"
-        provider: "deeplx"
-        model_name: "deeplx"
-        temperature: 0
-        prompt: "{{text}}"
-
       - name: "ai_synthesis"
         provider: "openai"
-        model_name: "gpt-4"
+        model_name: "gpt-4o"
         temperature: 0.2
         max_tokens: 4096
         prompt: |
-          请分析以下三个翻译引擎的结果，并生成一个综合最优的翻译：
+          请分析以下翻译结果，并生成一个综合最优的翻译：
           
-          原文（{{source}}）：
-          {{original_text}}
+          原文：{{original_text}}
           
           翻译结果：
           1. DeepL: {{deepl_translation}}
           2. Google: {{google_translation}}
-          3. DeepLX: {{deeplx_translation}}
           
-          请：
-          1. 比较三个翻译的优缺点
-          2. 选择最准确的部分
-          3. 修正明显的错误
-          4. 生成一个综合最优的{{target}}翻译
-          
-          最终翻译应该自然、准确、符合{{target}}的表达习惯。
+          请比较优缺点，选择最准确的部分，生成一个自然、准确的{{target_language}}翻译。
         system_role: "你是一位翻译专家，精通对比分析不同翻译结果。"
     fast_mode_threshold: 1000
-
-  # 快速免费模式
-  free_mode:
-    id: "free_mode"
-    name: "免费翻译模式"
-    description: "使用免费的翻译服务，适合大量文本处理"
-    steps:
-      - name: "translation"
-        provider: "deeplx"  # 或 "libretranslate"
-        model_name: "deeplx"
-        temperature: 0
-        prompt: "{{text}}"
-    fast_mode_threshold: 10000
-
-  # 推理模型深度翻译
-  reasoning_deep:
-    id: "reasoning_deep"
-    name: "推理模型深度翻译"
-    description: "使用推理模型进行深度思考的高质量翻译"
-    steps:
-      - name: "reasoning_translation"
-        provider: "openai"
-        model_name: "deepseek-r1"
-        temperature: 0.3
-        max_tokens: 8192
-        prompt: |
-          请将以下{{source}}文本翻译为{{target}}。
-          
-          请注意：
-          1. 保持原文的含义、语气和风格
-          2. 确保专业术语的准确性
-          3. 考虑文化差异和习惯表达
-          4. 保持译文的流畅性和自然性
-          
-          原文：
-          {{text}}
-        system_role: "你是一位专业的{{source}}到{{target}}翻译专家。"
-
-      - name: "quality_review"
-        provider: "openai"
-        model_name: "gpt-4"
-        temperature: 0.2
-        max_tokens: 2048
-        prompt: |
-          请评估这个从{{source}}到{{target}}的翻译质量：
-          
-          原文：
-          {{original_text}}
-          
-          译文：
-          {{reasoning_translation}}
-          
-          请从以下方面进行评估：
-          1. 准确性：是否准确传达了原文含义
-          2. 流畅性：译文是否自然流畅
-          3. 专业性：术语翻译是否准确
-          4. 文化适应：是否符合目标语言文化
-          
-          如果有问题，请提供具体的改进建议。
-        system_role: "你是一位资深的翻译质量评估专家。"
-
-      - name: "final_optimization"
-        provider: "openai"
-        model_name: "o1-mini"
-        temperature: 0.3
-        max_tokens: 8192
-        prompt: |
-          基于评估反馈，请对翻译进行最终优化：
-          
-          原文：{{original_text}}
-          当前译文：{{reasoning_translation}}
-          评估反馈：{{quality_review}}
-          
-          请提供一个经过优化的最终译文。
-        system_role: "你是一位{{target}}语言母语者和专业编辑。"
-    fast_mode_threshold: 100
