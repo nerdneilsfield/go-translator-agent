@@ -131,6 +131,23 @@ func getLoggerFromOptions(opts ProcessorOptions) *zap.Logger {
 	return zap.NewNop()
 }
 
+// getHTMLProcessingModeFromOptions 从ProcessorOptions中获取HTML处理模式
+func getHTMLProcessingModeFromOptions(opts ProcessorOptions) HTMLProcessingMode {
+	if opts.Metadata != nil {
+		if mode, ok := opts.Metadata["html_processing_mode"].(string); ok {
+			switch mode {
+			case "native":
+				return HTMLModeNative
+			case "markdown":
+				return HTMLModeMarkdown
+			default:
+				return HTMLModeMarkdown // 默认使用markdown模式
+			}
+		}
+	}
+	return HTMLModeMarkdown // 默认使用markdown模式
+}
+
 // init 初始化默认扩展名映射和处理器注册
 func init() {
 	// 注册处理器工厂
@@ -146,7 +163,14 @@ func init() {
 	
 	Register(FormatHTML, func(opts ProcessorOptions) (Processor, error) {
 		logger := getLoggerFromOptions(opts)
-		return NewHTMLProcessor(opts, logger, HTMLModeNative)
+		mode := getHTMLProcessingModeFromOptions(opts)
+		return NewHTMLProcessor(opts, logger, mode)
+	})
+	
+	Register(FormatEPUB, func(opts ProcessorOptions) (Processor, error) {
+		logger := getLoggerFromOptions(opts)
+		mode := getHTMLProcessingModeFromOptions(opts)
+		return NewEPUBProcessor(opts, logger, mode)
 	})
 
 	// Markdown

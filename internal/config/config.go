@@ -102,6 +102,9 @@ type Config struct {
 	TerminologyConsistency    bool   `mapstructure:"terminology_consistency"`     // 术语一致性检查
 	MixedLanguageSpacing      bool   `mapstructure:"mixed_language_spacing"`      // 中英文混排空格优化
 	MachineTranslationCleanup bool   `mapstructure:"machine_translation_cleanup"` // 机器翻译痕迹清理
+
+	// HTML/EPUB 处理配置
+	HTMLProcessingMode string `mapstructure:"html_processing_mode"` // HTML处理模式: "markdown" 或 "native"，默认 "markdown"
 }
 
 // LoadConfig 从文件加载配置
@@ -237,6 +240,9 @@ func NewDefaultConfig() *Config {
 		ChunkSize:               2000, // 默认分块大小2000字符
 		RetryAttempts:           3,    // 默认重试3次
 		Metadata:                make(map[string]interface{}),
+
+		// HTML/EPUB 处理配置
+		HTMLProcessingMode:      "markdown", // 默认使用markdown模式
 	}
 }
 
@@ -505,6 +511,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("format_fix_html", false)        // HTML修复暂未实现
 	v.SetDefault("format_fix_epub", false)        // EPUB修复暂未实现
 
+	// HTML/EPUB 处理配置
+	v.SetDefault("html_processing_mode", "markdown") // 默认使用markdown模式处理HTML
+
 	// 设置默认的步骤集
 	v.SetDefault("step_sets", GetDefaultStepSetsV2())
 }
@@ -557,5 +566,8 @@ func structToMap(config *Config) map[string]interface{} {
 		"format_fix_text":        config.FormatFixText,
 		"format_fix_html":        config.FormatFixHTML,
 		"format_fix_epub":        config.FormatFixEPUB,
+
+		// HTML/EPUB 处理配置
+		"html_processing_mode":   config.HTMLProcessingMode,
 	}
 }

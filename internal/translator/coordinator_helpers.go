@@ -201,9 +201,10 @@ func (c *TranslationCoordinator) assembleDocumentWithProcessor(inputPath string,
 		ChunkSize:    c.config.ChunkSize,
 		ChunkOverlap: 100,
 		Metadata: map[string]interface{}{
-			"source_language": c.config.SourceLang,
-			"target_language": c.config.TargetLang,
-			"logger":          c.logger,
+			"source_language":        c.config.SourceLang,
+			"target_language":        c.config.TargetLang,
+			"logger":                 c.logger,
+			"html_processing_mode":   c.config.HTMLProcessingMode,
 		},
 	}
 

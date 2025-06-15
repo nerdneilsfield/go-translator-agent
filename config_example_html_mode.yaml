@@ -1,0 +1,43 @@
+# HTML 处理模式配置示例
+
+# HTML/EPUB 处理模式配置
+# 可选值:
+#   - "markdown": 将HTML先转换为Markdown进行翻译，然后转回HTML (默认，更准确)
+#   - "native": 直接在HTML DOM上进行翻译 (保持HTML结构不变)
+html_processing_mode: "markdown"
+
+# 基础配置
+source_lang: "English"
+target_lang: "Chinese"
+chunk_size: 5000
+
+# 其他配置...
+active_step_set: "basic"
+concurrency: 4
+
+# 步骤集配置
+step_sets:
+  basic:
+    id: "basic"
+    name: "Basic Translation"
+    description: "Simple one-step translation"
+    steps:
+      - name: "translate"
+        provider: "openai"
+        model_name: "gpt-4o"
+        temperature: 0.3
+        max_tokens: 4096
+        timeout: 60
+
+# 模型配置
+models:
+  gpt-4o:
+    name: "gpt-4o"
+    model_id: "gpt-4o"
+    api_type: "openai"
+    base_url: ""
+    key: "your-api-key-here"
+    max_output_tokens: 4096
+    max_input_tokens: 128000
+    temperature: 0.3
+    is_llm: true
