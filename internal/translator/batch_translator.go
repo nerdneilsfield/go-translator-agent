@@ -304,6 +304,13 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		zap.Int("expectedNodes", len(group.Nodes)),
 		zap.Int("translatedTextLength", len(translatedText)))
 	
+	// 在 verbose 模式下显示翻译片段
+	if bt.config.Verbose && matchCount > 0 {
+		bt.logger.Info("translation snippets",
+			zap.Int("totalMatches", matchCount),
+			zap.String("firstSnippet", truncateText(translatedText, 200)))
+	}
+	
 	// 应用翻译结果
 	for _, node := range group.Nodes {
 		// 检查是否是上下文节点
@@ -343,13 +350,20 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 				node.Error = fmt.Errorf("translation too similar to original (similarity: %.2f)", similarity)
 				node.RetryCount++
 				
-				bt.logger.Warn("translation quality check failed",
-					zap.Int("nodeID", node.ID),
-					zap.Float64("similarity", similarity),
-					zap.Float64("threshold", similarityThreshold),
-					zap.String("protectedOriginal", truncateText(protectedOriginal, 50)),
-					zap.String("translatedContent", truncateText(translatedContent, 50)),
-					zap.String("restoredText", truncateText(restoredText, 50)))
+				if bt.config.Verbose {
+					bt.logger.Warn("translation quality check failed",
+						zap.Int("nodeID", node.ID),
+						zap.Float64("similarity", similarity),
+						zap.Float64("threshold", similarityThreshold),
+						zap.String("protectedOriginal", truncateText(protectedOriginal, 100)),
+						zap.String("translatedContent", truncateText(translatedContent, 100)),
+						zap.String("restoredText", truncateText(restoredText, 100)))
+				} else {
+					bt.logger.Warn("translation quality check failed",
+						zap.Int("nodeID", node.ID),
+						zap.Float64("similarity", similarity),
+						zap.Float64("threshold", similarityThreshold))
+				}
 			} else {
 				// 翻译成功
 				node.TranslatedText = restoredText
@@ -357,6 +371,14 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 				node.Error = nil
 				// 增加重试计数
 				node.RetryCount++
+				
+				// 在 verbose 模式下显示成功翻译的片段
+				if bt.config.Verbose {
+					bt.logger.Info("translation success",
+						zap.Int("nodeID", node.ID),
+						zap.String("original", truncateText(node.OriginalText, 100)),
+						zap.String("translated", truncateText(restoredText, 100)))
+				}
 			}
 		} else {
 			node.Status = document.NodeStatusFailed

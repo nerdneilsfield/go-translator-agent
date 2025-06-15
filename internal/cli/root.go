@@ -27,6 +27,7 @@ var (
 	useCache                   bool
 	cacheDir                   string
 	debugMode                  bool
+	verboseMode                bool // 显示详细日志
 	showVersion                bool
 	listModels                 bool
 	listFormats                bool
@@ -357,6 +358,9 @@ func updateConfigFromFlags(cmd *cobra.Command, cfg *config.Config) {
 	if cmd.Flags().Changed("debug") {
 		cfg.Debug = debugMode
 	}
+	if cmd.Flags().Changed("verbose") {
+		cfg.Verbose = verboseMode
+	}
 	if cmd.Flags().Changed("no-post-process") {
 		cfg.PostProcessMarkdown = !noPostProcess
 	}
@@ -464,6 +468,7 @@ func addGlobalFlags(rootCmd *cobra.Command) {
 	rootCmd.PersistentFlags().StringVar(&cacheDir, "cache-dir", "", "缓存目录路径")
 	rootCmd.PersistentFlags().BoolVar(&forceCacheRefresh, "refresh-cache", false, "强制刷新缓存")
 	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "启用调试模式")
+	rootCmd.PersistentFlags().BoolVarP(&verboseMode, "verbose", "v", false, "显示详细日志（包括翻译片段）")
 	rootCmd.PersistentFlags().BoolVar(&showVersion, "version", false, "显示版本信息")
 	rootCmd.PersistentFlags().BoolVar(&listModels, "list-models", false, "列出支持的模型")
 	rootCmd.PersistentFlags().BoolVar(&listFormats, "list-formats", false, "列出支持的文件格式")

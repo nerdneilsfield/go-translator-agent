@@ -57,6 +57,7 @@ type Config struct {
 	CacheDir                string                     `mapstructure:"cache_dir"`
 	UseCache                bool                       `mapstructure:"use_cache"`
 	Debug                   bool                       `mapstructure:"debug"`
+	Verbose                 bool                       `mapstructure:"verbose"`                   // 详细模式，显示翻译片段
 	RequestTimeout          int                        `mapstructure:"request_timeout"`           // 请求超时时间（秒）
 	Concurrency             int                        `mapstructure:"concurrency"`               // 并行翻译请求数
 	HtmlConcurrency         int                        `mapstructure:"html_concurrency"`          // 并行HTML翻译请求数(每个 html 内部翻译请求数)
