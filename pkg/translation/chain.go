@@ -193,7 +193,25 @@ func (c *chain) executeStep(ctx context.Context, step Step, input string, index 
 	}
 
 	result.Error = lastErr.Error()
-	return result, WrapError(lastErr, ErrCodeStep, fmt.Sprintf("step '%s' failed", step.GetName()))
+	
+	// 创建更详细的错误信息
+	stepName := step.GetName()
+	errorMsg := fmt.Sprintf("step '%s' failed after %d attempts", stepName, c.options.maxRetries+1)
+	
+	// 如果是 TranslationError，保留更多上下文
+	if transErr, ok := lastErr.(*TranslationError); ok {
+		errorMsg = fmt.Sprintf("step '%s' failed: %s", stepName, transErr.Message)
+		// 创建新的错误，保留原有的错误码和可重试状态
+		return result, &TranslationError{
+			Code:    transErr.Code,
+			Message: errorMsg,
+			Cause:   transErr.Cause,
+			Step:    stepName,
+			Retry:   transErr.Retry,
+		}
+	}
+	
+	return result, WrapError(lastErr, ErrCodeStep, errorMsg)
 }
 
 // step 翻译步骤实现
@@ -268,7 +286,10 @@ func (s *step) executeWithProvider(ctx context.Context, input StepInput) (*StepO
 	// 调用提供商
 	resp, err := s.provider.Translate(ctx, req)
 	if err != nil {
-		return nil, err
+		// 创建详细的错误信息
+		providerName := s.provider.GetName()
+		errorMsg := fmt.Sprintf("provider '%s' translation failed for step '%s'", providerName, s.config.Name)
+		return nil, WrapError(err, ErrCodeLLM, errorMsg)
 	}
 
 	output := &StepOutput{
@@ -331,7 +352,9 @@ func (s *step) executeWithLLM(ctx context.Context, input StepInput) (*StepOutput
 	// 调用LLM
 	resp, err := s.llmClient.Chat(ctx, req)
 	if err != nil {
-		return nil, err
+		// 创建详细的错误信息
+		errorMsg := fmt.Sprintf("LLM call failed for step '%s' with model '%s'", s.config.Name, s.config.Model)
+		return nil, WrapError(err, ErrCodeLLM, errorMsg)
 	}
 
 	output := &StepOutput{

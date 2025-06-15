@@ -176,10 +176,29 @@ func (bt *BatchTranslator) processGroups(ctx context.Context, groups []*document
 					zap.Int("groupSize", len(group.Nodes)))
 					
 				if err := bt.translateGroup(ctx, group); err != nil {
-					bt.logger.Warn("group translation failed", 
+					// 提取详细错误信息
+					var detailedError string
+					var errorType string
+					var isRetryable bool
+					
+					if transErr, ok := err.(*translation.TranslationError); ok {
+						detailedError = transErr.Error()
+						errorType = transErr.Code
+						isRetryable = transErr.IsRetryable()
+						if transErr.Cause != nil {
+							detailedError += " (cause: " + transErr.Cause.Error() + ")"
+						}
+					} else {
+						detailedError = err.Error()
+						errorType = "UNKNOWN_ERROR"
+					}
+					
+					bt.logger.Error("group translation failed", 
 						zap.Int("workerID", workerID),
-						zap.Error(err),
-						zap.Int("groupSize", len(group.Nodes)))
+						zap.Int("groupSize", len(group.Nodes)),
+						zap.String("errorType", errorType),
+						zap.String("detailedError", detailedError),
+						zap.Bool("retryable", isRetryable))
 					errChan <- err
 				}
 				
