@@ -116,32 +116,14 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 		statsDB = nil
 	}
 
-	// 创建翻译服务（暂时使用 nil，在实际使用时需要配置）
-	// 这样可以让我们的测试通过，但在实际翻译时会失败
-	var translationService translation.Service
-
-	// 在实际使用时需要取消注释并配置翻译服务：
-	// translationConfig := &translation.Config{
-	// 	SourceLanguage: cfg.SourceLang,
-	// 	TargetLanguage: cfg.TargetLang,
-	// 	ChunkSize:      cfg.ChunkSize,
-	// 	ChunkOverlap:   100, // 默认重叠
-	// 	MaxConcurrency: 3,   // 默认并发数
-	// 	MaxRetries:     cfg.RetryAttempts,
-	// 	RetryDelay:     time.Second,   // 默认重试延迟
-	// 	Timeout:        5 * time.Minute, // 默认超时
-	// 	EnableCache:    true,
-	// 	CacheDir:       filepath.Join(progressPath, "cache"),
-	// 	Metadata: map[string]interface{}{
-	// 		"country":              cfg.Country,
-	// 		"fast_mode":            false,
-	// 		"fast_mode_threshold":  100,
-	// 	},
-	// }
-	// translationService, err := translation.New(translationConfig)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to create translation service: %w", err)
-	// }
+	// 创建翻译服务
+	translationService, err := createTranslationService(cfg, progressPath, logger)
+	if err != nil {
+		logger.Warn("failed to create translation service, will use mock translation",
+			zap.Error(err))
+		// 继续使用 nil，在 translateNode 中会使用模拟翻译
+		translationService = nil
+	}
 
 	// 创建翻译后处理器
 	var postProcessor *TranslationPostProcessor

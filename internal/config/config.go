@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -141,6 +142,19 @@ func LoadConfig(configPath string) (*Config, error) {
 	var config Config
 	if err := v.Unmarshal(&config); err != nil {
 		return nil, err
+	}
+	
+	// Fix for models with dots in names: manually unmarshal models section
+	modelsRaw := v.GetStringMap("models")
+	if len(modelsRaw) > 0 {
+		config.ModelConfigs = make(map[string]ModelConfig)
+		for modelName := range modelsRaw {
+			var modelCfg ModelConfig
+			subKey := fmt.Sprintf("models.%s", modelName)
+			if err := v.UnmarshalKey(subKey, &modelCfg); err == nil {
+				config.ModelConfigs[modelName] = modelCfg
+			}
+		}
 	}
 
 	// 设置缓存目录（如果未设置）

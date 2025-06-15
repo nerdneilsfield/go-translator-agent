@@ -152,7 +152,7 @@ func New(cfg *config.Config, opts ...Option) (*Impl, error) {
 
 	log := logger.NewZapLogger(cfg.Debug)
 
-	models, err := initModels(cfg, log)
+	models, err := InitModels(cfg, log)
 	if err != nil {
 		return nil, fmt.Errorf("初始化模型失败: %w", err)
 	}

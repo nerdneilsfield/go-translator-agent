@@ -31,8 +31,8 @@ func (s *statusRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 	return resp, err
 }
 
-// initModels 初始化所有配置的语言模型
-func initModels(cfg *config.Config, log logger.Logger) (map[string]LLMClient, error) {
+// InitModels 初始化所有配置的语言模型
+func InitModels(cfg *config.Config, log logger.Logger) (map[string]LLMClient, error) {
 	models := make(map[string]LLMClient)
 
 	// 设置超时时间
@@ -41,11 +41,25 @@ func initModels(cfg *config.Config, log logger.Logger) (map[string]LLMClient, er
 		timeout = time.Duration(cfg.RequestTimeout) * time.Second
 	}
 
+	log.Info("InitModels called", zap.Int("model_configs_count", len(cfg.ModelConfigs)))
+
+	// Debug: List all model names
+	var modelNames []string
+	for modelName := range cfg.ModelConfigs {
+		modelNames = append(modelNames, modelName)
+	}
+	log.Info("All model names", zap.Strings("models", modelNames))
+
 	for modelName, modelCfg := range cfg.ModelConfigs {
 		var client LLMClient
 		var err error
 
 		log.Info("初始化模型客户端", zap.String("模型", modelName), zap.Any("配置", modelCfg.APIType))
+
+		if modelCfg.APIType == "" {
+			log.Error("模型配置缺少 APIType", zap.String("模型", modelName))
+			return nil, fmt.Errorf("模型 %s 缺少 api_type 配置", modelName)
+		}
 
 		switch modelCfg.APIType {
 		case "openai":
@@ -68,6 +82,10 @@ func initModels(cfg *config.Config, log logger.Logger) (map[string]LLMClient, er
 			// 临时返回 OpenAI 客户端（未来完善 Mistral 实现）
 			log.Warn(fmt.Sprintf("Mistral API 客户端尚未完全实现，使用 OpenAI 客户端代替: %s", modelName))
 			client, err = newOpenAIClient(modelCfg, log, timeout)
+		case "deepl", "deeplx", "google", "libretranslate":
+			// 跳过专业翻译服务，这些不是 LLM
+			log.Info("跳过专业翻译服务", zap.String("模型", modelName), zap.String("类型", modelCfg.APIType))
+			continue
 		default:
 			return nil, fmt.Errorf("不支持的模型类型: %s", modelCfg.APIType)
 		}
