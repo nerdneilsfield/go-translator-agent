@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
+	"github.com/nerdneilsfield/go-translator-agent/internal/testutils"
 	"github.com/nerdneilsfield/go-translator-agent/internal/translator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,7 +65,7 @@ func TestParallelTranslationPerformance(t *testing.T) {
 // measureTranslationTime 测量翻译时间
 func measureTranslationTime(t *testing.T, text string, concurrency int, progressPath string) time.Duration {
 	// 创建配置
-	cfg := createParallelTestConfig(concurrency, progressPath)
+	cfg := testutils.CreateParallelTestConfig(concurrency, progressPath)
 	log := logger.NewLogger(false)
 	
 	// 创建翻译协调器
@@ -89,13 +89,6 @@ func measureTranslationTime(t *testing.T, text string, concurrency int, progress
 	return elapsed
 }
 
-// createParallelTestConfig 创建并行测试配置
-func createParallelTestConfig(concurrency int, progressPath string) *config.Config {
-	cfg := createTestConfig(progressPath)
-	cfg.Concurrency = concurrency
-	cfg.ChunkSize = 500 // 较小的分块确保会产生多个块
-	return cfg
-}
 
 // generateLongTestText 生成长测试文本
 func generateLongTestText(numChunks, chunkSize int) string {
@@ -136,8 +129,8 @@ func TestParallelTranslationCorrectness(t *testing.T) {
 	testText := createIdentifiableTestText()
 	
 	// 测试串行和并行翻译的结果是否一致
-	cfg1 := createParallelTestConfig(1, progressPath+"_serial")
-	cfg2 := createParallelTestConfig(4, progressPath+"_parallel")
+	cfg1 := testutils.CreateParallelTestConfig(1, progressPath+"_serial")
+	cfg2 := testutils.CreateParallelTestConfig(4, progressPath+"_parallel")
 	
 	log := logger.NewLogger(false)
 	
@@ -192,7 +185,7 @@ func TestChunkProcessingOrder(t *testing.T) {
 	// 创建有序的测试文本
 	testText := createOrderedTestText()
 	
-	cfg := createParallelTestConfig(4, progressPath)
+	cfg := testutils.CreateParallelTestConfig(4, progressPath)
 	log := logger.NewLogger(false)
 	
 	coordinator, err := translator.NewTranslationCoordinator(cfg, log, progressPath)

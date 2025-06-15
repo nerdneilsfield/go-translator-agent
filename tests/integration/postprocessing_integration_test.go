@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
+	"github.com/nerdneilsfield/go-translator-agent/internal/testutils"
 	"github.com/nerdneilsfield/go-translator-agent/internal/translator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,16 +16,8 @@ import (
 
 func TestTranslationPostProcessingIntegration(t *testing.T) {
 	// 创建测试配置
-	cfg := &config.Config{
-		SourceLang:                "English",
-		TargetLang:                "Chinese",
-		EnablePostProcessing:      true,
-		GlossaryPath:              "../../configs/glossary_example.yaml",
-		ContentProtection:         true,
-		TerminologyConsistency:    true,
-		MixedLanguageSpacing:      true,
-		MachineTranslationCleanup: true,
-	}
+	tempDir := t.TempDir()
+	cfg := testutils.CreatePostProcessingTestConfig(tempDir)
 
 	// 创建logger
 	log := logger.NewLogger(false)
@@ -141,16 +133,8 @@ func TestGlossaryIntegration(t *testing.T) {
 		t.Skip("Glossary file not found, skipping glossary tests")
 	}
 
-	cfg := &config.Config{
-		SourceLang:                "English",
-		TargetLang:                "Chinese",
-		EnablePostProcessing:      true,
-		GlossaryPath:              glossaryPath,
-		ContentProtection:         true,
-		TerminologyConsistency:    true,
-		MixedLanguageSpacing:      true,
-		MachineTranslationCleanup: true,
-	}
+	cfg := testutils.CreatePostProcessingTestConfig(glossaryPath)
+	cfg.GlossaryPath = glossaryPath
 
 	log := logger.NewLogger(false)
 	processor := translator.NewTranslationPostProcessor(cfg, log)
@@ -190,15 +174,7 @@ func TestGlossaryIntegration(t *testing.T) {
 
 func TestTranslationCoordinatorWithPostProcessing(t *testing.T) {
 	// 创建测试配置
-	cfg := &config.Config{
-		SourceLang:           "English",
-		TargetLang:           "Chinese",
-		EnablePostProcessing: true,
-		ContentProtection:    true,
-		ChunkSize:            1000,
-		RetryAttempts:        1,
-		UseCache:             false,
-	}
+	cfg := testutils.CreatePostProcessingTestConfig("./temp")
 
 	log := logger.NewLogger(false)
 	progressPath := t.TempDir()
@@ -234,15 +210,13 @@ func TestTranslationCoordinatorWithPostProcessing(t *testing.T) {
 func TestConfigurationOverrides(t *testing.T) {
 	t.Run("Command Line Override Simulation", func(t *testing.T) {
 		// 创建基础配置
-		cfg := &config.Config{
-			SourceLang:                "English",
-			TargetLang:                "Chinese",
-			EnablePostProcessing:      false,
-			ContentProtection:         false,
-			TerminologyConsistency:    false,
-			MixedLanguageSpacing:      false,
-			MachineTranslationCleanup: false,
-		}
+		cfg := testutils.CreatePostProcessingTestConfig("./temp")
+		// 先关闭所有后处理功能以测试覆盖
+		cfg.EnablePostProcessing = false
+		cfg.ContentProtection = false
+		cfg.TerminologyConsistency = false
+		cfg.MixedLanguageSpacing = false
+		cfg.MachineTranslationCleanup = false
 
 		// 模拟命令行覆盖
 		cfg.EnablePostProcessing = true
@@ -264,15 +238,7 @@ func TestConfigurationOverrides(t *testing.T) {
 
 // 基准测试
 func BenchmarkPostProcessing(b *testing.B) {
-	cfg := &config.Config{
-		SourceLang:                "English",
-		TargetLang:                "Chinese",
-		EnablePostProcessing:      true,
-		ContentProtection:         true,
-		TerminologyConsistency:    true,
-		MixedLanguageSpacing:      true,
-		MachineTranslationCleanup: true,
-	}
+	cfg := testutils.CreatePostProcessingTestConfig("./temp")
 
 	log := zap.NewNop()
 	processor := translator.NewTranslationPostProcessor(cfg, log)

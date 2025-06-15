@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
+	"github.com/nerdneilsfield/go-translator-agent/internal/testutils"
 	"github.com/nerdneilsfield/go-translator-agent/internal/translator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,7 +28,7 @@ func TestFullWorkflowIntegration(t *testing.T) {
 	progressPath := filepath.Join(tempDir, "progress")
 	
 	// 创建测试配置
-	cfg := createTestConfig(progressPath)
+	cfg := testutils.CreateIntegrationTestConfig(progressPath)
 	
 	// 创建logger
 	log := logger.NewLogger(false)
@@ -325,65 +325,6 @@ Translation: This is a translation marker.
 	}
 }
 
-// createTestConfig 创建测试配置
-func createTestConfig(progressPath string) *config.Config {
-	return &config.Config{
-		SourceLang:            "English",
-		TargetLang:            "Chinese",
-		DefaultModelName:      "test-model",
-		ChunkSize:             1000,
-		Concurrency:           2,
-		RetryAttempts:         1,
-		TranslationTimeout:    30,
-		UseCache:              false,
-		
-		// 启用格式修复
-		EnableFormatFix:      true,
-		FormatFixInteractive: true,
-		
-		// 启用后处理
-		EnablePostProcessing:      true,
-		GlossaryPath:             "../../configs/glossary_example.yaml",
-		ContentProtection:         true,
-		TerminologyConsistency:    true,
-		MixedLanguageSpacing:      true,
-		MachineTranslationCleanup: true,
-		
-		// 步骤集配置
-		ActiveStepSet: "test-stepset",
-		StepSets: map[string]config.StepSetConfig{
-			"test-stepset": {
-				ID:   "test-stepset",
-				Name: "Test Step Set",
-				InitialTranslation: config.StepConfig{
-					Name:        "initial",
-					ModelName:   "test-model",
-					Temperature: 0.3,
-				},
-				Reflection: config.StepConfig{
-					Name:        "reflect",
-					ModelName:   "test-model",
-					Temperature: 0.1,
-				},
-				Improvement: config.StepConfig{
-					Name:        "improve",
-					ModelName:   "test-model",
-					Temperature: 0.3,
-				},
-			},
-		},
-		
-		// 模型配置
-		ModelConfigs: map[string]config.ModelConfig{
-			"test-model": {
-				Name:    "test-model",
-				APIType: "openai",
-				BaseURL: "http://localhost:8080",
-				Key:     "test-key",
-			},
-		},
-	}
-}
 
 // truncateString 截断字符串用于日志输出
 func truncateString(s string, maxLen int) string {
@@ -398,7 +339,7 @@ func TestWorkflowComponentsIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	progressPath := filepath.Join(tempDir, "progress")
 	
-	cfg := createTestConfig(progressPath)
+	cfg := testutils.CreateIntegrationTestConfig(progressPath)
 	log := logger.NewLogger(false)
 	
 	t.Run("Translation Coordinator Creation", func(t *testing.T) {
@@ -436,7 +377,7 @@ func TestWorkflowErrorHandling(t *testing.T) {
 	tempDir := t.TempDir()
 	progressPath := filepath.Join(tempDir, "progress")
 	
-	cfg := createTestConfig(progressPath)
+	cfg := testutils.CreateIntegrationTestConfig(progressPath)
 	log := logger.NewLogger(false)
 	
 	coordinator, err := translator.NewTranslationCoordinator(cfg, log, progressPath)
