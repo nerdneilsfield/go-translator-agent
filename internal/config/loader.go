@@ -176,21 +176,18 @@ func MigrateV1ToV2Config(v1 *Config) *StepSetConfigV2 {
 		}
 	}
 
-	var defaultStepSet StepSetConfig
+	var defaultStepSet StepSetConfigV2
 	if stepSet, exists := v1.StepSets[defaultStepSetName]; exists {
 		defaultStepSet = stepSet
 	} else {
 		// 创建默认步骤集
-		defaultStepSet = StepSetConfig{
+		defaultStepSet = StepSetConfigV2{
 			ID:   "default",
 			Name: "Default",
 		}
 	}
 
-	// 转换为新格式
-	v2 := defaultStepSet.ToStepSetConfigV2()
-
-	return &v2
+	return &defaultStepSet
 }
 
 // SaveStepSetConfigV2 保存 V2 配置

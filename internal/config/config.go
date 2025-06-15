@@ -25,14 +25,14 @@ type ModelConfig struct {
 	ReasoningTags    []string `mapstructure:"reasoning_tags"`     // 推理过程标记（如 ["<think>", "</think>"]）
 }
 
-// StepConfig 保存步骤配置
+// Deprecated: Use StepConfigV2 instead
 type StepConfig struct {
 	Name        string  `mapstructure:"name"`
 	ModelName   string  `mapstructure:"model_name"`
 	Temperature float64 `mapstructure:"temperature"`
 }
 
-// StepSetConfig 保存步骤集配置
+// Deprecated: Use StepSetConfigV2 instead
 type StepSetConfig struct {
 	ID                 string     `mapstructure:"id"`
 	Name               string     `mapstructure:"name"`
@@ -50,8 +50,7 @@ type Config struct {
 	Country                 string                     `mapstructure:"country"`
 	DefaultModelName        string                     `mapstructure:"default_model_name"`
 	ModelConfigs            map[string]ModelConfig     `mapstructure:"models"`
-	StepSets                map[string]StepSetConfig   `mapstructure:"step_sets"`
-	StepSetsV2              map[string]StepSetConfigV2 `mapstructure:"step_sets_v2"` // 新格式的步骤集
+	StepSets                map[string]StepSetConfigV2 `mapstructure:"step_sets"` // 步骤集配置
 	ActiveStepSet           string                     `mapstructure:"active_step_set"`
 	MaxTokensPerChunk       int                        `mapstructure:"max_tokens_per_chunk"`
 	CacheDir                string                     `mapstructure:"cache_dir"`
@@ -208,8 +207,7 @@ func NewDefaultConfig() *Config {
 		Country:                 "China",
 		DefaultModelName:        "gpt-3.5-turbo",
 		ModelConfigs:            DefaultModelConfigs(),
-		StepSets:                DefaultStepSets(),
-		StepSetsV2:              GetDefaultStepSetsV2(),
+		StepSets:                GetDefaultStepSetsV2(),
 		ActiveStepSet:           "basic",
 		MaxTokensPerChunk:       2000,
 		CacheDir:                cacheDir,
@@ -393,7 +391,7 @@ func DefaultModelConfigs() map[string]ModelConfig {
 	}
 }
 
-// DefaultStepSets 返回默认步骤集
+// Deprecated: Use GetDefaultStepSetsV2 instead
 func DefaultStepSets() map[string]StepSetConfig {
 	return map[string]StepSetConfig{
 		"basic": {
@@ -506,8 +504,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("format_fix_html", false)        // HTML修复暂未实现
 	v.SetDefault("format_fix_epub", false)        // EPUB修复暂未实现
 
-	// 设置默认的新格式步骤集
-	v.SetDefault("step_sets_v2", GetDefaultStepSetsV2())
+	// 设置默认的步骤集
+	v.SetDefault("step_sets", GetDefaultStepSetsV2())
 }
 
 // structToMap 将结构体转换为map
@@ -519,7 +517,6 @@ func structToMap(config *Config) map[string]interface{} {
 		"default_model_name":        config.DefaultModelName,
 		"models":                    config.ModelConfigs,
 		"step_sets":                 config.StepSets,
-		"step_sets_v2":              config.StepSetsV2,
 		"active_step_set":           config.ActiveStepSet,
 		"max_tokens_per_chunk":      config.MaxTokensPerChunk,
 		"cache_dir":                 config.CacheDir,

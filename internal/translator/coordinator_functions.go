@@ -19,18 +19,25 @@ func createTranslationService(cfg *config.Config, progressPath string, logger *z
 	}
 
 	// 查找活动的步骤集
-	activeStepSet, exists := cfg.StepSets[cfg.ActiveStepSet]
+	stepSetName := cfg.ActiveStepSet
+	
+	// 检查步骤集是否存在
+	stepSet, exists := cfg.StepSets[stepSetName]
 	if !exists {
-		return nil, fmt.Errorf("step set '%s' not found", cfg.ActiveStepSet)
+		return nil, fmt.Errorf("step set '%s' not found", stepSetName)
 	}
 
-	// 使用初始翻译步骤的模型配置
-	firstStep := activeStepSet.InitialTranslation
+	if len(stepSet.Steps) == 0 {
+		return nil, fmt.Errorf("step set '%s' has no steps configured", stepSetName)
+	}
+
+	// 使用第一个步骤的模型配置
+	firstStep := stepSet.Steps[0]
 	modelConfig, exists := cfg.ModelConfigs[firstStep.ModelName]
 	if !exists {
 		return nil, fmt.Errorf("model '%s' not found in configuration", firstStep.ModelName)
 	}
-
+	
 	// 创建 Zap 日志包装器
 	loggerWrapper := &zapLoggerWrapper{logger: logger}
 
@@ -41,7 +48,7 @@ func createTranslationService(cfg *config.Config, progressPath string, logger *z
 	}
 
 	// 创建翻译服务
-	logger.Info("creating translation service")
+	logger.Info("creating translation service with step set", zap.String("step_set", stepSetName))
 	
 	translationConfig := &translation.Config{
 		SourceLanguage: cfg.SourceLang,

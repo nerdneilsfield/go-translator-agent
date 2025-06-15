@@ -10,7 +10,7 @@ country: "China"
 default_model_name: "gpt-3.5-turbo"
 
 # 活跃步骤集
-active_step_set: "llm_translation"
+active_step_set: "professional"
 
 # 性能和并发设置
 max_tokens_per_chunk: 2000
@@ -266,64 +266,8 @@ models:
     price_unit: "USD"
     is_reasoning: false
 
-# 步骤集配置
+# 步骤集配置（新格式）
 step_sets:
-  basic:
-    id: "basic"
-    name: "基本翻译"
-    description: "基本的三步翻译过程"
-    initial_translation:
-      name: "初始翻译"
-      model_name: "gpt-3.5-turbo"
-      temperature: 0.5
-    reflection:
-      name: "反思"
-      model_name: "gpt-3.5-turbo"
-      temperature: 0.3
-    improvement:
-      name: "改进"
-      model_name: "gpt-3.5-turbo"
-      temperature: 0.5
-    fast_mode_threshold: 300
-
-  quality:
-    id: "quality"
-    name: "高质量翻译"
-    description: "使用高级模型的翻译过程"
-    initial_translation:
-      name: "初始翻译"
-      model_name: "gpt-4o"
-      temperature: 0.5
-    reflection:
-      name: "反思"
-      model_name: "claude-3-opus"
-      temperature: 0.3
-    improvement:
-      name: "改进"
-      model_name: "gpt-4o"
-      temperature: 0.5
-    fast_mode_threshold: 300
-
-  reasoning:
-    id: "reasoning"
-    name: "推理翻译"
-    description: "使用推理模型的深度翻译"
-    initial_translation:
-      name: "推理翻译"
-      model_name: "deepseek-r1"
-      temperature: 0.3
-    reflection:
-      name: "质量评估"
-      model_name: "gpt-4o"
-      temperature: 0.2
-    improvement:
-      name: "最终优化"
-      model_name: "o1-mini"
-      temperature: 0.3
-    fast_mode_threshold: 100
-
-# Step Sets V2 配置（新格式）
-step_sets_v2:
   professional:
     id: "professional"
     name: "专业翻译"

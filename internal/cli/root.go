@@ -28,6 +28,7 @@ var (
 	cacheDir                   string
 	debugMode                  bool
 	verboseMode                bool // 显示详细日志
+	dryRun                     bool // 预演模式，只显示将要执行的操作
 	showVersion                bool
 	listModels                 bool
 	listFormats                bool
@@ -82,10 +83,10 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			if showVersion || listModels || listFormats || listStepSets || listCache || listProviders() || listFormatFixers || showConfig {
 				return nil
 			}
-			// 格式检查模式需要至少一个参数
-			if checkFormatOnly {
+			// 格式检查模式或预演模式需要至少一个参数
+			if checkFormatOnly || dryRun {
 				if len(args) < 1 {
-					return fmt.Errorf("check-format-only mode requires at least 1 file argument")
+					return fmt.Errorf("check-format-only or dry-run mode requires at least 1 file argument")
 				}
 				return nil
 			}
@@ -126,6 +127,12 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			// 处理格式检查模式
 			if checkFormatOnly {
 				handleFormatCheckOnly(cmd, args, log)
+				return
+			}
+
+			// 处理预演模式
+			if dryRun {
+				handleDryRun(cmd, args, log)
 				return
 			}
 
@@ -310,10 +317,10 @@ func handleListCommands(cmd *cobra.Command, args []string, log *zap.Logger) {
 	if listStepSets {
 		fmt.Println("可用的步骤集:")
 
-		// 显示新格式的步骤集
-		if cfg.StepSetsV2 != nil && len(cfg.StepSetsV2) > 0 {
-			fmt.Println("\n新格式步骤集（支持多提供商）:")
-			for _, ss := range cfg.StepSetsV2 {
+		// 显示步骤集
+		if cfg.StepSets != nil && len(cfg.StepSets) > 0 {
+			fmt.Println("\n步骤集配置:")
+			for _, ss := range cfg.StepSets {
 				fmt.Printf("  - %s: %s\n", ss.ID, ss.Description)
 				for i, step := range ss.Steps {
 					fmt.Printf("      步骤 %d: %s (提供商: %s, 模型: %s)\n",
@@ -433,24 +440,38 @@ func updateConfigForProvider(cfg *config.Config, provider string) {
 	modelName := getDefaultModelForProvider(provider)
 
 	// 创建新的步骤集
-	cfg.StepSets[providerStepSet] = config.StepSetConfig{
+	cfg.StepSets[providerStepSet] = config.StepSetConfigV2{
 		ID:          providerStepSet,
 		Name:        fmt.Sprintf("使用 %s 提供商", provider),
 		Description: fmt.Sprintf("使用 %s 提供商进行翻译", provider),
-		InitialTranslation: config.StepConfig{
-			Name:        "初始翻译",
-			ModelName:   modelName,
-			Temperature: 0.5,
-		},
-		Reflection: config.StepConfig{
-			Name:        "反思",
-			ModelName:   modelName,
-			Temperature: 0.3,
-		},
-		Improvement: config.StepConfig{
-			Name:        "改进",
-			ModelName:   modelName,
-			Temperature: 0.5,
+		Steps: []config.StepConfigV2{
+			{
+				Name:        "initial_translation",
+				Provider:    provider,
+				ModelName:   modelName,
+				Temperature: 0.5,
+				MaxTokens:   4096,
+				Prompt:      "Translate the following {{source_language}} text to {{target_language}}:\n\n{{text}}",
+				SystemRole:  "You are a professional translator.",
+			},
+			{
+				Name:        "reflection",
+				Provider:    provider,
+				ModelName:   modelName,
+				Temperature: 0.3,
+				MaxTokens:   2048,
+				Prompt:      "Review the translation and identify any issues:\n\nOriginal: {{original_text}}\nTranslation: {{translation}}",
+				SystemRole:  "You are a translation quality reviewer.",
+			},
+			{
+				Name:        "improvement",
+				Provider:    provider,
+				ModelName:   modelName,
+				Temperature: 0.5,
+				MaxTokens:   4096,
+				Prompt:      "Improve the translation based on feedback:\n\nOriginal: {{original_text}}\nTranslation: {{translation}}\nFeedback: {{feedback}}",
+				SystemRole:  "You are a professional translator.",
+			},
 		},
 		FastModeThreshold: 300,
 	}
@@ -490,6 +511,7 @@ func addGlobalFlags(rootCmd *cobra.Command) {
 	rootCmd.PersistentFlags().BoolVar(&forceCacheRefresh, "refresh-cache", false, "强制刷新缓存")
 	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "启用调试模式")
 	rootCmd.PersistentFlags().BoolVarP(&verboseMode, "verbose", "v", false, "显示详细日志（包括翻译片段）")
+	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "预演模式，只显示将要执行的操作，不实际进行翻译")
 	rootCmd.PersistentFlags().BoolVar(&showVersion, "version", false, "显示版本信息")
 	rootCmd.PersistentFlags().BoolVar(&listModels, "list-models", false, "列出支持的模型")
 	rootCmd.PersistentFlags().BoolVar(&listFormats, "list-formats", false, "列出支持的文件格式")
@@ -759,7 +781,7 @@ func handleShowConfig(cmd *cobra.Command, cfg *config.Config, log *zap.Logger) {
 	activeStepSetID := cfg.ActiveStepSet
 
 	// 检查新格式步骤集
-	if stepSet, exists := cfg.StepSetsV2[activeStepSetID]; exists {
+	if stepSet, exists := cfg.StepSets[activeStepSetID]; exists {
 		fmt.Printf("  名称: %s\n", stepSet.Name)
 		fmt.Printf("  描述: %s\n", stepSet.Description)
 		fmt.Printf("  快速模式阈值: %d 字符\n", stepSet.FastModeThreshold)
@@ -793,4 +815,103 @@ func handleShowConfig(cmd *cobra.Command, cfg *config.Config, log *zap.Logger) {
 	fmt.Printf("  翻译图表标题: %t\n", cfg.TranslateFigureCaptions)
 	fmt.Printf("  修复数学公式: %t\n", cfg.FixMathFormulas)
 	fmt.Printf("  修复表格格式: %t\n", cfg.FixTableFormat)
+}
+
+// handleDryRun 处理预演模式
+func handleDryRun(cmd *cobra.Command, args []string, log *zap.Logger) {
+	inputFile := args[0]
+	
+	// 加载配置
+	cfg, err := config.LoadConfig(cfgFile)
+	if err != nil {
+		log.Error("加载配置失败", zap.Error(err))
+		// 使用默认配置作为回退
+		cfg = config.NewDefaultConfig()
+	}
+
+	// 应用命令行覆盖
+	updateConfigFromFlags(cmd, cfg)
+
+	fmt.Println("🎭 预演模式 - 显示将要执行的操作")
+	fmt.Println("============================================================")
+
+	// 显示输入文件信息
+	fmt.Printf("📄 输入文件: %s\n", inputFile)
+	
+	// 检查文件是否存在
+	if _, err := os.Stat(inputFile); os.IsNotExist(err) {
+		fmt.Printf("❌ 错误: 输入文件不存在\n")
+		return
+	}
+
+	// 获取文件信息
+	fileInfo, err := os.Stat(inputFile)
+	if err != nil {
+		fmt.Printf("❌ 错误: 无法获取文件信息: %v\n", err)
+		return
+	}
+	
+	fmt.Printf("📏 文件大小: %d 字节\n", fileInfo.Size())
+	
+	// 显示输出文件
+	outputFile := ""
+	if len(args) > 1 {
+		outputFile = args[1]
+	} else {
+		// 生成默认输出文件名
+		outputFile = generateDefaultOutputFile(inputFile)
+	}
+	fmt.Printf("📝 输出文件: %s\n", outputFile)
+
+	// 显示翻译配置
+	fmt.Printf("\n🔧 翻译配置:\n")
+	fmt.Printf("  源语言: %s\n", cfg.SourceLang)
+	fmt.Printf("  目标语言: %s\n", cfg.TargetLang)
+	fmt.Printf("  国家/地区: %s\n", cfg.Country)
+	fmt.Printf("  活动步骤集: %s\n", cfg.ActiveStepSet)
+
+	// 显示步骤集详情
+	if stepSet, exists := cfg.StepSets[cfg.ActiveStepSet]; exists {
+		fmt.Printf("\n📋 步骤集详情: %s\n", stepSet.Name)
+		fmt.Printf("  描述: %s\n", stepSet.Description)
+		fmt.Printf("  步骤数量: %d\n", len(stepSet.Steps))
+		
+		for i, step := range stepSet.Steps {
+			fmt.Printf("    步骤 %d - %s:\n", i+1, step.Name)
+			fmt.Printf("      提供商: %s\n", step.Provider)
+			fmt.Printf("      模型: %s\n", step.ModelName)
+			fmt.Printf("      温度: %.2f\n", step.Temperature)
+			if step.MaxTokens > 0 {
+				fmt.Printf("      最大令牌: %d\n", step.MaxTokens)
+			}
+		}
+	} else {
+		fmt.Printf("⚠️ 警告: 步骤集 '%s' 未找到\n", cfg.ActiveStepSet)
+	}
+
+	// 显示处理配置
+	fmt.Printf("\n⚡ 处理配置:\n")
+	fmt.Printf("  并行度: %d\n", cfg.Concurrency)
+	fmt.Printf("  块大小: %d 字符\n", cfg.ChunkSize)
+	fmt.Printf("  使用缓存: %t\n", cfg.UseCache)
+	if cfg.UseCache {
+		fmt.Printf("  缓存目录: %s\n", cfg.CacheDir)
+	}
+
+	// 显示格式修复配置
+	if cfg.EnableFormatFix {
+		fmt.Printf("\n🔧 格式修复:\n")
+		fmt.Printf("  翻译前修复: %t\n", cfg.PreTranslationFix)
+		fmt.Printf("  翻译后修复: %t\n", cfg.PostTranslationFix)
+		fmt.Printf("  交互式修复: %t\n", cfg.FormatFixInteractive)
+	}
+
+	fmt.Printf("\n✅ 预演完成 - 使用相同参数但不加 --dry-run 来执行实际翻译\n")
+}
+
+// generateDefaultOutputFile 生成默认输出文件名
+func generateDefaultOutputFile(inputFile string) string {
+	ext := filepath.Ext(inputFile)
+	base := strings.TrimSuffix(inputFile, ext)
+	return base + "_translated" + ext
 }
