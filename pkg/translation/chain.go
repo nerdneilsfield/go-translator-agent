@@ -386,17 +386,49 @@ func (s *step) preparePrompt(input StepInput) string {
 		prompt = strings.ReplaceAll(prompt, k, v)
 	}
 
-
 	// 检查上下文中是否有额外的保护说明标记
+	// 将保护说明插入到 "Please translate" 之前
 	if input.Context != nil {
-		// 如果是批量翻译，添加节点标记保护说明
-		if isBatch, ok := input.Context["_is_batch"]; ok && isBatch == "true" {
-			prompt = AppendNodeMarkerPrompt(prompt, DefaultNodeMarkerConfig)
-		}
+		var preserveInstructions []string
 		
 		// 如果有内容保护配置，添加保护块说明
 		if preserveEnabled, ok := input.Context["_preserve_enabled"]; ok && preserveEnabled == "true" {
-			prompt = AppendPreservePrompt(prompt, DefaultPreserveConfig)
+			preserveInstructions = append(preserveInstructions, GetPreservePrompt(DefaultPreserveConfig))
+		}
+		
+		// 如果是批量翻译，添加节点标记保护说明
+		if isBatch, ok := input.Context["_is_batch"]; ok && isBatch == "true" {
+			preserveInstructions = append(preserveInstructions, GetNodeMarkerPrompt(DefaultNodeMarkerConfig))
+		}
+		
+		// 插入保护说明到合适的位置
+		if len(preserveInstructions) > 0 {
+			// 查找 "Please translate" 或类似的标记
+			markers := []string{
+				"Please translate the following text:",
+				"Please translate:",
+				"Translate the following text:",
+				"Translate:",
+				"请翻译以下文本：",
+				"请翻译：",
+			}
+			
+			inserted := false
+			for _, marker := range markers {
+				if strings.Contains(prompt, marker) {
+					instructions := strings.Join(preserveInstructions, "\n\n")
+					prompt = strings.Replace(prompt, marker, instructions + "\n\n" + marker, 1)
+					inserted = true
+					break
+				}
+			}
+			
+			// 如果没找到标记，添加到末尾
+			if !inserted {
+				for _, instruction := range preserveInstructions {
+					prompt = prompt + "\n\n" + instruction
+				}
+			}
 		}
 	}
 

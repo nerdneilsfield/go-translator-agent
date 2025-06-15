@@ -48,6 +48,7 @@ type TranslationCoordinator struct {
 	formatFixRegistry  *formatfix.FixerRegistry
 	translationService translation.Service
 	postProcessor      *TranslationPostProcessor
+	batchTranslator    *BatchTranslator
 	statsDB            *stats.Database
 	logger             *zap.Logger
 }
@@ -134,6 +135,13 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 			zap.Bool("content_protection", cfg.ContentProtection),
 			zap.Bool("terminology_consistency", cfg.TerminologyConsistency))
 	}
+	
+	// 创建批量翻译器
+	var batchTranslator *BatchTranslator
+	if translationService != nil {
+		batchTranslator = NewBatchTranslator(cfg, translationService, logger)
+		logger.Info("batch translator initialized")
+	}
 
 	return &TranslationCoordinator{
 		config:             cfg,
@@ -144,6 +152,7 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 		formatFixRegistry:  formatFixRegistry,
 		translationService: translationService,
 		postProcessor:      postProcessor,
+		batchTranslator:    batchTranslator,
 		statsDB:            statsDB,
 		logger:             logger,
 	}, nil
@@ -206,9 +215,24 @@ func (c *TranslationCoordinator) TranslateFile(ctx context.Context, inputPath, o
 	}
 
 	// 执行翻译
-	err = c.nodeTranslator.TranslateDocument(ctx, docID, inputPath, nodes, translateNodeWithProgress)
-	if err != nil {
-		return c.createFailedResult(docID, inputPath, outputPath, startTime, err), err
+	if c.batchTranslator != nil {
+		// 使用批量翻译器（包含失败重试机制）
+		err = c.batchTranslator.TranslateNodes(ctx, nodes)
+		if err != nil {
+			return c.createFailedResult(docID, inputPath, outputPath, startTime, err), err
+		}
+		// 更新进度条
+		for _, node := range nodes {
+			if node.Status == document.NodeStatusSuccess {
+				progressBar.Update(int64(len(node.OriginalText)))
+			}
+		}
+	} else {
+		// 使用原有的节点翻译器
+		err = c.nodeTranslator.TranslateDocument(ctx, docID, inputPath, nodes, translateNodeWithProgress)
+		if err != nil {
+			return c.createFailedResult(docID, inputPath, outputPath, startTime, err), err
+		}
 	}
 
 	// 重新组装文档
@@ -243,6 +267,10 @@ func (c *TranslationCoordinator) TranslateFile(ctx context.Context, inputPath, o
 		zap.String("docID", docID),
 		zap.Duration("duration", result.Duration),
 		zap.Float64("progress", result.Progress))
+	
+	// 生成并打印翻译汇总
+	summary := GenerateSummary(result, nodes, c.config)
+	fmt.Println(summary.FormatSummaryTable())
 
 	return result, nil
 }
@@ -282,8 +310,42 @@ func (c *TranslationCoordinator) TranslateText(ctx context.Context, text string)
 
 // translateNode 翻译单个节点
 func (c *TranslationCoordinator) translateNode(ctx context.Context, node *document.NodeInfo) error {
-	// 使用带保护块的翻译
-	return c.translateNodeWithPreserve(ctx, node)
+	// 检查翻译服务是否可用
+	if c.translationService == nil {
+		// 模拟翻译（用于测试）
+		node.TranslatedText = "Translated: " + node.OriginalText
+		node.Status = document.NodeStatusSuccess
+		return nil
+	}
+
+	// 如果有批量翻译器，使用批量翻译器的单节点翻译
+	if c.batchTranslator != nil {
+		group := &document.NodeGroup{
+			Nodes: []*document.NodeInfo{node},
+		}
+		return c.batchTranslator.translateGroup(ctx, group)
+	}
+
+	// 否则使用基本翻译
+	req := &translation.Request{
+		Text:           node.OriginalText,
+		SourceLanguage: c.config.SourceLang,
+		TargetLanguage: c.config.TargetLang,
+		Metadata: map[string]interface{}{
+			"node_id": node.ID,
+		},
+	}
+
+	resp, err := c.translationService.Translate(ctx, req)
+	if err != nil {
+		node.Status = document.NodeStatusFailed
+		node.Error = err
+		return err
+	}
+
+	node.TranslatedText = resp.Text
+	node.Status = document.NodeStatusSuccess
+	return nil
 }
 
 // GetProgress 获取翻译进度

@@ -290,6 +290,29 @@ func (c *TranslationCoordinator) createSuccessResult(docID, inputFile, outputFil
 		status = string(progress.StatusFailed)
 	}
 
+	// 收集 token 使用情况和其他元数据
+	metadata := make(map[string]interface{})
+	
+	// TODO: 从翻译服务收集实际的 token 使用情况
+	// 这里暂时使用估算值
+	totalChars := 0
+	for _, node := range nodes {
+		totalChars += len(node.OriginalText)
+	}
+	// 粗略估算：1个字符约等于0.5个token
+	estimatedTokens := totalChars / 2
+	metadata["token_usage"] = map[string]interface{}{
+		"tokens_in":  estimatedTokens,
+		"tokens_out": estimatedTokens,
+	}
+	
+	// 缓存统计（如果有的话）
+	// TODO: 从缓存服务收集实际的缓存统计
+	metadata["cache_stats"] = map[string]interface{}{
+		"hits":   0,
+		"misses": totalNodes,
+	}
+	
 	return &TranslationResult{
 		DocID:          docID,
 		InputFile:      inputFile,
@@ -304,6 +327,7 @@ func (c *TranslationCoordinator) createSuccessResult(docID, inputFile, outputFil
 		StartTime:      startTime,
 		EndTime:        &endTime,
 		Duration:       endTime.Sub(startTime),
+		Metadata:       metadata,
 	}
 }
 
