@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/dlclark/regexp2"
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
@@ -31,18 +32,64 @@ func NewBatchTranslator(cfg *config.Config, service translation.Service, logger 
 	}
 }
 
-// TranslateNodes 翻译所有节点（简化版，不包含重试逻辑）
+// TranslateNodes 翻译所有节点（并行版本）
 func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document.NodeInfo) error {
 	// 批量翻译所有节点
 	bt.logger.Info("starting batch translation", zap.Int("totalNodes", len(nodes)))
 	
 	// 分组翻译
 	groups := bt.groupNodes(nodes)
+	bt.logger.Info("grouped nodes for translation", 
+		zap.Int("groups", len(groups)),
+		zap.Int("concurrency", bt.config.Concurrency))
+	
+	// 使用 goroutine 池并行处理
+	concurrency := bt.config.Concurrency
+	if concurrency <= 0 {
+		concurrency = 4
+	}
+	
+	// 创建工作队列
+	groupChan := make(chan *document.NodeGroup, len(groups))
+	errChan := make(chan error, len(groups))
+	
+	// 将所有组放入队列
 	for _, group := range groups {
-		if err := bt.translateGroup(ctx, group); err != nil {
-			bt.logger.Warn("group translation failed", 
-				zap.Error(err),
-				zap.Int("groupSize", len(group.Nodes)))
+		groupChan <- group
+	}
+	close(groupChan)
+	
+	// 启动工作 goroutines
+	var wg sync.WaitGroup
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for group := range groupChan {
+				bt.logger.Debug("worker processing group",
+					zap.Int("workerID", workerID),
+					zap.Int("groupSize", len(group.Nodes)))
+					
+				if err := bt.translateGroup(ctx, group); err != nil {
+					bt.logger.Warn("group translation failed", 
+						zap.Int("workerID", workerID),
+						zap.Error(err),
+						zap.Int("groupSize", len(group.Nodes)))
+					errChan <- err
+				}
+			}
+		}(i)
+	}
+	
+	// 等待所有工作完成
+	wg.Wait()
+	close(errChan)
+	
+	// 收集错误
+	var lastErr error
+	for err := range errChan {
+		if err != nil {
+			lastErr = err
 		}
 	}
 	
@@ -59,7 +106,7 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 		zap.Int("successNodes", successCount),
 		zap.Int("failedNodes", len(nodes)-successCount))
 	
-	return nil
+	return lastErr
 }
 
 // translateGroup 翻译一个节点组
