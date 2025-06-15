@@ -184,6 +184,37 @@ models:
     is_reasoning: true
     reasoning_tags: ["<think>", "</think>"]
 
+  # DeepL 专业翻译服务
+  deepl:
+    name: "deepl"
+    model_id: "deepl"
+    api_type: "deepl"
+    base_url: "https://api.deepl.com/v2"
+    key: "${DEEPL_API_KEY}"
+
+  # DeepLX 免费翻译服务
+  deeplx:
+    name: "deeplx"
+    model_id: "deeplx"
+    api_type: "deeplx"
+    base_url: "http://localhost:1188"
+    key: ""  # DeepLX 不需要密钥
+
+  # Google 翻译服务
+  google-translate:
+    name: "google-translate"
+    model_id: "google-translate"
+    api_type: "google"
+    key: "${GOOGLE_API_KEY}"
+
+  # LibreTranslate 开源翻译服务
+  libretranslate:
+    name: "libretranslate"
+    model_id: "libretranslate"
+    api_type: "libretranslate"
+    base_url: "https://libretranslate.com"
+    key: "${LIBRETRANSLATE_API_KEY}"  # 某些实例可能需要
+
   # 本地测试模型
   test-model:
     name: "test-model"
@@ -291,3 +322,183 @@ step_sets:
       model_name: "test-model"
       temperature: 0.3
     fast_mode_threshold: 300
+
+# 新格式步骤集配置 (Step Sets V2)
+step_sets_v2:
+  # 专业翻译模式 - 使用 DeepL + AI 优化
+  professional:
+    id: "professional"
+    name: "专业翻译"
+    description: "使用 DeepL 专业翻译服务 + GPT-4 优化"
+    steps:
+      - name: "initial_translation"
+        provider: "deepl"
+        model_name: "deepl"
+        temperature: 0
+        prompt: "{{text}}"  # DeepL 只需要原文
+      
+      - name: "ai_review"
+        provider: "openai"
+        model_name: "gpt-4"
+        temperature: 0.2
+        max_tokens: 3000
+        prompt: |
+          作为一位精通{{source}}和{{target}}的语言专家，请评估这个由 DeepL 生成的翻译：
+          
+          原文（{{source}}）：
+          {{original_text}}
+          
+          DeepL 翻译（{{target}}）：
+          {{initial_translation}}
+          
+          请从以下几个方面进行评估：
+          1. 准确性：翻译是否准确传达了原文的含义？
+          2. 流畅性：译文在{{target}}中是否自然流畅？
+          3. 文化适应性：是否考虑了文化差异？
+          4. 专业术语：专业术语的翻译是否恰当？
+          
+          如果有任何问题，请提供具体的改进建议。
+        system_role: "你是一位资深的翻译评论家，精通{{source}}和{{target}}两种语言。"
+      
+      - name: "final_polish"
+        provider: "openai"
+        model_name: "gpt-4"
+        temperature: 0.3
+        max_tokens: 4096
+        prompt: |
+          基于以下信息，提供最终的优化翻译：
+          
+          原文：{{original_text}}
+          DeepL 翻译：{{initial_translation}}
+          评估反馈：{{ai_review}}
+          
+          请综合 DeepL 的翻译和 AI 的反馈，生成一个更加准确、流畅的{{target}}翻译。
+          保持原文的语气和风格，同时确保符合{{target}}的表达习惯。
+        system_role: "你是一位专业的{{target}}编辑，负责润色和完善翻译。"
+    fast_mode_threshold: 500
+
+  # 多引擎对比模式
+  multi_engine:
+    id: "multi_engine"
+    name: "多引擎对比翻译"
+    description: "使用多个翻译引擎，通过 AI 选择和综合最佳结果"
+    steps:
+      - name: "deepl_translation"
+        provider: "deepl"
+        model_name: "deepl"
+        temperature: 0
+        prompt: "{{text}}"
+
+      - name: "google_translation"
+        provider: "google"
+        model_name: "google-translate"
+        temperature: 0
+        prompt: "{{text}}"
+
+      - name: "deeplx_translation"
+        provider: "deeplx"
+        model_name: "deeplx"
+        temperature: 0
+        prompt: "{{text}}"
+
+      - name: "ai_synthesis"
+        provider: "openai"
+        model_name: "gpt-4"
+        temperature: 0.2
+        max_tokens: 4096
+        prompt: |
+          请分析以下三个翻译引擎的结果，并生成一个综合最优的翻译：
+          
+          原文（{{source}}）：
+          {{original_text}}
+          
+          翻译结果：
+          1. DeepL: {{deepl_translation}}
+          2. Google: {{google_translation}}
+          3. DeepLX: {{deeplx_translation}}
+          
+          请：
+          1. 比较三个翻译的优缺点
+          2. 选择最准确的部分
+          3. 修正明显的错误
+          4. 生成一个综合最优的{{target}}翻译
+          
+          最终翻译应该自然、准确、符合{{target}}的表达习惯。
+        system_role: "你是一位翻译专家，精通对比分析不同翻译结果。"
+    fast_mode_threshold: 1000
+
+  # 快速免费模式
+  free_mode:
+    id: "free_mode"
+    name: "免费翻译模式"
+    description: "使用免费的翻译服务，适合大量文本处理"
+    steps:
+      - name: "translation"
+        provider: "deeplx"  # 或 "libretranslate"
+        model_name: "deeplx"
+        temperature: 0
+        prompt: "{{text}}"
+    fast_mode_threshold: 10000
+
+  # 推理模型深度翻译
+  reasoning_deep:
+    id: "reasoning_deep"
+    name: "推理模型深度翻译"
+    description: "使用推理模型进行深度思考的高质量翻译"
+    steps:
+      - name: "reasoning_translation"
+        provider: "openai"
+        model_name: "deepseek-r1"
+        temperature: 0.3
+        max_tokens: 8192
+        prompt: |
+          请将以下{{source}}文本翻译为{{target}}。
+          
+          请注意：
+          1. 保持原文的含义、语气和风格
+          2. 确保专业术语的准确性
+          3. 考虑文化差异和习惯表达
+          4. 保持译文的流畅性和自然性
+          
+          原文：
+          {{text}}
+        system_role: "你是一位专业的{{source}}到{{target}}翻译专家。"
+
+      - name: "quality_review"
+        provider: "openai"
+        model_name: "gpt-4"
+        temperature: 0.2
+        max_tokens: 2048
+        prompt: |
+          请评估这个从{{source}}到{{target}}的翻译质量：
+          
+          原文：
+          {{original_text}}
+          
+          译文：
+          {{reasoning_translation}}
+          
+          请从以下方面进行评估：
+          1. 准确性：是否准确传达了原文含义
+          2. 流畅性：译文是否自然流畅
+          3. 专业性：术语翻译是否准确
+          4. 文化适应：是否符合目标语言文化
+          
+          如果有问题，请提供具体的改进建议。
+        system_role: "你是一位资深的翻译质量评估专家。"
+
+      - name: "final_optimization"
+        provider: "openai"
+        model_name: "o1-mini"
+        temperature: 0.3
+        max_tokens: 8192
+        prompt: |
+          基于评估反馈，请对翻译进行最终优化：
+          
+          原文：{{original_text}}
+          当前译文：{{reasoning_translation}}
+          评估反馈：{{quality_review}}
+          
+          请提供一个经过优化的最终译文。
+        system_role: "你是一位{{target}}语言母语者和专业编辑。"
+    fast_mode_threshold: 100
