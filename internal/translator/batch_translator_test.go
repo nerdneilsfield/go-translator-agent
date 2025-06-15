@@ -15,7 +15,7 @@ import (
 
 func TestNodeMarkerRegex(t *testing.T) {
 	// 测试正则表达式是否正确匹配节点标记
-	pattern := regexp2.MustCompile(`(?s)@@NODE_START_(\d+)@@\n(.*?)\n@@NODE_END_\1@@`, 0)
+	pattern := regexp2.MustCompile(`(?s)@@NODE_START_(\d+)@@\s*\r?\n(.*?)\r?\n\s*@@NODE_END_\1@@`, 0)
 	
 	testCases := []struct {
 		name     string

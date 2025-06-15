@@ -415,8 +415,8 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		}
 	}
 	
-	// 解析翻译结果 - 修复正则表达式以处理 NODE 标记后的空格
-	pattern := regexp2.MustCompile(`(?s)@@NODE_START_(\d+)@@\s*\n(.*?)\n\s*@@NODE_END_\1@@`, 0)
+	// 解析翻译结果 - 使用更强健的正则表达式处理不同换行符和空格
+	pattern := regexp2.MustCompile(`(?s)@@NODE_START_(\d+)@@\s*\r?\n(.*?)\r?\n\s*@@NODE_END_\1@@`, 0)
 	
 	// 创建结果映射
 	translationMap := make(map[int]string)
@@ -433,6 +433,12 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		}
 		bt.logger.Debug("simple pattern match test",
 			zap.Int("simpleMatchCount", simpleMatchCount))
+			
+		// 额外调试：检查响应中的换行符类型
+		bt.logger.Debug("response newline analysis",
+			zap.Bool("containsCRLF", strings.Contains(translatedText, "\r\n")),
+			zap.Bool("containsLF", strings.Contains(translatedText, "\n")),
+			zap.Bool("containsCR", strings.Contains(translatedText, "\r")))
 	}
 	
 	// 使用 regexp2 查找所有匹配
