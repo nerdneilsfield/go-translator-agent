@@ -109,3 +109,7 @@ just clean
 - Linting with `golangci-lint` (config in `.golangci.yml`)
 - Version information injected during build via ldflags
 - Supports both Makefile and Justfile for build automation
+
+## Coding Guidelines
+
+- Use English to commit

@@ -281,6 +281,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 	
 	// 使用 regexp2 查找所有匹配
 	match, _ := pattern.FindStringMatch(translatedText)
+	matchCount := 0
 	for match != nil {
 		groups := match.Groups()
 		if len(groups) >= 3 {
@@ -293,9 +294,15 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 			}
 			content := groups[2].String()
 			translationMap[nodeID] = strings.TrimSpace(content)
+			matchCount++
 		}
 		match, _ = pattern.FindNextMatch(match)
 	}
+	
+	bt.logger.Debug("parsed translation results",
+		zap.Int("matchCount", matchCount),
+		zap.Int("expectedNodes", len(group.Nodes)),
+		zap.Int("translatedTextLength", len(translatedText)))
 	
 	// 应用翻译结果
 	for _, node := range group.Nodes {
@@ -314,14 +321,23 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		
 		// 处理需要翻译的节点
 		if translatedContent, ok := translationMap[node.ID]; ok {
+			// 获取该节点的保护后文本（用于相似度比较）
+			protectedOriginal := ""
+			if protectedText, ok := protectedTexts[node.ID]; ok {
+				protectedOriginal = protectedText
+			} else {
+				protectedOriginal = node.OriginalText
+			}
+			
+			// 检查翻译质量（使用编辑距离）- 比较保护后的文本
+			similarity := bt.calculateSimilarity(protectedOriginal, translatedContent)
+			// 相似度阈值 - 对于学术论文等包含大量术语的文本，使用较高的阈值
+			similarityThreshold := 0.95 // 只有几乎完全一样时才认为失败
+			
 			// 还原保护的内容
 			restoredText := preserveManager.Restore(translatedContent)
 			
-			// 检查翻译质量（使用编辑距离）
-			similarity := bt.calculateSimilarity(node.OriginalText, restoredText)
-			similarityThreshold := 0.8 // 相似度阈值（如果太相似说明没有翻译）
-			
-			if similarity >= similarityThreshold {
+				if similarity >= similarityThreshold {
 				// 翻译结果与原文太相似，视为失败
 				node.Status = document.NodeStatusFailed
 				node.Error = fmt.Errorf("translation too similar to original (similarity: %.2f)", similarity)
@@ -331,8 +347,9 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 					zap.Int("nodeID", node.ID),
 					zap.Float64("similarity", similarity),
 					zap.Float64("threshold", similarityThreshold),
-					zap.String("original", truncateText(node.OriginalText, 50)),
-					zap.String("translated", truncateText(restoredText, 50)))
+					zap.String("protectedOriginal", truncateText(protectedOriginal, 50)),
+					zap.String("translatedContent", truncateText(translatedContent, 50)),
+					zap.String("restoredText", truncateText(restoredText, 50)))
 			} else {
 				// 翻译成功
 				node.TranslatedText = restoredText
@@ -343,8 +360,12 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 			}
 		} else {
 			node.Status = document.NodeStatusFailed
-			node.Error = fmt.Errorf("translation not found in batch result")
+			node.Error = fmt.Errorf("translation not found in batch result for node %d", node.ID)
 			node.RetryCount++
+			
+			bt.logger.Debug("node translation not found",
+				zap.Int("nodeID", node.ID),
+				zap.String("originalText", truncateText(node.OriginalText, 50)))
 		}
 	}
 	

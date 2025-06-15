@@ -95,12 +95,19 @@ func GenerateSummary(result *TranslationResult, nodes []*document.NodeInfo, cfg 
 		// 统计错误类型
 		if node.Error != nil {
 			errType := "unknown"
-			if strings.Contains(node.Error.Error(), "timeout") {
+			errorMsg := node.Error.Error()
+			if strings.Contains(errorMsg, "timeout") {
 				errType = "timeout"
-			} else if strings.Contains(node.Error.Error(), "rate limit") {
+			} else if strings.Contains(errorMsg, "rate limit") {
 				errType = "rate_limit"
-			} else if strings.Contains(node.Error.Error(), "network") {
+			} else if strings.Contains(errorMsg, "network") {
 				errType = "network"
+			} else if strings.Contains(errorMsg, "translation too similar") {
+				errType = "similarity_check_failed"
+			} else if strings.Contains(errorMsg, "translation not found") {
+				errType = "parse_error"
+			} else if strings.Contains(errorMsg, "API") || strings.Contains(errorMsg, "api") {
+				errType = "api_error"
 			}
 			summary.ErrorTypes[errType]++
 		}
@@ -192,7 +199,7 @@ func (s *TranslationSummary) FormatSummaryTable() string {
 	// 翻译速度
 	if s.Duration.Seconds() > 0 {
 		charsPerSecond := float64(s.TranslatedChars) / s.Duration.Seconds()
-		builder.WriteString(fmt.Sprintf("║ 翻译速度:   %-50.2f 字符/秒 ║\n", charsPerSecond))
+		builder.WriteString(fmt.Sprintf("║ 翻译速度:   %-45.2f 字符/秒 ║\n", charsPerSecond))
 	}
 	
 	// Token 消耗
@@ -211,7 +218,7 @@ func (s *TranslationSummary) FormatSummaryTable() string {
 		builder.WriteString("╠════════════════════════════════════════════════════════════════╣\n")
 		builder.WriteString(fmt.Sprintf("║ 缓存命中:   %-50d ║\n", s.CacheHits))
 		builder.WriteString(fmt.Sprintf("║ 缓存未中:   %-50d ║\n", s.CacheMisses))
-		builder.WriteString(fmt.Sprintf("║ 命中率:     %-50.2f%% ║\n", s.CacheRatio*100))
+		builder.WriteString(fmt.Sprintf("║ 命中率:     %-48.2f %% ║\n", s.CacheRatio*100))
 	}
 	
 	// 错误统计
@@ -220,7 +227,7 @@ func (s *TranslationSummary) FormatSummaryTable() string {
 		builder.WriteString("║                         错误统计                                ║\n")
 		builder.WriteString("╠════════════════════════════════════════════════════════════════╣\n")
 		for errType, count := range s.ErrorTypes {
-			builder.WriteString(fmt.Sprintf("║ %-10s: %-50d ║\n", errType, count))
+			builder.WriteString(fmt.Sprintf("║ %-25s: %-35d ║\n", errType, count))
 		}
 	}
 	
