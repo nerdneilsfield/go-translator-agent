@@ -316,12 +316,31 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		if translatedContent, ok := translationMap[node.ID]; ok {
 			// 还原保护的内容
 			restoredText := preserveManager.Restore(translatedContent)
-			node.TranslatedText = restoredText
-			node.Status = document.NodeStatusSuccess
-			node.Error = nil
 			
-			// 增加重试计数
-			node.RetryCount++
+			// 检查翻译质量（使用编辑距离）
+			similarity := bt.calculateSimilarity(node.OriginalText, restoredText)
+			similarityThreshold := 0.8 // 相似度阈值（如果太相似说明没有翻译）
+			
+			if similarity >= similarityThreshold {
+				// 翻译结果与原文太相似，视为失败
+				node.Status = document.NodeStatusFailed
+				node.Error = fmt.Errorf("translation too similar to original (similarity: %.2f)", similarity)
+				node.RetryCount++
+				
+				bt.logger.Warn("translation quality check failed",
+					zap.Int("nodeID", node.ID),
+					zap.Float64("similarity", similarity),
+					zap.Float64("threshold", similarityThreshold),
+					zap.String("original", truncateText(node.OriginalText, 50)),
+					zap.String("translated", truncateText(restoredText, 50)))
+			} else {
+				// 翻译成功
+				node.TranslatedText = restoredText
+				node.Status = document.NodeStatusSuccess
+				node.Error = nil
+				// 增加重试计数
+				node.RetryCount++
+			}
 		} else {
 			node.Status = document.NodeStatusFailed
 			node.Error = fmt.Errorf("translation not found in batch result")
@@ -539,5 +558,93 @@ func (bt *BatchTranslator) groupFailedNodesWithContext(allNodes []*document.Node
 	
 	// 分组
 	return bt.groupNodes(nodesToTranslate)
+}
+
+// calculateSimilarity 计算两个文本的相似度（使用编辑距离）
+func (bt *BatchTranslator) calculateSimilarity(text1, text2 string) float64 {
+	if text1 == "" && text2 == "" {
+		return 1.0
+	}
+	
+	if text1 == "" || text2 == "" {
+		return 0.0
+	}
+	
+	// 简单的编辑距离实现
+	len1 := len([]rune(text1))
+	len2 := len([]rune(text2))
+	
+	// 创建距离矩阵
+	matrix := make([][]int, len1+1)
+	for i := range matrix {
+		matrix[i] = make([]int, len2+1)
+	}
+	
+	// 初始化第一行和第一列
+	for i := 0; i <= len1; i++ {
+		matrix[i][0] = i
+	}
+	for j := 0; j <= len2; j++ {
+		matrix[0][j] = j
+	}
+	
+	// 计算编辑距离
+	runes1 := []rune(text1)
+	runes2 := []rune(text2)
+	
+	for i := 1; i <= len1; i++ {
+		for j := 1; j <= len2; j++ {
+			cost := 0
+			if runes1[i-1] != runes2[j-1] {
+				cost = 1
+			}
+			
+			matrix[i][j] = min(
+				matrix[i-1][j]+1,     // 删除
+				matrix[i][j-1]+1,     // 插入
+				matrix[i-1][j-1]+cost, // 替换
+			)
+		}
+	}
+	
+	// 计算相似度
+	distance := matrix[len1][len2]
+	maxLen := max(len1, len2)
+	if maxLen == 0 {
+		return 1.0
+	}
+	
+	return 1.0 - float64(distance)/float64(maxLen)
+}
+
+// truncateText 截断文本用于日志显示
+func truncateText(text string, maxLen int) string {
+	runes := []rune(text)
+	if len(runes) <= maxLen {
+		return text
+	}
+	return string(runes[:maxLen]) + "..."
+}
+
+// min 返回三个整数中的最小值
+func min(a, b, c int) int {
+	if a < b {
+		if a < c {
+			return a
+		}
+		return c
+	}
+	if b < c {
+		return b
+	}
+	return c
+}
+
+// max 返回两个整数中的最大值
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
