@@ -62,17 +62,13 @@ func TestCLIVersion(t *testing.T) {
 	assert.Contains(t, outputStr, "built")
 }
 
-// TestCLIWithOldTranslator 测试使用旧翻译器的兼容性
-func TestCLIWithOldTranslator(t *testing.T) {
-	// 设置环境变量以使用旧翻译器
-	os.Setenv("USE_NEW_TRANSLATOR", "false")
-	defer os.Unsetenv("USE_NEW_TRANSLATOR")
-
+// TestCLIHelp 测试基本命令行功能
+func TestCLIBasic(t *testing.T) {
 	cmd := exec.Command("go", "run", "../../cmd/translator/main.go", "--help")
 	output, err := cmd.CombinedOutput()
-	require.NoError(t, err, "Failed to run help with old translator")
+	require.NoError(t, err, "Failed to run help command")
 
-	// 应该仍然能正常工作
+	// 应该正常工作
 	outputStr := string(output)
 	assert.Contains(t, outputStr, "翻译工具")
 }

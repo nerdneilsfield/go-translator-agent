@@ -9,15 +9,15 @@ import (
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/internal/formatfix"
 	"github.com/nerdneilsfield/go-translator-agent/internal/formatfix/loader"
+	"github.com/nerdneilsfield/go-translator-agent/internal/formatter"
 	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
 	"github.com/nerdneilsfield/go-translator-agent/internal/translator"
-	"github.com/nerdneilsfield/go-translator-agent/pkg/formats"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
 
 var (
-	// 原有的标志（从 root_old.go）
+	// 命令行标志变量
 	cfgFile                    string
 	sourceLang                 string
 	targetLang                 string
@@ -139,8 +139,13 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			inputPath := args[0]
 			outputPath := args[1]
 
+			// 创建格式化管理器
+			formatterManager := formatter.NewManager(log)
+
 			if formatOnly {
-				if err := formats.FormatFile(inputPath, log); err != nil {
+				// 仅格式化文件
+				_, err := formatterManager.FormatFile(inputPath, inputPath, nil)
+				if err != nil {
 					log.Error("格式化文件失败", zap.Error(err))
 					os.Exit(1)
 				}
@@ -149,7 +154,8 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			}
 
 			// 在翻译之前先格式化文件
-			if err := formats.FormatFile(inputPath, log); err != nil {
+			_, err := formatterManager.FormatFile(inputPath, inputPath, nil)
+			if err != nil {
 				log.Error("文件格式化失败，无法继续翻译",
 					zap.String("文件", inputPath),
 					zap.Error(err))
@@ -328,8 +334,23 @@ func handleListCommands(cmd *cobra.Command, args []string, log *zap.Logger) {
 
 	if listFormats {
 		fmt.Println("支持的文件格式:")
-		for _, format := range formats.RegisteredFormats() {
-			fmt.Printf("  - %s\n", format)
+		// 创建格式化管理器来获取支持的格式
+		formatterManager := formatter.NewManager(log)
+		formatMap := formatterManager.ListAvailableFormatters()
+		
+		if len(formatMap) == 0 {
+			// 如果没有注册的格式化器，显示默认支持的格式
+			formats := []string{"markdown", "text", "html", "epub"}
+			for _, format := range formats {
+				fmt.Printf("  - %s\n", format)
+			}
+		} else {
+			for format, formatters := range formatMap {
+				fmt.Printf("  - %s\n", format)
+				for _, formatter := range formatters {
+					fmt.Printf("    * %s\n", formatter)
+				}
+			}
 		}
 		return
 	}

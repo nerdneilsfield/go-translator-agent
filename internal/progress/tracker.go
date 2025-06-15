@@ -176,6 +176,62 @@ func (t *Tracker) OnChunkError(err error) {
 	t.logger.Debug("chunk error", zap.Error(err))
 }
 
+// StartDocument 开始文档翻译
+func (t *Tracker) StartDocument(docID, fileName string, totalNodes int) {
+	t.StartTracking(docID, fileName)
+	
+	t.mu.RLock()
+	session, exists := t.sessions[docID]
+	t.mu.RUnlock()
+	
+	if exists {
+		session.mu.Lock()
+		session.TotalNodes = totalNodes
+		session.mu.Unlock()
+	}
+}
+
+// CompleteDocument 完成文档翻译
+func (t *Tracker) CompleteDocument(docID string) {
+	t.StopTracking(docID)
+}
+
+// UpdateStep 更新步骤信息
+func (t *Tracker) UpdateStep(docID string, nodeID int, step int, stepName string) {
+	t.mu.RLock()
+	session, exists := t.sessions[docID]
+	t.mu.RUnlock()
+
+	if !exists {
+		return
+	}
+
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	// 获取或创建节点进度
+	nodeProgress, exists := session.NodeProgress[nodeID]
+	if !exists {
+		nodeProgress = &NodeProgress{
+			NodeID:    nodeID,
+			StartTime: time.Now(),
+		}
+		session.NodeProgress[nodeID] = nodeProgress
+	}
+
+	// 记录步骤信息
+	t.logger.Debug("step update",
+		zap.String("docID", docID),
+		zap.Int("nodeID", nodeID),
+		zap.Int("step", step),
+		zap.String("stepName", stepName))
+}
+
+// UpdateNode 更新节点状态（实现 ProgressReporter 接口）
+func (t *Tracker) UpdateNode(docID string, nodeID int, status document.NodeStatus, charCount int, err error) {
+	t.UpdateNodeProgress(docID, nodeID, status, charCount, err)
+}
+
 // UpdateNodeProgress 更新节点进度
 func (t *Tracker) UpdateNodeProgress(docID string, nodeID int, status document.NodeStatus, charCount int, err error) {
 	t.mu.RLock()

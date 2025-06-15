@@ -15,7 +15,6 @@ import (
 	"github.com/nerdneilsfield/go-translator-agent/internal/progress"
 	"github.com/nerdneilsfield/go-translator-agent/internal/stats"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
-	"github.com/nerdneilsfield/go-translator-agent/pkg/translator"
 	"go.uber.org/zap"
 )
 
@@ -43,7 +42,7 @@ type TranslationCoordinator struct {
 	config             *config.Config
 	nodeTranslator     *document.NodeInfoTranslator
 	progressTracker    *progress.Tracker
-	progressReporter   translator.ProgressReporter
+	progressReporter   *progress.Tracker
 	formatManager      *formatter.Manager
 	formatFixRegistry  *formatfix.FixerRegistry
 	translationService translation.Service
@@ -70,7 +69,7 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 	progressTracker := progress.NewTracker(logger, progressPath)
 
 	// 创建 progress reporter
-	progressReporter := translator.NewProgressTrackerReporter(progressTracker, logger)
+	progressReporter := progressTracker
 
 	// 创建 node translator
 	nodeTranslator := document.NewNodeInfoTranslatorWithProgress(
