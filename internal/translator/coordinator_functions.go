@@ -47,8 +47,25 @@ func createTranslationService(cfg *config.Config, progressPath string, logger *z
 		logger: loggerWrapper,
 	}
 
+	// 转换步骤配置
+	translationSteps := make([]translation.StepConfig, len(stepSet.Steps))
+	for i, step := range stepSet.Steps {
+		translationSteps[i] = translation.StepConfig{
+			Name:        step.Name,
+			Provider:    step.Provider,
+			Model:       step.ModelName, // 注意：translation包使用Model而不是ModelName
+			Temperature: float32(step.Temperature),
+			MaxTokens:   step.MaxTokens,
+			Prompt:      step.Prompt,
+			Variables:   step.Variables,
+			SystemRole:  step.SystemRole,
+		}
+	}
+
 	// 创建翻译服务
-	logger.Info("creating translation service with step set", zap.String("step_set", stepSetName))
+	logger.Info("creating translation service with step set", 
+		zap.String("step_set", stepSetName),
+		zap.Int("steps_count", len(translationSteps)))
 	
 	translationConfig := &translation.Config{
 		SourceLanguage: cfg.SourceLang,
@@ -58,6 +75,7 @@ func createTranslationService(cfg *config.Config, progressPath string, logger *z
 		MaxConcurrency: cfg.Concurrency,
 		EnableCache:    cfg.UseCache,
 		CacheDir:       cfg.CacheDir,
+		Steps:          translationSteps, // 添加步骤配置
 	}
 
 	return translation.New(translationConfig, translation.WithLLMClient(llmClient))
