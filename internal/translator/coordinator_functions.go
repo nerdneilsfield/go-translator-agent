@@ -24,7 +24,16 @@ func createTranslationService(cfg *config.Config, progressPath string, logger *z
 	// 检查步骤集是否存在
 	stepSet, exists := cfg.StepSets[stepSetName]
 	if !exists {
-		return nil, fmt.Errorf("step set '%s' not found", stepSetName)
+		// 在错误情况下提供调试信息
+		availableStepSets := make([]string, 0, len(cfg.StepSets))
+		for name := range cfg.StepSets {
+			availableStepSets = append(availableStepSets, name)
+		}
+		logger.Error("步骤集未找到",
+			zap.String("requested", stepSetName),
+			zap.Strings("available", availableStepSets),
+			zap.Int("total", len(cfg.StepSets)))
+		return nil, fmt.Errorf("step set '%s' not found. Available step sets: %v", stepSetName, availableStepSets)
 	}
 
 	if len(stepSet.Steps) == 0 {
