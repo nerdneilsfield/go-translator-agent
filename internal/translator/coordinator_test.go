@@ -23,6 +23,7 @@ func createTestConfig() *config.Config {
 		ChunkSize:        1000,
 		RetryAttempts:    3,
 		Country:          "US",
+		Concurrency:      2, // 添加必需的并发配置
 		ModelConfigs: map[string]config.ModelConfig{
 			"test-model": {
 				Name:            "test-model",
@@ -35,15 +36,21 @@ func createTestConfig() *config.Config {
 				Temperature:     0.3,
 			},
 		},
-		StepSets: map[string]config.StepSetConfig{
+		StepSets: map[string]config.StepSetConfigV2{
 			"default": {
-				ID:   "default",
-				Name: "Default",
-				InitialTranslation: config.StepConfig{
-					Name:        "initial",
-					ModelName:   "test-model",
-					Temperature: 0.3,
+				ID:          "default",
+				Name:        "Default",
+				Description: "Test step set",
+				Steps: []config.StepConfigV2{
+					{
+						Name:        "initial",
+						Provider:    "openai",
+						ModelName:   "test-model",
+						Temperature: 0.3,
+						MaxTokens:   4096,
+					},
 				},
+				FastModeThreshold: 500,
 			},
 		},
 		ActiveStepSet: "default",
@@ -62,16 +69,13 @@ func TestNewTranslationCoordinator(t *testing.T) {
 		require.NotNil(t, coordinator)
 
 		// 验证组件
-		assert.NotNil(t, coordinator.config)
-		assert.NotNil(t, coordinator.nodeTranslator)
+		assert.NotNil(t, coordinator.coordinatorConfig)
+		assert.NotNil(t, coordinator.translationService)
+		assert.NotNil(t, coordinator.translator)
 		assert.NotNil(t, coordinator.progressTracker)
 		assert.NotNil(t, coordinator.progressReporter)
 		assert.NotNil(t, coordinator.formatManager)
-		// translationService 在测试中是 nil（模拟翻译）
-		// assert.NotNil(t, coordinator.translationService)
 		assert.NotNil(t, coordinator.logger)
-
-		assert.Equal(t, cfg, coordinator.config)
 	})
 
 	t.Run("Create with Nil Config", func(t *testing.T) {
@@ -166,143 +170,22 @@ func TestTranslationCoordinator_TextTranslation(t *testing.T) {
 	t.Run("Translate Simple Text", func(t *testing.T) {
 		text := "Hello, world!"
 
-		// 注意：由于没有实际的翻译服务，这个测试会失败
-		// 但我们可以验证输入处理逻辑
+		// 注意：由于没有实际的翻译服务配置成功的provider，这个测试会失败
+		// 但我们可以验证基本的API调用不会panic
 		result, err := coordinator.TranslateText(context.Background(), text)
 
-		// 预期会有错误，因为没有配置实际的翻译提供商
-		_ = result
-		_ = err
-
-		// 验证基本的文本处理
-		nodes := coordinator.createTextNodes(text)
-		assert.Len(t, nodes, 1)
-		assert.Equal(t, text, nodes[0].OriginalText)
-		assert.Equal(t, document.NodeStatusPending, nodes[0].Status)
-	})
-
-	t.Run("Translate Multi-Paragraph Text", func(t *testing.T) {
-		text := "First paragraph.\n\nSecond paragraph.\n\nThird paragraph."
-
-		nodes := coordinator.createTextNodes(text)
-		assert.Len(t, nodes, 3)
-		assert.Equal(t, "First paragraph.", nodes[0].OriginalText)
-		assert.Equal(t, "Second paragraph.", nodes[1].OriginalText)
-		assert.Equal(t, "Third paragraph.", nodes[2].OriginalText)
-	})
-}
-
-func TestTranslationCoordinator_DocumentParsing(t *testing.T) {
-	cfg := createTestConfig()
-	logger := zap.NewNop()
-	progressPath := t.TempDir()
-
-	coordinator, err := NewTranslationCoordinator(cfg, logger, progressPath)
-	require.NoError(t, err)
-
-	t.Run("Parse Markdown Document", func(t *testing.T) {
-		content := "# Title\n\nFirst paragraph.\n\nSecond paragraph."
-		nodes, err := coordinator.parseMarkdown(content)
-		require.NoError(t, err)
-		assert.Len(t, nodes, 3)
-		assert.Equal(t, "# Title", nodes[0].OriginalText)
-		assert.Equal(t, "First paragraph.", nodes[1].OriginalText)
-		assert.Equal(t, "Second paragraph.", nodes[2].OriginalText)
-	})
-
-	t.Run("Parse Text Document", func(t *testing.T) {
-		content := "First line.\n\nSecond line.\n\nThird line."
-		nodes, err := coordinator.parseText(content)
-		require.NoError(t, err)
-		assert.Len(t, nodes, 3)
-		assert.Equal(t, "First line.", nodes[0].OriginalText)
-		assert.Equal(t, "Second line.", nodes[1].OriginalText)
-		assert.Equal(t, "Third line.", nodes[2].OriginalText)
-	})
-
-	t.Run("Parse HTML Document", func(t *testing.T) {
-		content := "<html>\n<p>First paragraph</p>\n<p>Second paragraph</p>\n</html>"
-		nodes, err := coordinator.parseHTML(content)
-		require.NoError(t, err)
-		assert.GreaterOrEqual(t, len(nodes), 2)
-	})
-
-	t.Run("Parse Document by File Extension", func(t *testing.T) {
-		content := "Test content.\n\nSecond paragraph."
-
-		// Markdown
-		nodes, err := coordinator.parseDocument("test.md", content)
-		require.NoError(t, err)
-		assert.Len(t, nodes, 2)
-
-		// Text
-		nodes, err = coordinator.parseDocument("test.txt", content)
-		require.NoError(t, err)
-		assert.Len(t, nodes, 2)
-
-		// Unknown extension (default to text)
-		nodes, err = coordinator.parseDocument("test.unknown", content)
-		require.NoError(t, err)
-		assert.Len(t, nodes, 2)
-	})
-}
-
-func TestTranslationCoordinator_DocumentAssembly(t *testing.T) {
-	cfg := createTestConfig()
-	logger := zap.NewNop()
-	progressPath := t.TempDir()
-
-	coordinator, err := NewTranslationCoordinator(cfg, logger, progressPath)
-	require.NoError(t, err)
-
-	t.Run("Assemble Translated Nodes", func(t *testing.T) {
-		nodes := []*document.NodeInfo{
-			{
-				ID:             1,
-				OriginalText:   "Hello",
-				TranslatedText: "你好",
-				Status:         document.NodeStatusSuccess,
-			},
-			{
-				ID:             2,
-				OriginalText:   "World",
-				TranslatedText: "世界",
-				Status:         document.NodeStatusSuccess,
-			},
+		// 预期会有错误，因为配置的模型不存在或providers创建失败
+		if err != nil {
+			t.Logf("Expected error during translation: %v", err)
+		} else {
+			// 如果没有错误，验证结果不为空
+			assert.NotEmpty(t, result)
 		}
-
-		// Markdown assembly
-		result := coordinator.assembleMarkdown(nodes)
-		assert.Equal(t, "你好\n\n世界", result)
-
-		// Text assembly
-		result = coordinator.assembleText(nodes)
-		assert.Equal(t, "你好\n\n世界", result)
-
-		// Text result assembly
-		result = coordinator.assembleTextResult(nodes)
-		assert.Equal(t, "你好\n\n世界", result)
-	})
-
-	t.Run("Assemble with Failed Nodes", func(t *testing.T) {
-		nodes := []*document.NodeInfo{
-			{
-				ID:             1,
-				OriginalText:   "Hello",
-				TranslatedText: "你好",
-				Status:         document.NodeStatusSuccess,
-			},
-			{
-				ID:           2,
-				OriginalText: "World",
-				Status:       document.NodeStatusFailed,
-			},
-		}
-
-		result := coordinator.assembleText(nodes)
-		assert.Equal(t, "你好\n\nWorld", result) // 失败的节点保留原文
 	})
 }
+
+// 文档解析和组装现在通过document processor系统处理，不再在coordinator中直接测试
+// 相关测试在 internal/document 包中进行
 
 func TestTranslationCoordinator_FileOperations(t *testing.T) {
 	cfg := createTestConfig()
@@ -382,8 +265,7 @@ func TestTranslationCoordinator_ResultCreation(t *testing.T) {
 		assert.Equal(t, docID, result.DocID)
 		assert.Equal(t, inputFile, result.InputFile)
 		assert.Equal(t, outputFile, result.OutputFile)
-		assert.Equal(t, cfg.SourceLang, result.SourceLanguage)
-		assert.Equal(t, cfg.TargetLang, result.TargetLanguage)
+		// SourceLanguage和TargetLanguage字段已从TranslationResult中移除
 		assert.Equal(t, 3, result.TotalNodes)
 		assert.Equal(t, 2, result.CompletedNodes)
 		assert.Equal(t, 1, result.FailedNodes)

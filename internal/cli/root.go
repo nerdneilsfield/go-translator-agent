@@ -76,7 +76,8 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
   - deepl: DeepL 专业翻译
   - google: Google Translate
   - deeplx: DeepLX (免费 DeepL 替代)
-  - libretranslate: LibreTranslate (开源)`,
+  - libretranslate: LibreTranslate (开源)
+  - ollama: Ollama 本地大语言模型`,
 		Version: fmt.Sprintf("%s (commit %s, built %s)", version, commit, buildDate),
 		Args: func(cmd *cobra.Command, args []string) error {
 			// 对于特殊的标志命令，不需要参数
@@ -237,8 +238,8 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			log.Info("翻译完成",
 				zap.String("输入文件", result.InputFile),
 				zap.String("输出文件", result.OutputFile),
-				zap.String("源语言", result.SourceLanguage),
-				zap.String("目标语言", result.TargetLanguage),
+				// zap.String("源语言", result.SourceLanguage),
+				// zap.String("目标语言", result.TargetLanguage),
 				zap.Int("总节点", result.TotalNodes),
 				zap.Int("完成节点", result.CompletedNodes),
 				zap.Int("失败节点", result.FailedNodes),

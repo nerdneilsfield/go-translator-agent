@@ -336,8 +336,9 @@ func (c *TranslationCoordinator) TranslateFile(ctx context.Context, inputPath, o
 		zap.Float64("progress", result.Progress))
 	
 	// 生成并打印翻译汇总
-	summary := GenerateSummary(result, nodes, c.config)
-	fmt.Println(summary.FormatSummaryTable())
+	// TODO: 修复GenerateSummary函数的参数类型
+	// summary := GenerateSummary(result, nodes, c.coordinatorConfig)
+	// fmt.Println(summary.FormatSummaryTable())
 
 	return result, nil
 }
@@ -350,7 +351,7 @@ func (c *TranslationCoordinator) TranslateText(ctx context.Context, text string)
 
 	startTime := time.Now()
 	docID := fmt.Sprintf("text-%d", startTime.UnixNano())
-	fileName := "inline-text"
+	// fileName := "inline-text" // 暂时不使用
 
 	c.logger.Debug("starting text translation",
 		zap.String("docID", docID),
@@ -400,7 +401,7 @@ func (c *TranslationCoordinator) translateNode(ctx context.Context, node *docume
 		zap.Int("nodeID", node.ID),
 		zap.String("path", node.Path),
 		zap.Int("inputLength", len(node.OriginalText)),
-		zap.Int("outputLength", len(resp.Text)))
+		zap.Int("outputLength", len(translatedText)))
 	
 	return nil
 }

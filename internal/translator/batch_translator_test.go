@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/dlclark/regexp2"
-	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
 	"github.com/stretchr/testify/assert"
@@ -145,6 +144,19 @@ func (m *mockTranslationService) TranslateBatch(ctx context.Context, reqs []*tra
 	return resps, nil
 }
 
+// TranslateText 实现translation.Service接口
+func (m *mockTranslationService) TranslateText(ctx context.Context, text string) (string, error) {
+	// 简单的模拟翻译
+	if text == "Hello world" {
+		return "你好世界", nil
+	}
+	if text == "This is node 0 original text" {
+		return "这是节点0的翻译结果", nil
+	}
+	// 默认返回带"翻译："前缀的文本
+	return "翻译：" + text, nil
+}
+
 func (m *mockTranslationService) GetConfig() *translation.Config {
 	if m.config == nil {
 		m.config = &translation.Config{
@@ -157,12 +169,12 @@ func (m *mockTranslationService) GetConfig() *translation.Config {
 
 func TestBatchTranslatorWithSimilarityCheck(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
-	cfg := &config.Config{
-		ChunkSize:    1000,
-		Concurrency:  2,
-		MaxRetries:   1,
-		SourceLang:   "en",
-		TargetLang:   "zh",
+	cfg := TranslatorConfig{
+		ChunkSize:      1000,
+		Concurrency:    2,
+		MaxRetries:     1,
+		GroupingMode:   "smart",
+		RetryOnFailure: true,
 	}
 	
 	service := &mockTranslationService{

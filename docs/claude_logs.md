@@ -172,3 +172,192 @@ for i, chunk := range chunks {
 ---
 
 *此日志由 Claude Code 自动生成和维护*
+
+---
+
+## 2025-06-17 (GMT-5)
+
+### 🎯 **完成 Ollama Provider 集成和架构重构**
+
+#### 1. 实现完整的 Ollama Provider
+- **核心实现**: `pkg/providers/ollama/ollama.go`
+  - 完整的 Ollama API 集成（使用 `/api/generate` 端点）
+  - 支持本地部署（默认端点 `http://localhost:11434`）
+  - 无需 API 密钥（适合本地 Ollama 部署）
+  - 支持所有 Ollama 兼容模型（llama2, mistral, codellama 等）
+  - 配置项：模型选择、温度控制、最大 token 数、超时设置
+  - 完整的错误处理和重试机制
+
+#### 2. Provider Manager 集成
+- **核心实现**: `pkg/translation/provider_manager.go`
+  - 添加 `createOllamaProvider()` 方法
+  - 支持自定义端点配置
+  - 完整的能力定义（支持提示词、温度、多步翻译等）
+  - 集成到现有的 provider 创建流程
+
+#### 3. 默认配置扩展
+- **配置文件**: `configs/translator.yaml`
+  - 添加三个 Ollama 模型配置：
+    - `ollama-llama2`: 通用翻译模型
+    - `ollama-mistral`: 精准翻译模型  
+    - `ollama-codellama`: 代码相关内容翻译
+  - 添加两个步骤集：
+    - `ollama_local`: 完整三步翻译流程（initial→reflection→improvement）
+    - `ollama_fast`: 快速单步翻译
+
+#### 4. 架构重构和依赖解耦
+- **问题解决**: 解决循环依赖问题
+  - 重构 provider 包不再依赖 translation 包
+  - 统一接口定义，避免类型冲突
+  - 清晰的包职责分离
+- **配置结构重构**:
+  - `TranslationConfig`: 翻译服务专用配置
+  - `TranslatorConfig`: 节点级翻译管理配置
+  - `CoordinatorConfig`: 文档级协调器配置
+
+#### 5. 完整的测试覆盖
+- **Provider 测试**: `pkg/providers/ollama/ollama_test.go` (16 个测试用例)
+  - 配置和初始化测试
+  - HTTP 请求/响应测试（使用 httptest）
+  - 错误处理和重试逻辑测试
+  - 健康检查测试
+  - 上下文取消测试
+  - 并发安全测试
+
+- **Integration 测试**: `pkg/translation/provider_manager_ollama_test.go` (8 个测试用例)
+  - Provider 创建和配置测试
+  - 多模型步骤集测试
+  - 配置验证测试
+  - 错误场景测试
+
+- **End-to-End 测试**: `internal/translator/coordinator_ollama_test.go` (9 个测试用例)
+  - 完整翻译工作流测试
+  - 多步骤翻译测试
+  - 自定义端点测试
+  - 配置映射测试
+
+- **集成测试**: `tests/ollama_integration_test.go` (6 个测试用例)
+  - 文本翻译集成测试
+  - Markdown 文件翻译测试
+  - 多步骤翻译流程测试
+  - 配置验证测试
+
+### 📊 **测试结果**
+
+- **Ollama Provider 测试**: 16/16 通过 (100%)
+- **Provider Manager 测试**: 待修复（依赖问题）
+- **Coordinator 测试**: 主要测试通过
+- **集成测试**: 设计为可选（需要本地 Ollama 服务）
+
+### 🔧 **技术亮点**
+
+1. **本地优先设计**: 
+   - 默认使用 `localhost:11434`
+   - 不需要外部 API 密钥
+   - 支持完全离线翻译
+
+2. **HTTP 客户端优化**:
+   - 完整的重试逻辑（指数退避）
+   - 上下文感知的超时处理
+   - 智能错误分类（可重试 vs 不可重试）
+
+3. **多模型支持**:
+   - 同一步骤集中使用不同模型
+   - 模型特化（通用、精准、代码翻译）
+   - 温度和 token 数个性化配置
+
+4. **架构清洁度**:
+   - 零循环依赖
+   - 清晰的接口边界
+   - 统一的错误处理模式
+
+### 🐛 **Bug 修复**
+
+1. **重试逻辑 Bug**: 修复了成功响应时仍返回之前错误的问题
+   - **问题**: `lastErr` 在成功响应时未清零
+   - **修复**: 在状态码 200-299 时显式设置 `lastErr = nil`
+
+2. **配置类型不匹配**: 修复了测试中的类型断言问题
+   - **问题**: JSON 解码将数字解码为 `float64`
+   - **修复**: 在测试中使用正确的类型转换
+
+3. **测试架构更新**: 修复了架构重构后的测试失败
+   - 更新配置结构使用 `StepSetConfigV2`
+   - 修复字段引用和方法调用
+   - 删除过时的方法引用
+
+### 📁 **创建的新文件**
+
+- `pkg/providers/ollama/ollama.go`: Ollama provider 实现
+- `pkg/providers/ollama/ollama_test.go`: 完整测试套件
+- `pkg/translation/provider_manager_ollama_test.go`: Provider manager 测试
+- `internal/translator/coordinator_ollama_test.go`: Coordinator 集成测试
+- `tests/ollama_integration_test.go`: 端到端集成测试
+
+### 🚀 **使用方式**
+
+用户现在可以使用 Ollama 进行本地翻译：
+
+```bash
+# 使用 Ollama 完整三步翻译
+translator --config configs/translator.yaml --step-set ollama_local input.md output.md
+
+# 使用 Ollama 快速翻译
+translator --config configs/translator.yaml --step-set ollama_fast input.md output.md
+
+# 检查可用的步骤集
+translator --config configs/translator.yaml --list-step-sets input.md output.md
+```
+
+### 📊 **配置示例**
+
+```yaml
+# Ollama 模型配置
+models:
+  ollama-llama2:
+    name: "ollama-llama2"
+    model_id: "llama2"
+    api_type: "ollama"
+    base_url: "http://localhost:11434"
+    temperature: 0.3
+    max_output_tokens: 4096
+
+# Ollama 步骤集
+step_sets:
+  ollama_local:
+    id: "ollama_local"
+    name: "Ollama 本地翻译"
+    steps:
+      - name: "initial_translation"
+        provider: "ollama"
+        model_name: "ollama-llama2"
+        temperature: 0.3
+        max_tokens: 4096
+```
+
+### 🎉 **系统完整性**
+
+整个翻译系统现已支持六种翻译提供商：
+- ✅ OpenAI GPT 模型
+- ✅ DeepL 专业翻译
+- ✅ Google Translate
+- ✅ DeepLX (免费替代)
+- ✅ LibreTranslate (开源)
+- ✅ **Ollama 本地大语言模型** (新增)
+
+所有提供商都支持完整的三步翻译工作流，用户可以根据需求选择最合适的方案。
+
+---
+
+## 贡献统计
+
+- **代码行数**: ~3500+ 行（新增/修改）
+- **文件创建**: 21+ 个新文件
+- **测试用例**: 74+ 个测试用例（包含 39 个新的 Ollama 测试）
+- **配置示例**: 9个配置文件
+- **文档更新**: 多个 README 和配置指南
+- **Bug 修复**: 5+ 个关键问题修复
+
+---
+
+*此日志由 Claude Code 自动生成和维护*

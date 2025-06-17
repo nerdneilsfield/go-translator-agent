@@ -295,6 +295,52 @@ models:
     is_reasoning: false
     is_llm: false
 
+  # Ollama 本地模型配置
+  ollama-llama2:
+    name: "ollama-llama2"
+    model_id: "llama2"
+    api_type: "ollama"
+    base_url: "http://localhost:11434"
+    key: ""
+    max_output_tokens: 4096
+    max_input_tokens: 8192
+    temperature: 0.3
+    input_token_price: 0
+    output_token_price: 0
+    price_unit: "USD"
+    is_reasoning: false
+    is_llm: true
+
+  ollama-mistral:
+    name: "ollama-mistral"
+    model_id: "mistral"
+    api_type: "ollama"
+    base_url: "http://localhost:11434"
+    key: ""
+    max_output_tokens: 4096
+    max_input_tokens: 8192
+    temperature: 0.3
+    input_token_price: 0
+    output_token_price: 0
+    price_unit: "USD"
+    is_reasoning: false
+    is_llm: true
+
+  ollama-codellama:
+    name: "ollama-codellama"
+    model_id: "codellama"
+    api_type: "ollama"
+    base_url: "http://localhost:11434"
+    key: ""
+    max_output_tokens: 4096
+    max_input_tokens: 8192
+    temperature: 0.2
+    input_token_price: 0
+    output_token_price: 0
+    price_unit: "USD"
+    is_reasoning: false
+    is_llm: true
+
 # 步骤集配置（新格式 - 使用内置模板）
 step_sets:
   professional:
@@ -430,3 +476,41 @@ step_sets:
         temperature: 0
         max_tokens: 8192
         additional_notes: "Use simple and direct translation approach."
+
+  ollama_local:
+    id: "ollama_local"
+    name: "Ollama 本地翻译"
+    description: "使用本地Ollama模型进行完整的三步翻译流程"
+    steps:
+      - name: "initial_translation"
+        provider: "ollama"
+        model_name: "ollama-llama2"
+        temperature: 0.3
+        max_tokens: 4096
+        additional_notes: "Translate accurately while preserving formatting and technical terms."
+      - name: "reflection"
+        provider: "ollama"
+        model_name: "ollama-mistral"
+        temperature: 0.2
+        max_tokens: 3000
+        additional_notes: "Review the translation for accuracy, fluency, and cultural appropriateness."
+      - name: "improvement"
+        provider: "ollama"
+        model_name: "ollama-llama2"
+        temperature: 0.3
+        max_tokens: 4096
+        additional_notes: "Polish the translation to sound natural and professional."
+    fast_mode_threshold: 500
+
+  ollama_fast:
+    id: "ollama_fast"
+    name: "Ollama 快速翻译"
+    description: "使用单一Ollama模型的快速翻译"
+    steps:
+      - name: "direct_translation"
+        provider: "ollama"
+        model_name: "ollama-llama2"
+        temperature: 0.3
+        max_tokens: 4096
+        additional_notes: "Provide a direct, accurate translation."
+    fast_mode_threshold: 100

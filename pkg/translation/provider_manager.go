@@ -10,6 +10,7 @@ import (
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/deeplx"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/google"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/libretranslate"
+	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/ollama"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/openai"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/raw"
 	"go.uber.org/zap"
@@ -143,6 +144,8 @@ func (pm *ProviderManager) createProvider(providerType string, modelConfig confi
 		return pm.createGoogleProvider(modelConfig)
 	case "libretranslate":
 		return pm.createLibreTranslateProvider(modelConfig)
+	case "ollama":
+		return pm.createOllamaProvider(modelConfig)
 	case "raw", "none":
 		return pm.createRawProvider(modelConfig)
 	default:
@@ -264,6 +267,32 @@ func (pm *ProviderManager) createLibreTranslateProvider(modelConfig config.Model
 	return provider, nil
 }
 
+// createOllamaProvider 创建 Ollama 提供商
+func (pm *ProviderManager) createOllamaProvider(modelConfig config.ModelConfig) (TranslationProvider, error) {
+	config := ollama.Config{
+		BaseConfig: providers.BaseConfig{
+			APIKey:      modelConfig.Key, // Ollama通常不需要API密钥，但保留配置
+			APIEndpoint: modelConfig.BaseURL,
+			Timeout:     60 * time.Second, // Ollama可能需要更长时间
+			MaxRetries:  3,
+			RetryDelay:  time.Second,
+			Headers:     make(map[string]string),
+		},
+		Model:       modelConfig.ModelID,
+		Temperature: float32(modelConfig.Temperature),
+		MaxTokens:   modelConfig.MaxOutputTokens,
+		Stream:      false, // 翻译时不使用流式输出
+	}
+
+	// 如果没有设置 BaseURL，使用默认值
+	if config.APIEndpoint == "" {
+		config.APIEndpoint = "http://localhost:11434"
+	}
+
+	provider := ollama.New(config)
+	return provider, nil
+}
+
 // createRawProvider 创建 Raw 提供商（raw 和 none 都使用相同的实现）
 func (pm *ProviderManager) createRawProvider(modelConfig config.ModelConfig) (TranslationProvider, error) {
 	config := raw.DefaultConfig()
@@ -328,6 +357,15 @@ func (pm *ProviderManager) getProviderCapabilities(providerType string) Provider
 			SupportsMultiStep:   false,
 			RequiresAPIKey:      false,
 			DefaultModel:        "libretranslate",
+		}
+	case "ollama":
+		return ProviderCapabilities{
+			SupportsPrompts:     true,
+			SupportsSystemRole:  false, // Ollama一般不支持系统角色，取决于模型
+			SupportsTemperature: true,
+			SupportsMultiStep:   true,
+			RequiresAPIKey:      false, // Ollama本地部署通常不需要API密钥
+			DefaultModel:        "llama2",
 		}
 	case "raw", "none":
 		return ProviderCapabilities{
