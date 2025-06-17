@@ -29,9 +29,9 @@ type Config struct {
 	Steps []StepConfig `json:"steps"`
 
 	// Provider管理配置
-	ModelConfigs  map[string]config.ModelConfig `json:"model_configs"`   // 模型配置映射
-	ActiveStepSet string                        `json:"active_step_set"` // 活动步骤集名称
-	StepSets      map[string]config.StepSetConfigV2 `json:"step_sets"`   // 步骤集配置
+	ModelConfigs  map[string]config.ModelConfig     `json:"model_configs"`   // 模型配置映射
+	ActiveStepSet string                            `json:"active_step_set"` // 活动步骤集名称
+	StepSets      map[string]config.StepSetConfigV2 `json:"step_sets"`       // 步骤集配置
 
 	// 缓存配置
 	EnableCache bool   `json:"enable_cache"`
@@ -72,27 +72,27 @@ func DefaultConfig() *Config {
 		StepSets:       config.GetDefaultStepSetsV2(),
 		Steps: []StepConfig{
 			{
-				Name:        "initial_translation",
-				Model:       "gpt-4",
-				Temperature: 0.3,
-				MaxTokens:   4096,
-				Timeout:     2 * time.Minute,
+				Name:            "initial_translation",
+				Model:           "gpt-4",
+				Temperature:     0.3,
+				MaxTokens:       4096,
+				Timeout:         2 * time.Minute,
 				AdditionalNotes: "Maintain the original meaning, tone, and style as much as possible.",
 			},
 			{
-				Name:        "reflection",
-				Model:       "gpt-4",
-				Temperature: 0.1,
-				MaxTokens:   2048,
-				Timeout:     1 * time.Minute,
+				Name:            "reflection",
+				Model:           "gpt-4",
+				Temperature:     0.1,
+				MaxTokens:       2048,
+				Timeout:         1 * time.Minute,
 				AdditionalNotes: "Identify any issues with accuracy, fluency, cultural appropriateness, or style.",
 			},
 			{
-				Name:        "improvement",
-				Model:       "gpt-4",
-				Temperature: 0.3,
-				MaxTokens:   4096,
-				Timeout:     2 * time.Minute,
+				Name:            "improvement",
+				Model:           "gpt-4",
+				Temperature:     0.3,
+				MaxTokens:       4096,
+				Timeout:         2 * time.Minute,
 				AdditionalNotes: "Provide an improved translation that addresses the feedback.",
 			},
 		},
@@ -121,24 +121,24 @@ func (c *Config) Validate() error {
 	if c.ActiveStepSet == "" {
 		return errors.New("active step set is required")
 	}
-	
+
 	if len(c.StepSets) == 0 {
 		return errors.New("at least one step set must be configured")
 	}
-	
+
 	// 验证活动步骤集是否存在
 	if _, exists := c.StepSets[c.ActiveStepSet]; !exists {
 		return errors.New("active step set not found in step sets")
 	}
-	
+
 	// 验证每个步骤
 	var hasRawStep bool
-	
+
 	for i, step := range c.Steps {
 		if step.Name == "" {
 			return errors.New("step name is required")
 		}
-		
+
 		// 检查是否使用了 raw 步骤（raw 和 none 都视为 raw）
 		if step.Model == "raw" || step.Model == "none" {
 			if !hasRawStep {
@@ -149,13 +149,13 @@ func (c *Config) Validate() error {
 			if hasRawStep {
 				return errors.New("once a step uses 'raw' or 'none' model, all subsequent steps must use 'raw' or 'none' models")
 			}
-			
+
 			// 验证第二步和第三步必须使用 LLM 模型（除非是特殊选项）
 			if i > 0 && !step.IsLLM {
 				return errors.New("reflection and improvement steps (position 2+) must use LLM models (is_llm: true) or special options (raw/none)")
 			}
 		}
-		
+
 		// Provider-based steps might not need model
 		if step.Provider == "" {
 			// Only require model for LLM-based steps
@@ -208,7 +208,7 @@ func NewConfigFromGlobal(globalCfg *config.Config) *Config {
 		StepSets:       globalCfg.StepSets,
 		Metadata:       globalCfg.Metadata,
 	}
-	
+
 	// 从活动步骤集生成Steps配置
 	if stepSet, exists := globalCfg.StepSets[globalCfg.ActiveStepSet]; exists {
 		translationCfg.Steps = make([]StepConfig, len(stepSet.Steps))
@@ -220,7 +220,7 @@ func NewConfigFromGlobal(globalCfg *config.Config) *Config {
 			} else if modelConfig, exists := globalCfg.ModelConfigs[step.ModelName]; exists {
 				isLLM = modelConfig.IsLLM
 			}
-			
+
 			translationCfg.Steps[i] = StepConfig{
 				Name:            step.Name,
 				Provider:        step.Provider,
@@ -234,7 +234,7 @@ func NewConfigFromGlobal(globalCfg *config.Config) *Config {
 			}
 		}
 	}
-	
+
 	return translationCfg
 }
 

@@ -181,14 +181,14 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			// 根据配置创建详细日志
 			detailedLogConfig := logger.DetailedLogConfig{
 				EnableDetailedLog: cfg.EnableDetailedLog,
-				LogLevel:         cfg.LogLevel,
-				ConsoleLogLevel:  cfg.ConsoleLogLevel,
-				NormalLogFile:    cfg.NormalLogFile,
-				DetailedLogFile:  cfg.DetailedLogFile,
-				Debug:           cfg.Debug || debugMode,
-				Verbose:         cfg.Verbose || verboseMode,
+				LogLevel:          cfg.LogLevel,
+				ConsoleLogLevel:   cfg.ConsoleLogLevel,
+				NormalLogFile:     cfg.NormalLogFile,
+				DetailedLogFile:   cfg.DetailedLogFile,
+				Debug:             cfg.Debug || debugMode,
+				Verbose:           cfg.Verbose || verboseMode,
 			}
-			
+
 			loggerWrapper := logger.NewDetailedLogger(detailedLogConfig)
 			log := loggerWrapper.GetZapLogger()
 			defer func() {
@@ -362,7 +362,7 @@ func handleListCommands(cmd *cobra.Command, args []string, log *zap.Logger) {
 		// 创建格式化管理器来获取支持的格式
 		formatterManager := formatter.NewManager(log)
 		formatMap := formatterManager.ListAvailableFormatters()
-		
+
 		if len(formatMap) == 0 {
 			// 如果没有注册的格式化器，显示默认支持的格式
 			formats := []string{"markdown", "text", "html", "epub"}
@@ -464,27 +464,27 @@ func updateConfigForProvider(cfg *config.Config, provider string) {
 		Description: fmt.Sprintf("使用 %s 提供商进行翻译", provider),
 		Steps: []config.StepConfigV2{
 			{
-				Name:        "initial_translation",
-				Provider:    provider,
-				ModelName:   modelName,
-				Temperature: 0.5,
-				MaxTokens:   4096,
+				Name:            "initial_translation",
+				Provider:        provider,
+				ModelName:       modelName,
+				Temperature:     0.5,
+				MaxTokens:       4096,
 				AdditionalNotes: "Translate accurately while maintaining meaning and tone.",
 			},
 			{
-				Name:        "reflection",
-				Provider:    provider,
-				ModelName:   modelName,
-				Temperature: 0.3,
-				MaxTokens:   2048,
+				Name:            "reflection",
+				Provider:        provider,
+				ModelName:       modelName,
+				Temperature:     0.3,
+				MaxTokens:       2048,
 				AdditionalNotes: "Review the translation and identify any issues.",
 			},
 			{
-				Name:        "improvement",
-				Provider:    provider,
-				ModelName:   modelName,
-				Temperature: 0.5,
-				MaxTokens:   4096,
+				Name:            "improvement",
+				Provider:        provider,
+				ModelName:       modelName,
+				Temperature:     0.5,
+				MaxTokens:       4096,
 				AdditionalNotes: "Improve the translation based on feedback.",
 			},
 		},
@@ -835,7 +835,7 @@ func handleShowConfig(cmd *cobra.Command, cfg *config.Config, log *zap.Logger) {
 // handleDryRun 处理预演模式
 func handleDryRun(cmd *cobra.Command, args []string, log *zap.Logger) {
 	inputFile := args[0]
-	
+
 	// 加载配置
 	cfg, err := config.LoadConfig(cfgFile)
 	if err != nil {
@@ -852,7 +852,7 @@ func handleDryRun(cmd *cobra.Command, args []string, log *zap.Logger) {
 
 	// 显示输入文件信息
 	fmt.Printf("📄 输入文件: %s\n", inputFile)
-	
+
 	// 检查文件是否存在
 	if _, err := os.Stat(inputFile); os.IsNotExist(err) {
 		fmt.Printf("❌ 错误: 输入文件不存在\n")
@@ -865,9 +865,9 @@ func handleDryRun(cmd *cobra.Command, args []string, log *zap.Logger) {
 		fmt.Printf("❌ 错误: 无法获取文件信息: %v\n", err)
 		return
 	}
-	
+
 	fmt.Printf("📏 文件大小: %d 字节\n", fileInfo.Size())
-	
+
 	// 显示输出文件
 	outputFile := ""
 	if len(args) > 1 {
@@ -890,7 +890,7 @@ func handleDryRun(cmd *cobra.Command, args []string, log *zap.Logger) {
 		fmt.Printf("\n📋 步骤集详情: %s\n", stepSet.Name)
 		fmt.Printf("  描述: %s\n", stepSet.Description)
 		fmt.Printf("  步骤数量: %d\n", len(stepSet.Steps))
-		
+
 		for i, step := range stepSet.Steps {
 			fmt.Printf("    步骤 %d - %s:\n", i+1, step.Name)
 			fmt.Printf("      提供商: %s\n", step.Provider)

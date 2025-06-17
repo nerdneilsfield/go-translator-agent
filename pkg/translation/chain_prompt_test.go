@@ -7,11 +7,11 @@ import (
 
 func TestPreparePromptWithBuiltinTemplates(t *testing.T) {
 	tests := []struct {
-		name           string
-		stepName       string
-		context        map[string]string
+		name            string
+		stepName        string
+		context         map[string]string
 		additionalNotes string
-		wantContains   []string
+		wantContains    []string
 		wantNotContains []string
 	}{
 		{
@@ -148,7 +148,7 @@ func TestStepNameMatching(t *testing.T) {
 		t.Run(tt.stepName, func(t *testing.T) {
 			// 这个测试验证步骤名称匹配逻辑
 			stepNameLower := strings.ToLower(tt.stepName)
-			
+
 			var stepType string
 			if strings.Contains(stepNameLower, "initial") || strings.Contains(stepNameLower, "translation") {
 				stepType = "translation"

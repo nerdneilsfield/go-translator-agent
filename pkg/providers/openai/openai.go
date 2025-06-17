@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/retry"
@@ -15,9 +16,9 @@ import (
 // Config OpenAI配置
 type Config struct {
 	providers.BaseConfig
-	Model       string  `json:"model"`
-	Temperature float32 `json:"temperature"`
-	MaxTokens   int     `json:"max_tokens"`
+	Model       string            `json:"model"`
+	Temperature float32           `json:"temperature"`
+	MaxTokens   int               `json:"max_tokens"`
 	RetryConfig retry.RetryConfig `json:"retry_config"`
 }
 
@@ -48,7 +49,7 @@ func New(config Config) *Provider {
 	httpClient := &http.Client{
 		Timeout: config.Timeout,
 	}
-	
+
 	// 创建网络重试器
 	networkRetrier := retry.NewNetworkRetrier(config.RetryConfig)
 	retryClient := networkRetrier.WrapHTTPClient(httpClient)
@@ -72,24 +73,41 @@ func (p *Provider) Configure(config interface{}) error {
 
 // Translate 执行翻译
 func (p *Provider) Translate(ctx context.Context, req *providers.ProviderRequest) (*providers.ProviderResponse, error) {
-	// 构建聊天消息
-	messages := []Message{
-		{
-			Role:    "system",
-			Content: "You are a professional translator. Translate accurately while preserving the original meaning and tone.",
-		},
-		{
-			Role: "user",
-			Content: fmt.Sprintf("Translate the following text from %s to %s:\n\n%s",
-				req.SourceLanguage, req.TargetLanguage, req.Text),
-		},
-	}
+	// 检查是否有预构建的完整提示词（优先使用）
+	var messages []Message
+	
+	// 如果Text看起来像是完整的提示词（包含系统指令），直接使用
+	if contains, systemPart, userPart := p.parseFullPrompt(req.Text); contains {
+		messages = []Message{
+			{
+				Role:    "system",
+				Content: systemPart,
+			},
+			{
+				Role:    "user", 
+				Content: userPart,
+			},
+		}
+	} else {
+		// 否则使用传统方式构建
+		messages = []Message{
+			{
+				Role:    "system",
+				Content: "You are a professional translator. Translate accurately while preserving the original meaning and tone.",
+			},
+			{
+				Role: "user",
+				Content: fmt.Sprintf("Translate the following text from %s to %s:\n\n%s",
+					req.SourceLanguage, req.TargetLanguage, req.Text),
+			},
+		}
 
-	// 如果有额外的上下文或指令
-	if req.Metadata != nil {
-		if instruction, ok := req.Metadata["instruction"]; ok {
-			if instructionStr, ok := instruction.(string); ok {
-				messages[0].Content += "\n\n" + instructionStr
+		// 如果有额外的上下文或指令
+		if req.Metadata != nil {
+			if instruction, ok := req.Metadata["instruction"]; ok {
+				if instructionStr, ok := instruction.(string); ok {
+					messages[0].Content += "\n\n" + instructionStr
+				}
 			}
 		}
 	}
@@ -199,7 +217,7 @@ func (p *Provider) chat(ctx context.Context, req ChatRequest) (*ChatResponse, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	
+
 	// 检查HTTP状态码
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// 读取错误响应
@@ -223,6 +241,22 @@ func (p *Provider) chat(ctx context.Context, req ChatRequest) (*ChatResponse, er
 	}
 
 	return &chatResp, nil
+}
+
+// parseFullPrompt 解析完整提示词，分离系统指令和用户内容
+func (p *Provider) parseFullPrompt(text string) (bool, string, string) {
+	// 检查是否包含系统指令和翻译指令的关键标识
+	if strings.Contains(text, "You are a professional translator") && 
+	   strings.Contains(text, "🚨 CRITICAL INSTRUCTION") {
+		
+		// 按双换行分割系统指令和用户内容
+		parts := strings.SplitN(text, "\n\n", 2)
+		if len(parts) == 2 {
+			return true, parts[0], parts[1]
+		}
+	}
+	
+	return false, "", ""
 }
 
 // Message 聊天消息
@@ -275,14 +309,14 @@ func (e *APIError) Error() string {
 // type LLMClient struct {
 // 	provider *Provider
 // }
-// 
+//
 // // NewLLMClient 创建LLMClient
 // func NewLLMClient(config Config) *LLMClient {
 // 	return &LLMClient{
 // 		provider: New(config),
 // 	}
 // }
-// 
+//
 // // Chat 实现 translation.LLMClient 接口
 // func (c *LLMClient) Chat(ctx context.Context, req *translation.ChatRequest) (*translation.ChatResponse, error) {
 // 	// 转换消息格式
@@ -293,7 +327,7 @@ func (e *APIError) Error() string {
 // 			Content: msg.Content,
 // 		}
 // 	}
-// 
+//
 // 	// 创建请求
 // 	chatReq := ChatRequest{
 // 		Model:       req.Model,
@@ -301,17 +335,17 @@ func (e *APIError) Error() string {
 // 		Temperature: req.Temperature,
 // 		MaxTokens:   req.MaxTokens,
 // 	}
-// 
+//
 // 	if chatReq.Model == "" {
 // 		chatReq.Model = c.provider.config.Model
 // 	}
-// 
+//
 // 	// 执行请求
 // 	resp, err := c.provider.chat(ctx, chatReq)
 // 	if err != nil {
 // 		return nil, err
 // 	}
-// 
+//
 // 	// 转换响应
 // 	return &translation.ChatResponse{
 // 		Message: translation.ChatMessage{
@@ -323,7 +357,7 @@ func (e *APIError) Error() string {
 // 		TokensOut: resp.Usage.CompletionTokens,
 // 	}, nil
 // }
-// 
+//
 // // Complete 实现 translation.LLMClient 接口
 // func (c *LLMClient) Complete(ctx context.Context, req *translation.CompletionRequest) (*translation.CompletionResponse, error) {
 // 	// 将completion请求转换为chat请求
@@ -338,12 +372,12 @@ func (e *APIError) Error() string {
 // 		Temperature: req.Temperature,
 // 		MaxTokens:   req.MaxTokens,
 // 	}
-// 
+//
 // 	resp, err := c.Chat(ctx, chatReq)
 // 	if err != nil {
 // 		return nil, err
 // 	}
-// 
+//
 // 	return &translation.CompletionResponse{
 // 		Text:      resp.Message.Content,
 // 		Model:     resp.Model,
@@ -351,12 +385,12 @@ func (e *APIError) Error() string {
 // 		TokensOut: resp.TokensOut,
 // 	}, nil
 // }
-// 
+//
 // // GetModel 获取模型
 // func (c *LLMClient) GetModel() string {
 // 	return c.provider.config.Model
 // }
-// 
+//
 // // HealthCheck 健康检查
 // func (c *LLMClient) HealthCheck(ctx context.Context) error {
 // 	return c.provider.HealthCheck(ctx)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers"
@@ -16,10 +17,10 @@ import (
 // Config Ollama配置
 type Config struct {
 	providers.BaseConfig
-	Model       string  `json:"model"`
-	Temperature float32 `json:"temperature"`
-	MaxTokens   int     `json:"max_tokens"`
-	Stream      bool    `json:"stream"`
+	Model       string            `json:"model"`
+	Temperature float32           `json:"temperature"`
+	MaxTokens   int               `json:"max_tokens"`
+	Stream      bool              `json:"stream"`
 	RetryConfig retry.RetryConfig `json:"retry_config"`
 }
 
@@ -37,9 +38,9 @@ func DefaultConfig() Config {
 
 // Provider Ollama提供商
 type Provider struct {
-	config       Config
-	httpClient   *http.Client
-	retryClient  *retry.RetryableHTTPClient
+	config      Config
+	httpClient  *http.Client
+	retryClient *retry.RetryableHTTPClient
 }
 
 // New 创建新的Ollama提供商
@@ -51,7 +52,7 @@ func New(config Config) *Provider {
 	httpClient := &http.Client{
 		Timeout: config.Timeout,
 	}
-	
+
 	// 创建网络重试器
 	networkRetrier := retry.NewNetworkRetrier(config.RetryConfig)
 	retryClient := networkRetrier.WrapHTTPClient(httpClient)
@@ -75,15 +76,22 @@ func (p *Provider) Configure(config interface{}) error {
 
 // Translate 执行翻译
 func (p *Provider) Translate(ctx context.Context, req *providers.ProviderRequest) (*providers.ProviderResponse, error) {
-	// 构建提示
-	prompt := fmt.Sprintf("Translate the following text from %s to %s. Please only return the translated text without any additional explanations:\n\n%s",
-		req.SourceLanguage, req.TargetLanguage, req.Text)
+	var prompt string
+	
+	// 检查是否有预构建的完整提示词（优先使用）
+	if p.isFullPrompt(req.Text) {
+		prompt = req.Text
+	} else {
+		// 否则使用传统方式构建
+		prompt = fmt.Sprintf("Translate the following text from %s to %s. Please only return the translated text without any additional explanations:\n\n%s",
+			req.SourceLanguage, req.TargetLanguage, req.Text)
 
-	// 如果有额外的上下文或指令
-	if req.Metadata != nil {
-		if instruction, ok := req.Metadata["instruction"]; ok {
-			if instructionStr, ok := instruction.(string); ok {
-				prompt = instructionStr + "\n\n" + prompt
+		// 如果有额外的上下文或指令
+		if req.Metadata != nil {
+			if instruction, ok := req.Metadata["instruction"]; ok {
+				if instructionStr, ok := instruction.(string); ok {
+					prompt = instructionStr + "\n\n" + prompt
+				}
 			}
 		}
 	}
@@ -203,7 +211,7 @@ func (p *Provider) generate(ctx context.Context, req GenerateRequest) (*Generate
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	
+
 	// 检查HTTP状态码
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// 读取错误响应
@@ -227,6 +235,13 @@ func (p *Provider) generate(ctx context.Context, req GenerateRequest) (*Generate
 	}
 
 	return &generateResp, nil
+}
+
+// isFullPrompt 检查是否为完整的预构建提示词
+func (p *Provider) isFullPrompt(text string) bool {
+	// 检查是否包含系统指令和翻译指令的关键标识
+	return strings.Contains(text, "You are a professional translator") && 
+		   strings.Contains(text, "🚨 CRITICAL INSTRUCTION")
 }
 
 // GenerateRequest 生成请求

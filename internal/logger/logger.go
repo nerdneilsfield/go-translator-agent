@@ -193,32 +193,30 @@ func NewLoggerWithPath(debug, verbose bool, outputPath string) *zap.Logger {
 
 	// 创建基础的 cores (控制台和文件)
 	var baseCores []zapcore.Core
-	
+
 	// 控制台输出级别
 	consoleLevel := level
-	
+
 	// 文件输出级别（verbose 模式下文件仍然只记录 INFO 及以上）
 	fileLevel := zapcore.InfoLevel
 	if debug {
 		fileLevel = zapcore.DebugLevel
 	}
-	
+
 	baseCores = append(baseCores, zapcore.NewCore(consoleEncoder, consoleWriter, consoleLevel))
 	if enableFileOutput {
 		baseCores = append(baseCores, zapcore.NewCore(fileEncoder, fileWriter, fileLevel))
 	}
 	underlyingCore := zapcore.NewTee(baseCores...)
 
-	// 用 CallbackCore 包装 underlyingCore
-	callbackEnabledCore := NewCallbackCore(underlyingCore, myCustomLogCallback)
+	// 检查是否需要包装CallbackCore（默认禁用以避免重复输出）
+	// 如果需要启用debug回调，可以通过环境变量控制
+	if os.Getenv("TRANSLATOR_DEBUG_CALLBACK") == "true" {
+		callbackEnabledCore := NewCallbackCore(underlyingCore, myCustomLogCallback)
+		return zap.New(callbackEnabledCore, zap.AddCaller())
+	}
 
-	// 创建 logger
-	// zap.AddCaller() 会在 CallbackCore 外部添加调用者信息，
-	// 如果你希望回调函数也能收到已经包含调用者信息的 Entry，这是可以的。
-	// 如果你想在 CallbackCore 内部控制调用者信息，可能会更复杂。
-	// zap.AddCallerSkip(skip) 也可以在这里调整，以确保回调收到的 Entry.Caller 是你期望的。
-	// 如果你的 CallbackCore.Write 也调用了 cc.Core.Write，那么 AddCaller 的效果会作用于最终输出。
-	return zap.New(callbackEnabledCore, zap.AddCaller() /*, zap.AddStacktrace(zapcore.ErrorLevel) */)
+	return zap.New(underlyingCore, zap.AddCaller())
 }
 
 // Logger 接口定义了日志记录功能
@@ -297,7 +295,7 @@ func (l *ZapLogger) GetZapLogger() *zap.Logger {
 
 // DetailedLogConfig 详细日志配置
 type DetailedLogConfig struct {
-	EnableDetailedLog  bool   // 是否启用详细日志
+	EnableDetailedLog bool   // 是否启用详细日志
 	LogLevel          string // 基础日志级别 (trace/debug/info/warn/error)
 	ConsoleLogLevel   string // 控制台日志级别
 	NormalLogFile     string // 普通日志文件路径
@@ -398,10 +396,14 @@ func NewLoggerWithDetailedConfig(config DetailedLogConfig) *zap.Logger {
 	// 创建组合核心
 	core := zapcore.NewTee(cores...)
 
-	// 包装CallbackCore（如果需要）
-	callbackCore := NewCallbackCore(core, myCustomLogCallback)
+	// 检查是否需要包装CallbackCore（默认禁用以避免重复输出）
+	// 如果需要启用debug回调，可以通过环境变量控制
+	if os.Getenv("TRANSLATOR_DEBUG_CALLBACK") == "true" {
+		callbackCore := NewCallbackCore(core, myCustomLogCallback)
+		return zap.New(callbackCore, zap.AddCaller())
+	}
 
-	return zap.New(callbackCore, zap.AddCaller())
+	return zap.New(core, zap.AddCaller())
 }
 
 // ensureDir 确保目录存在

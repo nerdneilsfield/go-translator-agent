@@ -503,11 +503,11 @@ func showNodeStats(db *stats.Database) error {
 	// 显示总体统计
 	fmt.Printf("📊 Overall Node Statistics:\n")
 	fmt.Printf("  Total Nodes Processed: %s\n", formatNumber(totalNodes))
-	fmt.Printf("  Completed Nodes: %s (%.1f%%)\n", formatNumber(completedNodes), 
+	fmt.Printf("  Completed Nodes: %s (%.1f%%)\n", formatNumber(completedNodes),
 		safePercentage(completedNodes, totalNodes))
-	fmt.Printf("  Failed Nodes: %s (%.1f%%)\n", formatNumber(failedNodes), 
+	fmt.Printf("  Failed Nodes: %s (%.1f%%)\n", formatNumber(failedNodes),
 		safePercentage(failedNodes, totalNodes))
-	fmt.Printf("  Pending Nodes: %s (%.1f%%)\n", formatNumber(pendingNodes), 
+	fmt.Printf("  Pending Nodes: %s (%.1f%%)\n", formatNumber(pendingNodes),
 		safePercentage(pendingNodes, totalNodes))
 
 	// 计算成功率
@@ -552,7 +552,7 @@ func showNodeStats(db *stats.Database) error {
 	fmt.Println(strings.Repeat("-", 40))
 
 	statusCounts := make(map[string]int)
-	statusNodes := make(map[string]struct{Total, Completed, Failed int64})
+	statusNodes := make(map[string]struct{ Total, Completed, Failed int64 })
 
 	for _, record := range statsData.RecentTranslations {
 		status := record.Status
@@ -611,12 +611,12 @@ func showNodeStats(db *stats.Database) error {
 		for _, record := range statsData.RecentTranslations {
 			if record.Duration > 0 && record.CompletedNodes > 0 {
 				rate := float64(record.CompletedNodes) / record.Duration.Seconds()
-				
+
 				if fastestNodeRate == 0 || rate > fastestNodeRate {
 					fastestNodeRate = rate
 					fastestFile = record.InputFile
 				}
-				
+
 				if slowestNodeRate == 0 || rate < slowestNodeRate {
 					slowestNodeRate = rate
 					slowestFile = record.InputFile

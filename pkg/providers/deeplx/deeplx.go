@@ -17,8 +17,8 @@ import (
 type Config struct {
 	providers.BaseConfig
 	// DeepLX特定配置
-	AccessToken string              `json:"access_token,omitempty"` // 可选的访问令牌
-	RetryConfig retry.RetryConfig   `json:"retry_config"`
+	AccessToken string            `json:"access_token,omitempty"` // 可选的访问令牌
+	RetryConfig retry.RetryConfig `json:"retry_config"`
 }
 
 // DefaultConfig 返回默认配置
@@ -48,7 +48,7 @@ func New(config Config) *Provider {
 	httpClient := &http.Client{
 		Timeout: config.Timeout,
 	}
-	
+
 	// 创建网络重试器
 	networkRetrier := retry.NewNetworkRetrier(config.RetryConfig)
 	retryClient := networkRetrier.WrapHTTPClient(httpClient)
@@ -99,7 +99,7 @@ func (p *Provider) Translate(ctx context.Context, req *providers.ProviderRequest
 	return &providers.ProviderResponse{
 		Text: resp.Data,
 		Metadata: map[string]interface{}{
-			"model": "deeplx",
+			"model":           "deeplx",
 			"detected_source": metadata["detected_source"],
 		},
 	}, nil

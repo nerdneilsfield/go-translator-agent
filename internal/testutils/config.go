@@ -8,32 +8,32 @@ import (
 func CreateTestConfig(progressPath string) *config.Config {
 	return &config.Config{
 		// 基础配置
-		SourceLang:        "English",
-		TargetLang:        "Chinese",
-		Concurrency:       1,
-		ChunkSize:         1000,
-		UseCache:          false,
-		Debug:             false,
-		
+		SourceLang:  "English",
+		TargetLang:  "Chinese",
+		Concurrency: 1,
+		ChunkSize:   1000,
+		UseCache:    false,
+		Debug:       false,
+
 		// 超时配置
-		RequestTimeout:    30,
-		RetryAttempts:     3,
+		RequestTimeout:     30,
+		RetryAttempts:      3,
 		TranslationTimeout: 1800,
-		
+
 		// 格式修复配置
 		EnableFormatFix:      true,
 		FormatFixInteractive: true,
 		PreTranslationFix:    false,
 		PostTranslationFix:   false,
-		
+
 		// 翻译后处理配置
 		EnablePostProcessing:      true,
-		GlossaryPath:             "configs/glossary_example.yaml",
-		ContentProtection:        true,
-		TerminologyConsistency:   true,
-		MixedLanguageSpacing:     true,
+		GlossaryPath:              "configs/glossary_example.yaml",
+		ContentProtection:         true,
+		TerminologyConsistency:    true,
+		MixedLanguageSpacing:      true,
 		MachineTranslationCleanup: true,
-		
+
 		// 步骤集配置
 		ActiveStepSet: "test-stepset",
 		StepSets: map[string]config.StepSetConfigV2{
@@ -67,7 +67,7 @@ func CreateTestConfig(progressPath string) *config.Config {
 				FastModeThreshold: 300,
 			},
 		},
-		
+
 		// 模型配置
 		ModelConfigs: map[string]config.ModelConfig{
 			"test-model": {

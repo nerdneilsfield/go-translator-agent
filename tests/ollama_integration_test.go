@@ -33,7 +33,7 @@ func TestOllamaIntegration(t *testing.T) {
 		ChunkSize:        1000,
 		RetryAttempts:    2,
 		Country:          "China",
-		Concurrency:      1, // 使用单线程避免并发问题
+		Concurrency:      1,  // 使用单线程避免并发问题
 		RequestTimeout:   60, // 增加超时时间
 		ModelConfigs: map[string]config.ModelConfig{
 			"ollama-llama2": {
@@ -117,7 +117,6 @@ func TestOllamaIntegration(t *testing.T) {
 
 		text := "Hello, world! This is a test."
 		result, err := coordinator.TranslateText(ctx, text)
-
 		if err != nil {
 			if isOllamaConnectionError(err) {
 				t.Skipf("Skipping test: Ollama service not available (%v)", err)
@@ -155,12 +154,11 @@ And a code block:
 
 End of document.`
 
-		err := os.WriteFile(inputFile, []byte(inputContent), 0644)
+		err := os.WriteFile(inputFile, []byte(inputContent), 0o644)
 		require.NoError(t, err)
 
 		// 执行文档翻译
 		result, err := coordinator.TranslateFile(ctx, inputFile, outputFile)
-
 		if err != nil {
 			if isOllamaConnectionError(err) {
 				t.Skipf("Skipping file translation test: Ollama service not available (%v)", err)
@@ -175,7 +173,7 @@ End of document.`
 		if _, err := os.Stat(outputFile); err == nil {
 			outputContent, err := os.ReadFile(outputFile)
 			require.NoError(t, err)
-			
+
 			outputStr := string(outputContent)
 			assert.NotEmpty(t, outputStr)
 			assert.Contains(t, outputStr, "#") // 应该保留Markdown标题
@@ -196,7 +194,6 @@ End of document.`
 
 		text := "The quick brown fox jumps over the lazy dog."
 		result, err := coordinator.TranslateText(ctx, text)
-
 		if err != nil {
 			if isOllamaConnectionError(err) {
 				t.Skipf("Skipping multi-step test: Ollama service not available (%v)", err)
@@ -313,9 +310,9 @@ func isOllamaConnectionError(err error) bool {
 }
 
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && 
-		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || 
-		indexOf(s, substr) >= 0))
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) &&
+		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
+			indexOf(s, substr) >= 0))
 }
 
 func indexOf(s, substr string) int {

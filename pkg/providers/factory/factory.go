@@ -172,7 +172,7 @@ func (f *ProviderFactory) createRawProvider(modelConfig config.ModelConfig) (tra
 func (f *ProviderFactory) GetSupportedProviders() []string {
 	return []string{
 		"openai",
-		"deepl", 
+		"deepl",
 		"deeplx",
 		"google",
 		"libretranslate",

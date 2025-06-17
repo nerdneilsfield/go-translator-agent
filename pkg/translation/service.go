@@ -162,10 +162,10 @@ func (s *service) Translate(ctx context.Context, req *Request) (*Response, error
 
 	// 并行处理每个块
 	type chunkResult struct {
-		index      int
-		output     string
+		index       int
+		output      string
 		chainResult *ChainResult
-		err        error
+		err         error
 	}
 
 	resultChan := make(chan chunkResult, chunkCount)
@@ -207,7 +207,7 @@ func (s *service) Translate(ctx context.Context, req *Request) (*Response, error
 					}
 				}
 			}
-			
+
 			// 执行翻译链
 			chainResult, err := s.chain.Execute(chainCtx, text)
 			if err != nil {
@@ -223,7 +223,7 @@ func (s *service) Translate(ctx context.Context, req *Request) (*Response, error
 				index:       idx,
 				output:      chainResult.FinalOutput,
 				chainResult: chainResult,
-				err:        err,
+				err:         err,
 			}
 		}(i, chunk)
 	}
@@ -244,7 +244,7 @@ func (s *service) Translate(ctx context.Context, req *Request) (*Response, error
 		if result.err != nil && firstError == nil {
 			firstError = result.err
 		}
-		
+
 		if result.err == nil {
 			translatedChunks[result.index] = result.output
 

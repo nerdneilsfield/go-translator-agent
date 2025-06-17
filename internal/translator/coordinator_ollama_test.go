@@ -130,7 +130,7 @@ func TestTranslationCoordinator_OllamaProvider(t *testing.T) {
 func TestTranslationCoordinator_OllamaFastMode(t *testing.T) {
 	cfg := createOllamaTestConfig()
 	cfg.ActiveStepSet = "ollama_fast"
-	
+
 	logger := zap.NewNop()
 	progressPath := t.TempDir()
 
@@ -159,7 +159,7 @@ func TestTranslationCoordinator_OllamaStepSetValidation(t *testing.T) {
 	t.Run("Valid Ollama Configuration", func(t *testing.T) {
 		cfg := createOllamaTestConfig()
 		coordinator, err := NewTranslationCoordinator(cfg, logger, progressPath)
-		
+
 		require.NoError(t, err)
 		assert.NotNil(t, coordinator)
 	})
@@ -168,9 +168,9 @@ func TestTranslationCoordinator_OllamaStepSetValidation(t *testing.T) {
 		cfg := createOllamaTestConfig()
 		// 删除模型配置
 		delete(cfg.ModelConfigs, "ollama-llama2")
-		
+
 		_, err := NewTranslationCoordinator(cfg, logger, progressPath)
-		
+
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not found in configuration")
 	})
@@ -178,9 +178,9 @@ func TestTranslationCoordinator_OllamaStepSetValidation(t *testing.T) {
 	t.Run("Invalid Step Set", func(t *testing.T) {
 		cfg := createOllamaTestConfig()
 		cfg.ActiveStepSet = "nonexistent_step_set"
-		
+
 		_, err := NewTranslationCoordinator(cfg, logger, progressPath)
-		
+
 		assert.Error(t, err)
 	})
 }
@@ -204,7 +204,7 @@ func TestTranslationCoordinator_OllamaConfigMapping(t *testing.T) {
 func TestTranslationCoordinator_OllamaMultipleModels(t *testing.T) {
 	// 测试使用多个不同Ollama模型的配置
 	cfg := createOllamaTestConfig()
-	
+
 	// 添加更多Ollama模型
 	cfg.ModelConfigs["ollama-codellama"] = config.ModelConfig{
 		Name:            "ollama-codellama",
@@ -216,7 +216,7 @@ func TestTranslationCoordinator_OllamaMultipleModels(t *testing.T) {
 		MaxInputTokens:  8192,
 		Temperature:     0.1,
 	}
-	
+
 	// 创建使用三个不同模型的步骤集
 	cfg.StepSets["ollama_multi"] = config.StepSetConfigV2{
 		ID:          "ollama_multi",
@@ -248,7 +248,7 @@ func TestTranslationCoordinator_OllamaMultipleModels(t *testing.T) {
 		FastModeThreshold: 500,
 	}
 	cfg.ActiveStepSet = "ollama_multi"
-	
+
 	logger := zap.NewNop()
 	progressPath := t.TempDir()
 
@@ -257,12 +257,12 @@ func TestTranslationCoordinator_OllamaMultipleModels(t *testing.T) {
 
 	t.Run("Multiple Ollama Models Configuration", func(t *testing.T) {
 		assert.NotNil(t, coordinator)
-		
+
 		// 验证translation service可以处理多个模型
 		text := "Code function example: def hello_world(): print('Hello, World!')"
-		
+
 		result, err := coordinator.TranslateText(context.Background(), text)
-		
+
 		if err != nil {
 			t.Logf("Expected error (no Ollama service): %v", err)
 		} else {
@@ -274,13 +274,13 @@ func TestTranslationCoordinator_OllamaMultipleModels(t *testing.T) {
 
 func TestTranslationCoordinator_OllamaWithCustomEndpoint(t *testing.T) {
 	cfg := createOllamaTestConfig()
-	
+
 	// 修改为自定义端点
 	for name, modelCfg := range cfg.ModelConfigs {
 		modelCfg.BaseURL = "http://custom-ollama:8080"
 		cfg.ModelConfigs[name] = modelCfg
 	}
-	
+
 	logger := zap.NewNop()
 	progressPath := t.TempDir()
 
@@ -289,9 +289,9 @@ func TestTranslationCoordinator_OllamaWithCustomEndpoint(t *testing.T) {
 
 	t.Run("Custom Ollama Endpoint", func(t *testing.T) {
 		text := "Test with custom endpoint"
-		
+
 		result, err := coordinator.TranslateText(context.Background(), text)
-		
+
 		if err != nil {
 			// 应该是连接错误，因为自定义端点不存在
 			t.Logf("Expected connection error: %v", err)

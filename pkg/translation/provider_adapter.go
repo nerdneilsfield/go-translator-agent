@@ -68,72 +68,72 @@ func WithProvider(provider TranslationProvider) Option {
 		if provider.SupportsSteps() {
 			// o.llmClient = &providerLLMClient{provider: provider}
 		}
-// 		// 未来可以直接使用 provider
-// 	}
-// }
-// 
-// // providerLLMClient 将 TranslationProvider 包装为 LLMClient
-// type providerLLMClient struct {
-// 	provider TranslationProvider
-// }
-// 
-// func (p *providerLLMClient) Complete(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
-// 	provReq := &ProviderRequest{
-// 		Text: req.Prompt,
-// 	}
-// 
-// 	resp, err := p.provider.Translate(ctx, provReq)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 
-// 	return &CompletionResponse{
-// 		Text:      resp.Text,
-// 		Model:     resp.Model,
-// 		TokensIn:  resp.TokensIn,
-// 		TokensOut: resp.TokensOut,
-// 	}, nil
-// }
-// 
-// func (p *providerLLMClient) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, error) {
-// 	// 将最后一条消息作为翻译内容
-// 	if len(req.Messages) == 0 {
-// 		return nil, ErrEmptyText
-// 	}
-// 
-// 	lastMessage := req.Messages[len(req.Messages)-1]
-// 	provReq := &ProviderRequest{
-// 		Text: lastMessage.Content,
-// 	}
-// 
-// 	resp, err := p.provider.Translate(ctx, provReq)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 
-// 	return &ChatResponse{
-// 		Message: ChatMessage{
-// 			Role:    "assistant",
-// 			Content: resp.Text,
-// 		},
-// 		Model:     resp.Model,
-// 		TokensIn:  resp.TokensIn,
-// 		TokensOut: resp.TokensOut,
-// 	}, nil
-// }
-// 
-// func (p *providerLLMClient) GetModel() string {
-// 	return p.provider.GetName()
-// }
-// 
-// func (p *providerLLMClient) HealthCheck(ctx context.Context) error {
-// 	// 简单测试翻译
-// 	_, err := p.provider.Translate(ctx, &ProviderRequest{
-// 		Text:           "test",
-// 		SourceLanguage: "en",
-// 		TargetLanguage: "zh",
-// 	})
-// 	return err
-// }
+		// 		// 未来可以直接使用 provider
+		// 	}
+		// }
+		//
+		// // providerLLMClient 将 TranslationProvider 包装为 LLMClient
+		// type providerLLMClient struct {
+		// 	provider TranslationProvider
+		// }
+		//
+		// func (p *providerLLMClient) Complete(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
+		// 	provReq := &ProviderRequest{
+		// 		Text: req.Prompt,
+		// 	}
+		//
+		// 	resp, err := p.provider.Translate(ctx, provReq)
+		// 	if err != nil {
+		// 		return nil, err
+		// 	}
+		//
+		// 	return &CompletionResponse{
+		// 		Text:      resp.Text,
+		// 		Model:     resp.Model,
+		// 		TokensIn:  resp.TokensIn,
+		// 		TokensOut: resp.TokensOut,
+		// 	}, nil
+		// }
+		//
+		// func (p *providerLLMClient) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, error) {
+		// 	// 将最后一条消息作为翻译内容
+		// 	if len(req.Messages) == 0 {
+		// 		return nil, ErrEmptyText
+		// 	}
+		//
+		// 	lastMessage := req.Messages[len(req.Messages)-1]
+		// 	provReq := &ProviderRequest{
+		// 		Text: lastMessage.Content,
+		// 	}
+		//
+		// 	resp, err := p.provider.Translate(ctx, provReq)
+		// 	if err != nil {
+		// 		return nil, err
+		// 	}
+		//
+		// 	return &ChatResponse{
+		// 		Message: ChatMessage{
+		// 			Role:    "assistant",
+		// 			Content: resp.Text,
+		// 		},
+		// 		Model:     resp.Model,
+		// 		TokensIn:  resp.TokensIn,
+		// 		TokensOut: resp.TokensOut,
+		// 	}, nil
+		// }
+		//
+		// func (p *providerLLMClient) GetModel() string {
+		// 	return p.provider.GetName()
+		// }
+		//
+		// func (p *providerLLMClient) HealthCheck(ctx context.Context) error {
+		// 	// 简单测试翻译
+		// 	_, err := p.provider.Translate(ctx, &ProviderRequest{
+		// 		Text:           "test",
+		// 		SourceLanguage: "en",
+		// 		TargetLanguage: "zh",
+		// 	})
+		// 	return err
+		// }
 	}
 }

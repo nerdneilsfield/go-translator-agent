@@ -19,6 +19,7 @@ type BatchTranslator struct {
 	translationService translation.Service
 	logger             *zap.Logger
 	preserveManager    *translation.PreserveManager
+	smartSplitter      *translation.SmartNodeSplitter // 智能节点分割器
 }
 
 // NewBatchTranslator 创建批量翻译器
@@ -28,6 +29,7 @@ func NewBatchTranslator(cfg TranslatorConfig, service translation.Service, logge
 		translationService: service,
 		logger:             logger,
 		preserveManager:    translation.NewPreserveManager(translation.DefaultPreserveConfig),
+		smartSplitter:      translation.NewSmartNodeSplitter(cfg.SmartSplitter, logger),
 	}
 }
 
@@ -35,21 +37,21 @@ func NewBatchTranslator(cfg TranslatorConfig, service translation.Service, logge
 func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document.NodeInfo) error {
 	// 批量翻译所有节点
 	bt.logger.Info("starting batch translation", zap.Int("totalNodes", len(nodes)))
-	
+
 	// 第一轮：分组翻译所有节点
 	groups := bt.groupNodes(nodes)
-	bt.logger.Debug("initial grouping for translation", 
+	bt.logger.Debug("initial grouping for translation",
 		zap.Int("totalGroups", len(groups)),
 		zap.Int("concurrency", bt.config.Concurrency))
-	
+
 	// 并行处理第一轮翻译
 	bt.processGroups(ctx, groups)
-	
+
 	// 检查是否启用失败重试功能
 	if !bt.config.RetryOnFailure {
-		bt.logger.Info("retry disabled by configuration", 
+		bt.logger.Info("retry disabled by configuration",
 			zap.String("retryOnFailure", "false"))
-		
+
 		// 统计最终结果但不重试
 		successCount := 0
 		failedCount := 0
@@ -60,13 +62,13 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 				failedCount++
 			}
 		}
-		
+
 		bt.logger.Info("translation completed without retry",
 			zap.Int("completed", successCount),
 			zap.Int("failed", failedCount),
 			zap.Int("total", len(nodes)),
 			zap.Float64("progress", float64(successCount)/float64(len(nodes))*100))
-			
+
 		return nil
 	}
 
@@ -75,7 +77,7 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 	if maxRetries <= 0 {
 		maxRetries = 3
 	}
-	
+
 	// 统计初始翻译结果
 	initialSuccessCount := 0
 	initialFailedCount := 0
@@ -86,17 +88,17 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 			initialFailedCount++
 		}
 	}
-	
+
 	bt.logger.Info("initial translation round completed",
 		zap.Int("successful", initialSuccessCount),
 		zap.Int("failed", initialFailedCount),
 		zap.Int("total", len(nodes)),
 		zap.Float64("successRate", float64(initialSuccessCount)/float64(len(nodes))*100))
-	
+
 	bt.logger.Info("file-level retry mechanism enabled",
 		zap.Int("maxRetries", maxRetries),
 		zap.Bool("retryOnFailure", bt.config.RetryOnFailure))
-	
+
 	// 用于跟踪已处理的节点，避免无限递归
 	processedNodes := make(map[int]bool)
 	for _, node := range nodes {
@@ -104,7 +106,7 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 			processedNodes[node.ID] = true
 		}
 	}
-	
+
 	// 重试循环
 	for retry := 1; retry <= maxRetries; retry++ {
 		// 收集失败节点
@@ -112,7 +114,7 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 		if len(failedNodes) == 0 {
 			break
 		}
-		
+
 		// 检查是否有可重试的失败节点
 		retryableNodes := 0
 		nonRetryableNodes := 0
@@ -132,7 +134,7 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 				retryableNodes++
 			}
 		}
-		
+
 		// 如果没有可重试的节点，停止重试
 		if retryableNodes == 0 {
 			bt.logger.Warn("no retryable nodes found, stopping retry",
@@ -142,26 +144,26 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 				zap.String("reason", "all failed nodes have non-retryable errors"))
 			break
 		}
-		
+
 		bt.logger.Info("retryable nodes analysis",
 			zap.Int("retryRound", retry),
 			zap.Int("totalFailedNodes", len(failedNodes)),
 			zap.Int("retryableNodes", retryableNodes),
 			zap.Int("nonRetryableNodes", nonRetryableNodes))
-		
+
 		// 使用INFO级别记录重试开始信息
 		bt.logger.Info("starting retry for failed nodes",
 			zap.Int("retryRound", retry),
 			zap.Int("maxRetries", maxRetries),
 			zap.Int("failedNodes", len(failedNodes)))
-		
+
 		bt.logger.Debug("collecting failed nodes for retry details",
 			zap.Int("retryRound", retry),
 			zap.Int("failedNodes", len(failedNodes)))
-		
+
 		// 为失败节点添加上下文并重新分组
 		retryGroups := bt.groupFailedNodesWithContext(nodes, failedNodes, processedNodes)
-		
+
 		if len(retryGroups) == 0 {
 			bt.logger.Warn("no retry groups created, stopping retry",
 				zap.Int("retryRound", retry),
@@ -169,21 +171,21 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 				zap.String("reason", "failed to create retry groups with context"))
 			break
 		}
-		
+
 		totalRetryNodes := 0
 		for _, group := range retryGroups {
 			totalRetryNodes += len(group.Nodes)
 		}
-		
+
 		bt.logger.Debug("retry grouping with context",
 			zap.Int("retryRound", retry),
 			zap.Int("failedNodes", len(failedNodes)),
 			zap.Int("retryGroups", len(retryGroups)),
 			zap.Int("totalNodesWithContext", totalRetryNodes))
-		
+
 		// 并行处理重试组
 		bt.processGroups(ctx, retryGroups)
-		
+
 		// 统计重试结果
 		retrySuccessCount := 0
 		retryFailedCount := 0
@@ -194,14 +196,14 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 				retryFailedCount++
 			}
 		}
-		
+
 		// 记录重试结果
 		bt.logger.Info("retry round completed",
 			zap.Int("retryRound", retry),
 			zap.Int("originalFailedNodes", len(failedNodes)),
 			zap.Int("nowSuccessful", retrySuccessCount),
 			zap.Int("stillFailed", retryFailedCount))
-		
+
 		// 更新已处理节点集合
 		for _, node := range nodes {
 			if node.Status == document.NodeStatusSuccess && !processedNodes[node.ID] {
@@ -209,7 +211,7 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 			}
 		}
 	}
-	
+
 	// 记录最终统计
 	successCount := 0
 	failedCount := 0
@@ -220,10 +222,10 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 			failedCount++
 		}
 	}
-	
+
 	// 计算进度百分比
 	progressPercent := float64(successCount) / float64(len(nodes)) * 100
-	
+
 	// 使用 INFO 级别显示翻译完成信息（包含重试信息）
 	bt.logger.Info("translation completed",
 		zap.Int("completed", successCount),
@@ -237,7 +239,7 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 			}
 			return "all retries successful"
 		}()))
-	
+
 	return nil
 }
 
@@ -247,24 +249,24 @@ func (bt *BatchTranslator) processGroups(ctx context.Context, groups []*document
 	if concurrency <= 0 {
 		concurrency = 4
 	}
-	
+
 	// 创建工作队列和进度追踪
 	groupChan := make(chan *document.NodeGroup, len(groups))
 	errChan := make(chan error, len(groups))
 	progressChan := make(chan int, len(groups))
-	
+
 	// 计算总节点数
 	totalNodes := 0
 	for _, group := range groups {
 		totalNodes += len(group.Nodes)
 	}
-	
+
 	// 将所有组放入队列
 	for _, group := range groups {
 		groupChan <- group
 	}
 	close(groupChan)
-	
+
 	// 启动进度监控 goroutine
 	processedGroups := 0
 	go func() {
@@ -278,7 +280,7 @@ func (bt *BatchTranslator) processGroups(ctx context.Context, groups []*document
 				zap.Float64("progress", progress))
 		}
 	}()
-	
+
 	// 启动工作 goroutines
 	var wg sync.WaitGroup
 	for i := 0; i < concurrency; i++ {
@@ -289,13 +291,13 @@ func (bt *BatchTranslator) processGroups(ctx context.Context, groups []*document
 				bt.logger.Debug("worker processing group",
 					zap.Int("workerID", workerID),
 					zap.Int("groupSize", len(group.Nodes)))
-					
+
 				if err := bt.translateGroup(ctx, group); err != nil {
 					// 提取详细错误信息
 					var detailedError string
 					var errorType string
 					var isRetryable bool
-					
+
 					if transErr, ok := err.(*translation.TranslationError); ok {
 						detailedError = transErr.Error()
 						errorType = transErr.Code
@@ -307,8 +309,8 @@ func (bt *BatchTranslator) processGroups(ctx context.Context, groups []*document
 						detailedError = err.Error()
 						errorType = "UNKNOWN_ERROR"
 					}
-					
-					bt.logger.Error("group translation failed", 
+
+					bt.logger.Error("group translation failed",
 						zap.Int("workerID", workerID),
 						zap.Int("groupSize", len(group.Nodes)),
 						zap.String("errorType", errorType),
@@ -316,13 +318,13 @@ func (bt *BatchTranslator) processGroups(ctx context.Context, groups []*document
 						zap.Bool("retryable", isRetryable))
 					errChan <- err
 				}
-				
+
 				// 发送进度更新
 				progressChan <- len(group.Nodes)
 			}
 		}(i)
 	}
-	
+
 	// 等待所有工作完成
 	wg.Wait()
 	close(errChan)
@@ -339,15 +341,15 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		}
 		return nil
 	}
-	
+
 	// 保护不需要翻译的内容
 	protectedTexts := make(map[int]string) // nodeID -> protected text
 	preserveManager := translation.NewPreserveManager(translation.DefaultPreserveConfig)
-	
+
 	// 构建批量翻译文本
 	var builder strings.Builder
 	needsTranslation := false
-	
+
 	for i, node := range group.Nodes {
 		// 检查是否是上下文节点（已经翻译过的）
 		isContext := false
@@ -356,7 +358,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 				isContext = true
 			}
 		}
-		
+
 		// 如果是上下文节点且已成功，使用已翻译的文本
 		if isContext && node.Status == document.NodeStatusSuccess {
 			// 添加节点标记
@@ -366,11 +368,11 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		} else {
 			// 需要翻译的节点
 			needsTranslation = true
-			
+
 			// 保护内容
 			protectedText := bt.protectContent(node.OriginalText, preserveManager)
 			protectedTexts[node.ID] = protectedText
-			
+
 			// 在详细模式下记录保护信息
 			if bt.config.Verbose && protectedText != node.OriginalText {
 				bt.logger.Debug("content protection applied",
@@ -380,27 +382,27 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 					zap.String("originalSample", truncateText(node.OriginalText, 100)),
 					zap.String("protectedSample", truncateText(protectedText, 100)))
 			}
-			
+
 			// 添加节点标记
 			builder.WriteString(fmt.Sprintf("@@NODE_START_%d@@\n", node.ID))
 			builder.WriteString(protectedText)
 			builder.WriteString(fmt.Sprintf("\n@@NODE_END_%d@@", node.ID))
 		}
-		
+
 		if i < len(group.Nodes)-1 {
 			builder.WriteString("\n\n")
 		}
 	}
-	
+
 	// 如果所有节点都是上下文节点，跳过翻译
 	if !needsTranslation {
-		bt.logger.Debug("skipping group with only context nodes", 
+		bt.logger.Debug("skipping group with only context nodes",
 			zap.Int("groupSize", len(group.Nodes)))
 		return nil
 	}
-	
+
 	combinedText := builder.String()
-	
+
 	// 统计需要翻译的节点数
 	nodesToTranslate := 0
 	contextNodes := 0
@@ -415,24 +417,24 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		nodesToTranslate++
 		nodeIDsToTranslate = append(nodeIDsToTranslate, node.ID)
 	}
-	
+
 	if bt.config.Verbose && len(nodeIDsToTranslate) > 0 {
 		bt.logger.Debug("nodes to translate in this group",
 			zap.Ints("nodeIDs", nodeIDsToTranslate))
 	}
-	
+
 	bt.logger.Debug("preparing batch translation request",
 		zap.Int("totalNodes", len(group.Nodes)),
 		zap.Int("nodesToTranslate", nodesToTranslate),
 		zap.Int("contextNodes", contextNodes),
 		zap.Int("textLength", len(combinedText)))
-	
+
 	// 在发送前记录详细的请求内容
 	bt.logger.Debug("sending batch translation request",
 		zap.Int("requestLength", len(combinedText)),
 		zap.Int("nodeCount", len(group.Nodes)),
 		zap.String("requestPreview", truncateText(combinedText, 500)))
-	
+
 	// 如果是 verbose 模式，记录完整的节点标记
 	if bt.config.Verbose {
 		// 提取所有节点标记
@@ -446,7 +448,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		bt.logger.Debug("node markers in request",
 			zap.Strings("markers", nodeMarkers))
 	}
-	
+
 	// 执行翻译 - 使用简化的接口，无分块
 	translatedText, err := bt.translationService.TranslateText(ctx, combinedText)
 	if err != nil {
@@ -460,7 +462,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		}
 		return err
 	}
-	
+
 	// 记录响应详情
 	bt.logger.Debug("received translation response",
 		zap.Int("responseLength", len(translatedText)),
@@ -468,7 +470,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 	// 检查响应格式
 	isJSON := strings.HasPrefix(strings.TrimSpace(translatedText), "{") || strings.HasPrefix(strings.TrimSpace(translatedText), "[")
 	isEmpty := len(strings.TrimSpace(translatedText)) == 0
-	
+
 	// 检查响应是否包含节点标记
 	hasStartMarkers := strings.Contains(translatedText, "@@NODE_START_")
 	hasEndMarkers := strings.Contains(translatedText, "@@NODE_END_")
@@ -477,20 +479,67 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		zap.Bool("hasEndMarkers", hasEndMarkers),
 		zap.Bool("isJSON", isJSON),
 		zap.Bool("isEmpty", isEmpty))
-	
+
 	// 如果响应看起来像 JSON，尝试提取其中的文本
 	if isJSON && !hasStartMarkers {
 		bt.logger.Warn("response appears to be JSON without node markers",
 			zap.String("jsonPreview", truncateText(translatedText, 200)))
 	}
-	
-	// 如果没有找到节点标记，运行诊断
+
+	// 如果没有找到节点标记，运行诊断并尝试重试
 	if !hasStartMarkers || !hasEndMarkers {
 		diagnostic := DiagnoseBatchTranslationIssue(combinedText, translatedText)
 		bt.logger.Warn("batch translation diagnostic",
 			zap.String("diagnostic", diagnostic.Format()))
+
+		// 检查是否可以重试（避免无限重试）
+		maxNodeMarkerRetries := 2
+		currentRetries := 0
+		if context, ok := ctx.Value("node_marker_retries").(int); ok {
+			currentRetries = context
+		}
+
+		if currentRetries < maxNodeMarkerRetries {
+			bt.logger.Warn("node markers missing, attempting retry with enhanced prompt",
+				zap.Int("currentRetry", currentRetries),
+				zap.Int("maxRetries", maxNodeMarkerRetries))
+
+			// 创建新的上下文，增加重试计数
+			newCtx := context.WithValue(ctx, "node_marker_retries", currentRetries+1)
+
+			// 使用增强的提示词重试
+			enhancedRequest := bt.buildEnhancedNodeMarkerRequest(combinedText)
+			retryResponseText, retryErr := bt.translationService.TranslateText(newCtx, enhancedRequest)
+
+			if retryErr == nil && retryResponseText != "" {
+				bt.logger.Info("retry with enhanced prompt completed",
+					zap.Int("retryAttempt", currentRetries+1),
+					zap.Int("responseLength", len(retryResponseText)))
+
+				// 检查重试的响应是否包含标记
+				retryHasMarkers := strings.Contains(retryResponseText, "@@NODE_START_") &&
+					strings.Contains(retryResponseText, "@@NODE_END_")
+
+				if retryHasMarkers {
+					bt.logger.Info("enhanced prompt retry successful - node markers found")
+					// 使用重试的响应替换原始响应
+					translatedText = retryResponseText
+					hasStartMarkers = true
+					hasEndMarkers = true
+				} else {
+					bt.logger.Warn("enhanced prompt retry failed - still no node markers")
+				}
+			} else {
+				bt.logger.Error("enhanced prompt retry failed",
+					zap.Error(retryErr))
+			}
+		} else {
+			bt.logger.Error("node marker retry limit exceeded",
+				zap.Int("maxRetries", maxNodeMarkerRetries),
+				zap.String("issue", "LLM consistently ignores node markers"))
+		}
 	}
-	
+
 	// 如果是 verbose 模式，记录响应中的所有节点标记
 	if bt.config.Verbose {
 		responseMarkers := []string{}
@@ -502,7 +551,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		}
 		bt.logger.Debug("node markers in response",
 			zap.Strings("markers", responseMarkers))
-		
+
 		// 记录前几行和后几行
 		if len(lines) > 0 {
 			numLines := len(lines)
@@ -511,7 +560,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 				firstCount = numLines
 			}
 			firstLines := lines[:firstCount]
-			
+
 			lastStart := numLines - 10
 			if lastStart < 0 {
 				lastStart = 0
@@ -522,13 +571,13 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 				zap.Strings("lastLines", lastLines))
 		}
 	}
-	
+
 	// 解析翻译结果 - 使用更强健的正则表达式处理不同换行符和空格
 	pattern := regexp2.MustCompile(`(?s)@@NODE_START_(\d+)@@\s*\r?\n(.*?)\r?\n\s*@@NODE_END_\1@@`, 0)
-	
+
 	// 创建结果映射
 	translationMap := make(map[int]string)
-	
+
 	// 先尝试调试正则表达式
 	if bt.config.Verbose {
 		// 尝试简单的正则匹配来验证格式
@@ -541,23 +590,23 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		}
 		bt.logger.Debug("simple pattern match test",
 			zap.Int("simpleMatchCount", simpleMatchCount))
-			
+
 		// 额外调试：检查响应中的换行符类型
 		bt.logger.Debug("response newline analysis",
 			zap.Bool("containsCRLF", strings.Contains(translatedText, "\r\n")),
 			zap.Bool("containsLF", strings.Contains(translatedText, "\n")),
 			zap.Bool("containsCR", strings.Contains(translatedText, "\r")))
 	}
-	
+
 	// 使用 regexp2 查找所有匹配
 	match, err := pattern.FindStringMatch(translatedText)
 	if err != nil {
 		bt.logger.Error("regex error", zap.Error(err))
 	}
-	
+
 	matchCount := 0
 	foundNodeIDs := []int{}
-	
+
 	for match != nil {
 		groups := match.Groups()
 		if bt.config.Verbose && matchCount < 3 {
@@ -567,12 +616,12 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 				zap.Int("groupCount", len(groups)),
 				zap.String("fullMatch", groups[0].String()))
 		}
-		
+
 		if len(groups) >= 3 {
 			nodeIDStr := groups[1].String()
 			nodeID, err := strconv.Atoi(nodeIDStr)
 			if err != nil {
-				bt.logger.Warn("invalid node ID", 
+				bt.logger.Warn("invalid node ID",
 					zap.String("nodeID", nodeIDStr),
 					zap.Error(err))
 				match, _ = pattern.FindNextMatch(match)
@@ -582,7 +631,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 			translationMap[nodeID] = strings.TrimSpace(content)
 			matchCount++
 			foundNodeIDs = append(foundNodeIDs, nodeID)
-			
+
 			if bt.config.Verbose && matchCount <= 3 {
 				bt.logger.Debug("parsed node translation",
 					zap.Int("nodeID", nodeID),
@@ -591,7 +640,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		}
 		match, _ = pattern.FindNextMatch(match)
 	}
-	
+
 	if bt.config.Verbose {
 		bt.logger.Debug("parsed translation results",
 			zap.Int("matchCount", matchCount),
@@ -600,14 +649,14 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 			zap.Int("nodesToTranslate", nodesToTranslate),
 			zap.Int("contextNodes", contextNodes),
 			zap.Ints("foundNodeIDs", foundNodeIDs))
-		
+
 		// 显示翻译片段
 		if matchCount > 0 {
 			bt.logger.Debug("translation snippets",
 				zap.Int("totalMatches", matchCount),
 				zap.String("firstSnippet", truncateText(translatedText, 300)))
 		}
-		
+
 		// 显示解析到的节点ID
 		if len(translationMap) > 0 {
 			var parsedIDs []int
@@ -617,7 +666,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 			bt.logger.Debug("parsed node IDs",
 				zap.Ints("nodeIDs", parsedIDs))
 		}
-		
+
 		// 记录期望但未找到的节点
 		var missingNodeIDs []int
 		for _, node := range group.Nodes {
@@ -641,7 +690,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 			zap.Int("matchCount", matchCount),
 			zap.Int("expectedNodes", len(group.Nodes)))
 	}
-	
+
 	// 应用翻译结果
 	for _, node := range group.Nodes {
 		// 检查是否是上下文节点
@@ -651,12 +700,12 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 				isContext = true
 			}
 		}
-		
+
 		// 上下文节点保持原状
 		if isContext && node.Status == document.NodeStatusSuccess {
 			continue
 		}
-		
+
 		// 处理需要翻译的节点
 		if translatedContent, ok := translationMap[node.ID]; ok {
 			// 获取该节点的保护后文本（用于相似度比较）
@@ -666,21 +715,21 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 			} else {
 				protectedOriginal = node.OriginalText
 			}
-			
+
 			// 检查翻译质量（使用编辑距离）- 比较保护后的文本
 			similarity := bt.calculateSimilarity(protectedOriginal, translatedContent)
 			// 相似度阈值 - 对于学术论文等包含大量术语的文本，使用较高的阈值
 			similarityThreshold := 0.95 // 只有几乎完全一样时才认为失败
-			
+
 			// 还原保护的内容
 			restoredText := preserveManager.Restore(translatedContent)
-			
-				if similarity >= similarityThreshold {
+
+			if similarity >= similarityThreshold {
 				// 翻译结果与原文太相似，视为失败
 				node.Status = document.NodeStatusFailed
 				node.Error = fmt.Errorf("translation too similar to original (similarity: %.2f)", similarity)
 				node.RetryCount++
-				
+
 				if bt.config.Verbose {
 					bt.logger.Warn("translation quality check failed",
 						zap.Int("nodeID", node.ID),
@@ -702,7 +751,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 				node.Error = nil
 				// 增加重试计数
 				node.RetryCount++
-				
+
 				// 在 verbose 模式下显示成功翻译的片段
 				if bt.config.Verbose {
 					bt.logger.Debug("translation success",
@@ -715,7 +764,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 			node.Status = document.NodeStatusFailed
 			node.Error = fmt.Errorf("translation not found in batch result for node %d", node.ID)
 			node.RetryCount++
-			
+
 			if bt.config.Verbose {
 				// 尝试查找可能被修改的节点标记
 				alternativePatterns := []string{
@@ -724,7 +773,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 					fmt.Sprintf("NODE %d:", node.ID),
 					fmt.Sprintf("<%d>", node.ID),
 				}
-				
+
 				foundAlternative := false
 				for _, pattern := range alternativePatterns {
 					if strings.Contains(translatedText, pattern) {
@@ -735,7 +784,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 						break
 					}
 				}
-				
+
 				bt.logger.Debug("node translation not found",
 					zap.Int("nodeID", node.ID),
 					zap.String("originalText", truncateText(node.OriginalText, 100)),
@@ -747,49 +796,49 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 			}
 		}
 	}
-	
+
 	return nil
 }
 
 // protectContent 保护不需要翻译的内容
 func (bt *BatchTranslator) protectContent(text string, pm *translation.PreserveManager) string {
 	// LaTeX 公式 - 使用更精确的正则表达式
-	text = pm.ProtectPattern(text, `\$[^$\n]+\$`)              // 行内公式 (不包含换行)
-	text = pm.ProtectPattern(text, `\$\$[\s\S]*?\$\$`)         // 行间公式 (非贪婪匹配)
-	text = pm.ProtectPattern(text, `\\\([\s\S]*?\\\)`)         // \(...\) (非贪婪匹配)
-	text = pm.ProtectPattern(text, `\\\[[\s\S]*?\\\]`)         // \[...\] (非贪婪匹配)
-	
+	text = pm.ProtectPattern(text, `\$[^$\n]+\$`)      // 行内公式 (不包含换行)
+	text = pm.ProtectPattern(text, `\$\$[\s\S]*?\$\$`) // 行间公式 (非贪婪匹配)
+	text = pm.ProtectPattern(text, `\\\([\s\S]*?\\\)`) // \(...\) (非贪婪匹配)
+	text = pm.ProtectPattern(text, `\\\[[\s\S]*?\\\]`) // \[...\] (非贪婪匹配)
+
 	// 代码块
-	text = pm.ProtectPattern(text, "`[^`]+`")                // 行内代码
-	text = protectCodeBlocks(text, pm)                       // 多行代码块
-	
+	text = pm.ProtectPattern(text, "`[^`]+`") // 行内代码
+	text = protectCodeBlocks(text, pm)        // 多行代码块
+
 	// HTML 标签
-	text = pm.ProtectPattern(text, `<[^>]+>`)                // HTML 标签
-	text = pm.ProtectPattern(text, `&[a-zA-Z]+;`)            // HTML 实体
-	text = pm.ProtectPattern(text, `&#\d+;`)                 // 数字实体
-	
+	text = pm.ProtectPattern(text, `<[^>]+>`)     // HTML 标签
+	text = pm.ProtectPattern(text, `&[a-zA-Z]+;`) // HTML 实体
+	text = pm.ProtectPattern(text, `&#\d+;`)      // 数字实体
+
 	// URL
 	text = pm.ProtectPattern(text, `(?i)(https?|ftp|file)://[^\s\)]+`)
 	text = pm.ProtectPattern(text, `(?i)www\.[^\s\)]+`)
-	
+
 	// 文件路径
 	text = pm.ProtectPattern(text, `(?:^|[\s(])/(?:[^/\s]+/)*[^/\s]+(?:\.[a-zA-Z0-9]+)?`)
 	text = pm.ProtectPattern(text, `[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]+`)
 	text = pm.ProtectPattern(text, `\.{1,2}/(?:[^/\s]+/)*[^/\s]+(?:\.[a-zA-Z0-9]+)?`)
-	
+
 	// 引用标记
-	text = pm.ProtectPattern(text, `\[\d+\]`)                                    // [1], [2]
-	text = pm.ProtectPattern(text, `\[[A-Za-z]+(?:\s+et\s+al\.)?,\s*\d{4}\]`)  // [Author, Year]
-	text = pm.ProtectPattern(text, `\\cite\{[^}]+\}`)                           // \cite{}
-	text = pm.ProtectPattern(text, `\\ref\{[^}]+\}`)                            // \ref{}
-	text = pm.ProtectPattern(text, `\\label\{[^}]+\}`)                          // \label{}
-	
+	text = pm.ProtectPattern(text, `\[\d+\]`)                                 // [1], [2]
+	text = pm.ProtectPattern(text, `\[[A-Za-z]+(?:\s+et\s+al\.)?,\s*\d{4}\]`) // [Author, Year]
+	text = pm.ProtectPattern(text, `\\cite\{[^}]+\}`)                         // \cite{}
+	text = pm.ProtectPattern(text, `\\ref\{[^}]+\}`)                          // \ref{}
+	text = pm.ProtectPattern(text, `\\label\{[^}]+\}`)                        // \label{}
+
 	// 其他
-	text = pm.ProtectPattern(text, `\{\{[^}]+\}\}`)                             // {{variable}}
-	text = pm.ProtectPattern(text, `<%[^%]+%>`)                                 // <% %>
-	text = pm.ProtectPattern(text, `<!--[\s\S]*?-->`)                           // <!-- -->
+	text = pm.ProtectPattern(text, `\{\{[^}]+\}\}`)                                  // {{variable}}
+	text = pm.ProtectPattern(text, `<%[^%]+%>`)                                      // <% %>
+	text = pm.ProtectPattern(text, `<!--[\s\S]*?-->`)                                // <!-- -->
 	text = pm.ProtectPattern(text, `[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`) // 邮箱
-	
+
 	return text
 }
 
@@ -799,7 +848,7 @@ func protectCodeBlocks(text string, pm *translation.PreserveManager) string {
 	inCodeBlock := false
 	codeBlockContent := []string{}
 	result := []string{}
-	
+
 	for _, line := range lines {
 		if strings.HasPrefix(line, "```") {
 			if !inCodeBlock {
@@ -819,28 +868,32 @@ func protectCodeBlocks(text string, pm *translation.PreserveManager) string {
 			result = append(result, line)
 		}
 	}
-	
+
 	if inCodeBlock {
 		result = append(result, codeBlockContent...)
 	}
-	
+
 	return strings.Join(result, "\n")
 }
 
-// groupNodes 将节点分组
+// groupNodes 将节点分组（支持智能分割）
 func (bt *BatchTranslator) groupNodes(nodes []*document.NodeInfo) []*document.NodeGroup {
+	// 第一步：智能分割超大节点
+	processedNodes := bt.preprocessNodesWithSplitting(nodes)
+
+	// 第二步：进行常规分组
 	var groups []*document.NodeGroup
 	var currentGroup []*document.NodeInfo
 	currentSize := 0
-	
+
 	maxSize := bt.config.ChunkSize
 	if maxSize <= 0 {
 		maxSize = 1000
 	}
-	
-	for _, node := range nodes {
+
+	for _, node := range processedNodes {
 		nodeSize := len(node.OriginalText)
-		
+
 		// 如果当前组加上这个节点会超过限制，先保存当前组
 		if currentSize > 0 && currentSize+nodeSize > maxSize {
 			groups = append(groups, &document.NodeGroup{
@@ -850,11 +903,11 @@ func (bt *BatchTranslator) groupNodes(nodes []*document.NodeInfo) []*document.No
 			currentGroup = nil
 			currentSize = 0
 		}
-		
+
 		currentGroup = append(currentGroup, node)
 		currentSize += nodeSize
 	}
-	
+
 	// 保存最后一组
 	if len(currentGroup) > 0 {
 		groups = append(groups, &document.NodeGroup{
@@ -862,8 +915,111 @@ func (bt *BatchTranslator) groupNodes(nodes []*document.NodeInfo) []*document.No
 			Size:  currentSize,
 		})
 	}
-	
+
 	return groups
+}
+
+// preprocessNodesWithSplitting 预处理节点，对超大节点进行智能分割
+func (bt *BatchTranslator) preprocessNodesWithSplitting(nodes []*document.NodeInfo) []*document.NodeInfo {
+	if !bt.config.SmartSplitter.EnableSmartSplitting {
+		// 智能分割未启用，直接返回原节点
+		return nodes
+	}
+
+	var processedNodes []*document.NodeInfo
+	nextNodeID := bt.getMaxNodeID(nodes) + 1
+
+	splitNodeCount := 0
+	originalOversizedCount := 0
+
+	for _, node := range nodes {
+		if bt.smartSplitter.ShouldSplit(node) {
+			originalOversizedCount++
+			bt.logger.Debug("processing oversized node for smart splitting",
+				zap.Int("nodeID", node.ID),
+				zap.Int("nodeSize", len(node.OriginalText)),
+				zap.Int("threshold", bt.config.SmartSplitter.MaxNodeSizeThreshold))
+
+			// 分割节点
+			subNodes, err := bt.smartSplitter.SplitNode(node, &nextNodeID)
+			if err != nil {
+				bt.logger.Warn("failed to split oversized node, using original",
+					zap.Int("nodeID", node.ID),
+					zap.Error(err))
+				processedNodes = append(processedNodes, node)
+			} else {
+				bt.logger.Info("successfully split oversized node",
+					zap.Int("originalNodeID", node.ID),
+					zap.Int("originalSize", len(node.OriginalText)),
+					zap.Int("subNodesCount", len(subNodes)))
+				processedNodes = append(processedNodes, subNodes...)
+				splitNodeCount++
+			}
+		} else {
+			// 节点大小合适，无需分割
+			processedNodes = append(processedNodes, node)
+		}
+	}
+
+	// 记录智能分割统计信息
+	if originalOversizedCount > 0 {
+		bt.logger.Info("smart node splitting completed",
+			zap.Int("originalNodesCount", len(nodes)),
+			zap.Int("processedNodesCount", len(processedNodes)),
+			zap.Int("oversizedNodesFound", originalOversizedCount),
+			zap.Int("nodesSplit", splitNodeCount),
+			zap.Bool("splittingEnabled", bt.config.SmartSplitter.EnableSmartSplitting),
+			zap.Int("maxSizeThreshold", bt.config.SmartSplitter.MaxNodeSizeThreshold))
+	}
+
+	return processedNodes
+}
+
+// getMaxNodeID 获取节点列表中的最大ID
+func (bt *BatchTranslator) getMaxNodeID(nodes []*document.NodeInfo) int {
+	maxID := 0
+	for _, node := range nodes {
+		if node.ID > maxID {
+			maxID = node.ID
+		}
+	}
+	return maxID
+}
+
+// buildEnhancedNodeMarkerRequest 构建增强的节点标记请求，强调标记保留
+func (bt *BatchTranslator) buildEnhancedNodeMarkerRequest(originalText string) string {
+	// 创建极其强调节点标记保留的提示词
+	enhancedPrompt := fmt.Sprintf(`🚨🚨🚨 EMERGENCY INSTRUCTION - SYSTEM WILL FAIL WITHOUT COMPLIANCE 🚨🚨🚨
+
+You are a translation system component. Your task is to translate text while preserving special markers.
+
+⚠️ ABSOLUTE REQUIREMENT - NO EXCEPTIONS:
+- You MUST copy every @@NODE_START_X@@ marker to your output EXACTLY as shown
+- You MUST copy every @@NODE_END_X@@ marker to your output EXACTLY as shown  
+- These markers are computer code - DO NOT translate them
+- DO NOT remove them, modify them, or change them in any way
+
+REQUIRED FORMAT - Your output must look EXACTLY like this:
+@@NODE_START_1@@
+[translated content here]
+@@NODE_END_1@@
+
+@@NODE_START_2@@  
+[translated content here]
+@@NODE_END_2@@
+
+CRITICAL: If ANY marker is missing or changed, the entire system will crash and all work will be lost.
+
+TRANSLATE FROM %s TO %s:
+
+%s
+
+Remember: Copy ALL @@NODE_START_X@@ and @@NODE_END_X@@ markers EXACTLY. Only translate the text between markers.`,
+		bt.config.SourceLang,
+		bt.config.TargetLang,
+		originalText)
+
+	return enhancedPrompt
 }
 
 // collectFailedNodes 收集失败的节点
@@ -884,20 +1040,20 @@ func (bt *BatchTranslator) groupFailedNodesWithContext(allNodes []*document.Node
 	for i, node := range allNodes {
 		nodeIDToIndex[node.ID] = i
 	}
-	
+
 	// 收集需要包含的节点（失败节点及其上下文）
 	includeSet := make(map[int]bool)
 	contextNodeCount := 0
-	
+
 	for _, failed := range failedNodes {
 		idx, exists := nodeIDToIndex[failed.ID]
 		if !exists {
 			continue
 		}
-		
+
 		// 添加失败节点本身
 		includeSet[failed.ID] = true
-		
+
 		// 添加前面的上下文节点（最多2个）
 		contextBefore := 0
 		for i := idx - 1; i >= 0 && contextBefore < 2; i-- {
@@ -909,7 +1065,7 @@ func (bt *BatchTranslator) groupFailedNodesWithContext(allNodes []*document.Node
 				contextNodeCount++
 			}
 		}
-		
+
 		// 添加后面的上下文节点（最多2个）
 		contextAfter := 0
 		for i := idx + 1; i < len(allNodes) && contextAfter < 2; i++ {
@@ -922,13 +1078,13 @@ func (bt *BatchTranslator) groupFailedNodesWithContext(allNodes []*document.Node
 			}
 		}
 	}
-	
+
 	bt.logger.Debug("context nodes added for retry",
 		zap.Int("contextNodes", contextNodeCount),
 		zap.Int("totalNodesForRetry", len(includeSet)),
 		zap.Int("failedNodesCount", len(failedNodes)),
 		zap.Int("processedNodesCount", len(processedNodes)))
-	
+
 	// 收集所有需要翻译的节点，保持原始顺序
 	var nodesToTranslate []*document.NodeInfo
 	for _, node := range allNodes {
@@ -945,7 +1101,7 @@ func (bt *BatchTranslator) groupFailedNodesWithContext(allNodes []*document.Node
 				Error:          node.Error,
 				RetryCount:     node.RetryCount,
 			}
-			
+
 			// 如果是已成功的上下文节点，添加标记
 			if processedNodes[node.ID] && node.Status == document.NodeStatusSuccess {
 				if newNode.Metadata == nil {
@@ -953,11 +1109,11 @@ func (bt *BatchTranslator) groupFailedNodesWithContext(allNodes []*document.Node
 				}
 				newNode.Metadata["is_context"] = true
 			}
-			
+
 			nodesToTranslate = append(nodesToTranslate, newNode)
 		}
 	}
-	
+
 	// 检查是否有节点需要重试
 	if len(nodesToTranslate) == 0 {
 		bt.logger.Warn("no nodes collected for retry",
@@ -966,12 +1122,12 @@ func (bt *BatchTranslator) groupFailedNodesWithContext(allNodes []*document.Node
 			zap.String("possibleCause", "all failed nodes might have been filtered out or context collection failed"))
 		return []*document.NodeGroup{}
 	}
-	
+
 	bt.logger.Debug("nodes collected for retry",
 		zap.Int("nodesToTranslate", len(nodesToTranslate)),
 		zap.Int("failedNodes", len(failedNodes)),
 		zap.Int("contextNodes", contextNodeCount))
-	
+
 	// 分组
 	return bt.groupNodes(nodesToTranslate)
 }
@@ -981,21 +1137,21 @@ func (bt *BatchTranslator) calculateSimilarity(text1, text2 string) float64 {
 	if text1 == "" && text2 == "" {
 		return 1.0
 	}
-	
+
 	if text1 == "" || text2 == "" {
 		return 0.0
 	}
-	
+
 	// 简单的编辑距离实现
 	len1 := len([]rune(text1))
 	len2 := len([]rune(text2))
-	
+
 	// 创建距离矩阵
 	matrix := make([][]int, len1+1)
 	for i := range matrix {
 		matrix[i] = make([]int, len2+1)
 	}
-	
+
 	// 初始化第一行和第一列
 	for i := 0; i <= len1; i++ {
 		matrix[i][0] = i
@@ -1003,33 +1159,33 @@ func (bt *BatchTranslator) calculateSimilarity(text1, text2 string) float64 {
 	for j := 0; j <= len2; j++ {
 		matrix[0][j] = j
 	}
-	
+
 	// 计算编辑距离
 	runes1 := []rune(text1)
 	runes2 := []rune(text2)
-	
+
 	for i := 1; i <= len1; i++ {
 		for j := 1; j <= len2; j++ {
 			cost := 0
 			if runes1[i-1] != runes2[j-1] {
 				cost = 1
 			}
-			
+
 			matrix[i][j] = min(
-				matrix[i-1][j]+1,     // 删除
-				matrix[i][j-1]+1,     // 插入
+				matrix[i-1][j]+1,      // 删除
+				matrix[i][j-1]+1,      // 插入
 				matrix[i-1][j-1]+cost, // 替换
 			)
 		}
 	}
-	
+
 	// 计算相似度
 	distance := matrix[len1][len2]
 	maxLen := max(len1, len2)
 	if maxLen == 0 {
 		return 1.0
 	}
-	
+
 	return 1.0 - float64(distance)/float64(maxLen)
 }
 
@@ -1063,4 +1219,3 @@ func max(a, b int) int {
 	}
 	return b
 }
-

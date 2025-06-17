@@ -17,8 +17,8 @@ import (
 type Config struct {
 	providers.BaseConfig
 	// LibreTranslate特定配置
-	RequiresAPIKey bool                `json:"requires_api_key"` // 服务器是否需要API密钥
-	RetryConfig    retry.RetryConfig   `json:"retry_config"`
+	RequiresAPIKey bool              `json:"requires_api_key"` // 服务器是否需要API密钥
+	RetryConfig    retry.RetryConfig `json:"retry_config"`
 }
 
 // DefaultConfig 返回默认配置
@@ -50,7 +50,7 @@ func New(config Config) *Provider {
 	httpClient := &http.Client{
 		Timeout: config.Timeout,
 	}
-	
+
 	// 创建网络重试器
 	networkRetrier := retry.NewNetworkRetrier(config.RetryConfig)
 	retryClient := networkRetrier.WrapHTTPClient(httpClient)
@@ -124,9 +124,9 @@ func (p *Provider) Translate(ctx context.Context, req *providers.ProviderRequest
 	return &providers.ProviderResponse{
 		Text: resp.TranslatedText,
 		Metadata: map[string]interface{}{
-			"model": "libretranslate",
+			"model":           "libretranslate",
 			"detected_source": metadata["detected_source"],
-			"confidence": metadata["confidence"],
+			"confidence":      metadata["confidence"],
 		},
 	}, nil
 }

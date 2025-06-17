@@ -2,12 +2,12 @@ package config
 
 // StepConfigV2 新的步骤配置，支持提供商
 type StepConfigV2 struct {
-	Name            string `mapstructure:"name" json:"name"`
-	Provider        string `mapstructure:"provider" json:"provider"`               // 提供商（如 openai, deepl, google）
-	ModelName       string `mapstructure:"model_name" json:"model_name"`           // 模型名称
-	Temperature     float64 `mapstructure:"temperature" json:"temperature"`        // 温度参数
-	MaxTokens       int     `mapstructure:"max_tokens" json:"max_tokens"`          // 最大令牌数
-	Timeout         int     `mapstructure:"timeout" json:"timeout"`                // 超时时间（秒）
+	Name            string  `mapstructure:"name" json:"name"`
+	Provider        string  `mapstructure:"provider" json:"provider"`                 // 提供商（如 openai, deepl, google）
+	ModelName       string  `mapstructure:"model_name" json:"model_name"`             // 模型名称
+	Temperature     float64 `mapstructure:"temperature" json:"temperature"`           // 温度参数
+	MaxTokens       int     `mapstructure:"max_tokens" json:"max_tokens"`             // 最大令牌数
+	Timeout         int     `mapstructure:"timeout" json:"timeout"`                   // 超时时间（秒）
 	AdditionalNotes string  `mapstructure:"additional_notes" json:"additional_notes"` // 用户自定义说明
 }
 
@@ -113,19 +113,19 @@ func GetDefaultStepSetsV2() map[string]StepSetConfigV2 {
 					Temperature: 0,
 				},
 				{
-					Name:        "reflection",
-					Provider:    "openai",
-					ModelName:   "gpt-4",
-					Temperature: 0.3,
-					MaxTokens:   2048,
+					Name:            "reflection",
+					Provider:        "openai",
+					ModelName:       "gpt-4",
+					Temperature:     0.3,
+					MaxTokens:       2048,
 					AdditionalNotes: "Pay special attention to cultural nuances and terminology consistency.",
 				},
 				{
-					Name:        "improvement",
-					Provider:    "openai",
-					ModelName:   "gpt-4",
-					Temperature: 0.3,
-					MaxTokens:   4096,
+					Name:            "improvement",
+					Provider:        "openai",
+					ModelName:       "gpt-4",
+					Temperature:     0.3,
+					MaxTokens:       4096,
 					AdditionalNotes: "Ensure the final translation sounds natural and professional.",
 				},
 			},
@@ -149,19 +149,19 @@ func GetDefaultStepSetsV2() map[string]StepSetConfigV2 {
 					Temperature: 0,
 				},
 				{
-					Name:        "comparison",
-					Provider:    "openai",
-					ModelName:   "gpt-4",
-					Temperature: 0.2,
-					MaxTokens:   3000,
+					Name:            "comparison",
+					Provider:        "openai",
+					ModelName:       "gpt-4",
+					Temperature:     0.2,
+					MaxTokens:       3000,
 					AdditionalNotes: "Compare these two translations and create the best version.",
 				},
 				{
-					Name:        "polish",
-					Provider:    "openai",
-					ModelName:   "gpt-4",
-					Temperature: 0.3,
-					MaxTokens:   4096,
+					Name:            "polish",
+					Provider:        "openai",
+					ModelName:       "gpt-4",
+					Temperature:     0.3,
+					MaxTokens:       4096,
 					AdditionalNotes: "Polish this final translation to ensure it reads naturally.",
 				},
 			},
@@ -187,27 +187,27 @@ func GetDefaultStepSetsV2() map[string]StepSetConfigV2 {
 			Description: "使用高级模型的多步翻译过程",
 			Steps: []StepConfigV2{
 				{
-					Name:        "initial_translation",
-					Provider:    "openai",
-					ModelName:   "gpt-4",
-					Temperature: 0.3,
-					MaxTokens:   8192,
+					Name:            "initial_translation",
+					Provider:        "openai",
+					ModelName:       "gpt-4",
+					Temperature:     0.3,
+					MaxTokens:       8192,
 					AdditionalNotes: "Pay careful attention to nuance, cultural context, and maintain the author's voice.",
 				},
 				{
-					Name:        "reflection",
-					Provider:    "anthropic", // 未来支持
-					ModelName:   "claude-3-opus",
-					Temperature: 0.1,
-					MaxTokens:   4096,
+					Name:            "reflection",
+					Provider:        "anthropic", // 未来支持
+					ModelName:       "claude-3-opus",
+					Temperature:     0.1,
+					MaxTokens:       4096,
 					AdditionalNotes: "Critically analyze this translation for accuracy, cultural appropriateness, and stylistic fidelity.",
 				},
 				{
-					Name:        "improvement",
-					Provider:    "openai",
-					ModelName:   "gpt-4",
-					Temperature: 0.3,
-					MaxTokens:   8192,
+					Name:            "improvement",
+					Provider:        "openai",
+					ModelName:       "gpt-4",
+					Temperature:     0.3,
+					MaxTokens:       8192,
 					AdditionalNotes: "Create the final, polished translation incorporating all feedback. Ensure the final version is publication-ready.",
 				},
 			},

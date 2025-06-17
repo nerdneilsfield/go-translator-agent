@@ -50,6 +50,15 @@ type NodeInfo struct {
 
 	// RetryCount 重试次数
 	RetryCount int
+
+	// Parent 父节点（用于智能分割的子节点）
+	Parent *NodeInfo
+
+	// SplitIndex 分割索引（如果是分割子节点）
+	SplitIndex int
+
+	// Type 节点类型（用于智能分割识别）
+	Type string
 }
 
 // GetCharCount 获取节点的字符数

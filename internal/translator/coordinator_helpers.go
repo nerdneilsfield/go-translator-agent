@@ -52,7 +52,6 @@ func (c *TranslationCoordinator) writeFile(filePath, content string) error {
 	return nil
 }
 
-
 // assembleDocument 简化组装方法（作为回退）
 func (c *TranslationCoordinator) assembleDocument(originalPath string, nodes []*document.NodeInfo) (string, error) {
 	var parts []string
@@ -103,7 +102,7 @@ func (c *TranslationCoordinator) createSuccessResult(docID, inputFile, outputFil
 
 	// 收集 token 使用情况和其他元数据
 	metadata := make(map[string]interface{})
-	
+
 	// TODO: 从翻译服务收集实际的 token 使用情况
 	// 这里暂时使用估算值
 	totalChars := 0
@@ -116,18 +115,18 @@ func (c *TranslationCoordinator) createSuccessResult(docID, inputFile, outputFil
 		"tokens_in":  estimatedTokens,
 		"tokens_out": estimatedTokens,
 	}
-	
+
 	// 缓存统计（如果有的话）
 	// TODO: 从缓存服务收集实际的缓存统计
 	metadata["cache_stats"] = map[string]interface{}{
 		"hits":   0,
 		"misses": totalNodes,
 	}
-	
+
 	return &TranslationResult{
-		DocID:          docID,
-		InputFile:      inputFile,
-		OutputFile:     outputFile,
+		DocID:      docID,
+		InputFile:  inputFile,
+		OutputFile: outputFile,
 		// SourceLanguage: c.coordinatorConfig.SourceLang,
 		// TargetLanguage: c.coordinatorConfig.TargetLang,
 		TotalNodes:     totalNodes,
@@ -201,10 +200,10 @@ func (c *TranslationCoordinator) assembleDocumentWithProcessor(inputPath string,
 		ChunkSize:    c.coordinatorConfig.ChunkSize,
 		ChunkOverlap: 100,
 		Metadata: map[string]interface{}{
-			"source_language":        c.coordinatorConfig.SourceLang,
-			"target_language":        c.coordinatorConfig.TargetLang,
-			"logger":                 c.logger,
-			"html_processing_mode":   c.coordinatorConfig.HTMLProcessingMode,
+			"source_language":      c.coordinatorConfig.SourceLang,
+			"target_language":      c.coordinatorConfig.TargetLang,
+			"logger":               c.logger,
+			"html_processing_mode": c.coordinatorConfig.HTMLProcessingMode,
 		},
 	}
 
@@ -237,9 +236,9 @@ func (c *TranslationCoordinator) createFailedResult(docID, inputFile, outputFile
 	endTime := time.Now()
 
 	return &TranslationResult{
-		DocID:          docID,
-		InputFile:      inputFile,
-		OutputFile:     outputFile,
+		DocID:      docID,
+		InputFile:  inputFile,
+		OutputFile: outputFile,
 		// SourceLanguage: c.coordinatorConfig.SourceLang,
 		// TargetLanguage: c.coordinatorConfig.TargetLang,
 		TotalNodes:     0,

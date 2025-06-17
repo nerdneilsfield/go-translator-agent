@@ -72,18 +72,33 @@ Formatting Rules:
 
 	// 添加保护块说明
 	prompt = AppendPreservePrompt(prompt, pb.PreserveConfig)
-	
+
 	// 添加节点标记保护说明
 	prompt += `
 
-CRITICAL: Node Marker Preservation
-- NEVER translate, modify, or remove @@NODE_START_X@@ and @@NODE_END_X@@ markers
-- These markers are ESSENTIAL for the translation system to function
-- MUST preserve ALL node markers EXACTLY as they appear
-- MUST maintain their exact position in your translation
-- Example: "@@NODE_START_42@@" → keep as "@@NODE_START_42@@" (unchanged)
-- Example: "@@NODE_END_42@@" → keep as "@@NODE_END_42@@" (unchanged)
-- WARNING: Removing or modifying these markers will cause system failure`
+🚨 CRITICAL INSTRUCTION - NODE MARKER PRESERVATION 🚨
+You MUST follow this instruction EXACTLY or the entire system will FAIL:
+
+1. **PRESERVE ALL NODE MARKERS**: Every @@NODE_START_X@@ and @@NODE_END_X@@ marker MUST appear in your output
+2. **EXACT FORMAT**: Copy markers EXACTLY - same spacing, same format, same position
+3. **NO MODIFICATION**: Do NOT translate, change, or modify these markers in ANY way
+4. **REQUIRED OUTPUT FORMAT**: Your response must maintain this structure:
+
+   @@NODE_START_1@@
+   [Your translation of the content here]
+   @@NODE_END_1@@
+   
+   @@NODE_START_2@@
+   [Your translation of the content here]
+   @@NODE_END_2@@
+
+5. **EXAMPLE - CORRECT**:
+   Input:  @@NODE_START_42@@\nHello world\n@@NODE_END_42@@
+   Output: @@NODE_START_42@@\n你好世界\n@@NODE_END_42@@
+
+6. **FAILURE CONSEQUENCES**: If you remove or modify ANY marker, the translation will be LOST and the system will FAIL
+
+TRANSLATE ONLY THE CONTENT BETWEEN MARKERS - NEVER THE MARKERS THEMSELVES!`
 
 	// 添加要翻译的文本
 	prompt += fmt.Sprintf("\n\nPlease translate the following text:\n\n%s", text)
@@ -160,14 +175,29 @@ Please provide an improved translation that addresses all the issues mentioned i
 
 	// 添加保护块说明
 	prompt = AppendPreservePrompt(prompt, pb.PreserveConfig)
-	
+
 	// 添加节点标记保护说明
 	prompt += `
 
-CRITICAL: Node Marker Preservation
-- NEVER translate, modify, or remove @@NODE_START_X@@ and @@NODE_END_X@@ markers
-- These markers are ESSENTIAL for the translation system to function
-- MUST preserve ALL node markers EXACTLY as they appear`
+🚨 CRITICAL INSTRUCTION - NODE MARKER PRESERVATION 🚨
+You MUST follow this instruction EXACTLY or the entire system will FAIL:
+
+1. **PRESERVE ALL NODE MARKERS**: Every @@NODE_START_X@@ and @@NODE_END_X@@ marker MUST appear in your output
+2. **EXACT FORMAT**: Copy markers EXACTLY - same spacing, same format, same position
+3. **NO MODIFICATION**: Do NOT translate, change, or modify these markers in ANY way
+4. **REQUIRED OUTPUT FORMAT**: Your response must maintain this structure:
+
+   @@NODE_START_1@@
+   [Your improved translation here]
+   @@NODE_END_1@@
+   
+   @@NODE_START_2@@
+   [Your improved translation here]
+   @@NODE_END_2@@
+
+5. **FAILURE CONSEQUENCES**: If you remove or modify ANY marker, the translation will be LOST
+
+TRANSLATE ONLY THE CONTENT BETWEEN MARKERS - NEVER THE MARKERS THEMSELVES!`
 
 	prompt += "\n\nProvide only the improved translation without any explanation or commentary."
 
@@ -191,14 +221,29 @@ Rules:
 
 	// 添加保护块说明
 	prompt = AppendPreservePrompt(prompt, pb.PreserveConfig)
-	
+
 	// 添加节点标记保护说明
 	prompt += `
 
-CRITICAL: Node Marker Preservation
-- NEVER translate, modify, or remove @@NODE_START_X@@ and @@NODE_END_X@@ markers
-- These markers are ESSENTIAL for the translation system to function
-- MUST preserve ALL node markers EXACTLY as they appear`
+🚨 CRITICAL INSTRUCTION - NODE MARKER PRESERVATION 🚨
+You MUST follow this instruction EXACTLY or the entire system will FAIL:
+
+1. **PRESERVE ALL NODE MARKERS**: Every @@NODE_START_X@@ and @@NODE_END_X@@ marker MUST appear in your output
+2. **EXACT FORMAT**: Copy markers EXACTLY - same spacing, same format, same position
+3. **NO MODIFICATION**: Do NOT translate, change, or modify these markers in ANY way
+4. **REQUIRED OUTPUT FORMAT**: Your response must maintain this structure:
+
+   @@NODE_START_1@@
+   [Your translation here]
+   @@NODE_END_1@@
+   
+   @@NODE_START_2@@
+   [Your translation here]
+   @@NODE_END_2@@
+
+5. **FAILURE CONSEQUENCES**: If you remove or modify ANY marker, the translation will be LOST
+
+TRANSLATE ONLY THE CONTENT BETWEEN MARKERS - NEVER THE MARKERS THEMSELVES!`
 
 	prompt += fmt.Sprintf("\n\nText to translate:\n\n%s", text)
 

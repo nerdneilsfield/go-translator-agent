@@ -71,7 +71,7 @@ func (t *NodeInfoTranslator) TranslateDocument(ctx context.Context, docID, fileN
 	for _, node := range nodes {
 		t.collection.Add(node)
 	}
-	
+
 	// 报告开始翻译
 	if t.progressReporter != nil {
 		t.progressReporter.StartDocument(docID, fileName, len(nodes))
@@ -104,11 +104,11 @@ func (t *NodeInfoTranslator) TranslateDocument(ctx context.Context, docID, fileN
 			if err != nil {
 				return fmt.Errorf("failed to prepare retry groups: %w", err)
 			}
-			
+
 			if len(retryGroups) == 0 {
 				break // 没有需要重试的节点
 			}
-			
+
 			// 重试每个组
 			for _, group := range retryGroups {
 				err := t.translateGroup(ctx, docID, &group, translator)
@@ -117,7 +117,7 @@ func (t *NodeInfoTranslator) TranslateDocument(ctx context.Context, docID, fileN
 					continue
 				}
 			}
-			
+
 			// 重置已处理节点集合，为下一轮重试做准备
 			t.retryManager.ResetProcessedNodes()
 		}
@@ -160,7 +160,7 @@ func (t *NodeInfoTranslator) translateNode(ctx context.Context, docID string, no
 
 	// 执行实际翻译
 	err := translator(ctx, node)
-	
+
 	// 更新节点状态到集合中
 	if err != nil {
 		t.collection.Update(node.ID, func(n *NodeInfo) {
@@ -172,7 +172,7 @@ func (t *NodeInfoTranslator) translateNode(ctx context.Context, docID string, no
 			n.Status = NodeStatusSuccess
 		})
 	}
-	
+
 	return err
 }
 

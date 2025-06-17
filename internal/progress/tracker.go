@@ -179,11 +179,11 @@ func (t *Tracker) OnChunkError(err error) {
 // StartDocument 开始文档翻译
 func (t *Tracker) StartDocument(docID, fileName string, totalNodes int) {
 	t.StartTracking(docID, fileName)
-	
+
 	t.mu.RLock()
 	session, exists := t.sessions[docID]
 	t.mu.RUnlock()
-	
+
 	if exists {
 		session.mu.Lock()
 		session.TotalNodes = totalNodes

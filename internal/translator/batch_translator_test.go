@@ -15,7 +15,7 @@ import (
 func TestNodeMarkerRegex(t *testing.T) {
 	// 测试正则表达式是否正确匹配节点标记
 	pattern := regexp2.MustCompile(`(?s)@@NODE_START_(\d+)@@\s*\r?\n(.*?)\r?\n\s*@@NODE_END_\1@@`, 0)
-	
+
 	testCases := []struct {
 		name     string
 		input    string
@@ -63,11 +63,11 @@ Content
 			expected: map[string]string{},
 		},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			results := make(map[string]string)
-			
+
 			match, _ := pattern.FindStringMatch(tc.input)
 			for match != nil {
 				groups := match.Groups()
@@ -78,12 +78,12 @@ Content
 				}
 				match, _ = pattern.FindNextMatch(match)
 			}
-			
+
 			// 验证结果
 			if len(results) != len(tc.expected) {
 				t.Errorf("Expected %d matches, got %d", len(tc.expected), len(results))
 			}
-			
+
 			for nodeID, expectedContent := range tc.expected {
 				if actualContent, ok := results[nodeID]; !ok {
 					t.Errorf("Expected node %s not found", nodeID)
@@ -176,7 +176,7 @@ func TestBatchTranslatorWithSimilarityCheck(t *testing.T) {
 		GroupingMode:   "smart",
 		RetryOnFailure: true,
 	}
-	
+
 	service := &mockTranslationService{
 		config: &translation.Config{
 			SourceLanguage: "en",
@@ -184,7 +184,7 @@ func TestBatchTranslatorWithSimilarityCheck(t *testing.T) {
 		},
 	}
 	bt := NewBatchTranslator(cfg, service, logger)
-	
+
 	// 创建测试节点
 	nodes := []*document.NodeInfo{
 		{
@@ -213,15 +213,15 @@ func TestBatchTranslatorWithSimilarityCheck(t *testing.T) {
 			Status:       document.NodeStatusPending,
 		},
 	}
-	
+
 	ctx := context.Background()
 	err := bt.TranslateNodes(ctx, nodes)
 	assert.NoError(t, err)
-	
+
 	// 验证相似度检查的效果
 	successCount := 0
 	failedCount := 0
-	
+
 	for _, node := range nodes {
 		if node.Status == document.NodeStatusSuccess {
 			successCount++
@@ -236,10 +236,10 @@ func TestBatchTranslatorWithSimilarityCheck(t *testing.T) {
 			assert.Contains(t, node.Error.Error(), "translation too similar")
 		}
 	}
-	
+
 	// 根据模拟逻辑，偶数节点应该成功，奇数节点应该失败
 	assert.Equal(t, 3, successCount) // 节点 0, 2, 4
 	assert.Equal(t, 2, failedCount)  // 节点 1, 3
-	
+
 	t.Logf("Translation results: %d success, %d failed", successCount, failedCount)
 }

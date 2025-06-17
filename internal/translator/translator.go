@@ -5,6 +5,7 @@ import (
 
 	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 	"github.com/nerdneilsfield/go-translator-agent/internal/document"
+	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
 )
 
 // Translator 节点翻译管理器接口
@@ -17,12 +18,30 @@ type Translator interface {
 
 // NewTranslatorConfig 从全局配置创建Translator专用配置
 func NewTranslatorConfig(cfg *config.Config) TranslatorConfig {
+	// 将配置文件中的智能分割配置转换为translation包的配置格式
+	smartSplitterConfig := translation.SmartNodeSplitterConfig{
+		EnableSmartSplitting: cfg.SmartNodeSplitting.EnableSmartSplitting,
+		MaxNodeSizeThreshold: cfg.SmartNodeSplitting.MaxNodeSizeThreshold,
+		MinSplitSize:         cfg.SmartNodeSplitting.MinSplitSize,
+		MaxSplitSize:         cfg.SmartNodeSplitting.MaxSplitSize,
+		PreserveParagraphs:   cfg.SmartNodeSplitting.PreserveParagraphs,
+		PreserveSentences:    cfg.SmartNodeSplitting.PreserveSentences,
+		OverlapRatio:         cfg.SmartNodeSplitting.OverlapRatio,
+	}
+
+	// 如果配置为空，使用默认值
+	if smartSplitterConfig.MaxNodeSizeThreshold == 0 {
+		defaultConfig := translation.DefaultSmartNodeSplitterConfig()
+		smartSplitterConfig = defaultConfig
+	}
+
 	return TranslatorConfig{
 		ChunkSize:      cfg.ChunkSize,
 		Concurrency:    cfg.Concurrency,
 		MaxRetries:     cfg.RetryAttempts,
 		GroupingMode:   "smart", // 默认智能分组
 		RetryOnFailure: cfg.RetryFailedParts,
+		SmartSplitter:  smartSplitterConfig,
 		SourceLang:     cfg.SourceLang,
 		TargetLang:     cfg.TargetLang,
 		Verbose:        cfg.Verbose,
@@ -40,12 +59,15 @@ type TranslatorConfig struct {
 	MaxRetries     int    // 最大重试次数
 	GroupingMode   string // 分组模式: "smart" 或 "fixed"
 	RetryOnFailure bool   // 是否在失败时重试
-	
+
+	// 智能节点分割配置
+	SmartSplitter translation.SmartNodeSplitterConfig // 智能节点分割器配置
+
 	// 语言配置
-	SourceLang     string // 源语言
-	TargetLang     string // 目标语言
-	
+	SourceLang string // 源语言
+	TargetLang string // 目标语言
+
 	// 进度和调试配置
-	Verbose        bool             // 详细模式
-	OnProgress     ProgressCallback // 进度回调
+	Verbose    bool             // 详细模式
+	OnProgress ProgressCallback // 进度回调
 }

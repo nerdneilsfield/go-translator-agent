@@ -155,18 +155,18 @@ func init() {
 		logger := getLoggerFromOptions(opts)
 		return NewMarkdownProcessor(opts, logger)
 	})
-	
+
 	Register(FormatText, func(opts ProcessorOptions) (Processor, error) {
 		logger := getLoggerFromOptions(opts)
 		return NewTextProcessor(opts, logger)
 	})
-	
+
 	Register(FormatHTML, func(opts ProcessorOptions) (Processor, error) {
 		logger := getLoggerFromOptions(opts)
 		mode := getHTMLProcessingModeFromOptions(opts)
 		return NewHTMLProcessor(opts, logger, mode)
 	})
-	
+
 	Register(FormatEPUB, func(opts ProcessorOptions) (Processor, error) {
 		logger := getLoggerFromOptions(opts)
 		mode := getHTMLProcessingModeFromOptions(opts)

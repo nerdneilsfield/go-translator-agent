@@ -43,13 +43,13 @@ func TestProviderManager_CreateOllamaProvider(t *testing.T) {
 			},
 		},
 	}
-	
+
 	logger := zap.NewNop()
 	pm := NewProviderManager(cfg, logger)
-	
+
 	modelConfig := cfg.ModelConfigs["ollama-llama2"]
 	provider, err := pm.createOllamaProvider(modelConfig)
-	
+
 	require.NoError(t, err)
 	assert.NotNil(t, provider)
 	assert.Equal(t, "ollama", provider.GetName())
@@ -71,20 +71,20 @@ func TestProviderManager_CreateOllamaProviderWithCustomConfig(t *testing.T) {
 			},
 		},
 	}
-	
+
 	logger := zap.NewNop()
 	pm := NewProviderManager(cfg, logger)
-	
+
 	modelConfig := cfg.ModelConfigs["ollama-mistral"]
 	provider, err := pm.createOllamaProvider(modelConfig)
-	
+
 	require.NoError(t, err)
 	assert.NotNil(t, provider)
-	
+
 	// 检查provider配置
 	ollamaProvider, ok := provider.(*ollama.Provider)
 	require.True(t, ok)
-	
+
 	// 通过反射或其他方式验证配置，这里我们主要验证provider创建成功
 	assert.Equal(t, "ollama", ollamaProvider.GetName())
 }
@@ -104,13 +104,13 @@ func TestProviderManager_CreateOllamaProviderDefaultURL(t *testing.T) {
 			},
 		},
 	}
-	
+
 	logger := zap.NewNop()
 	pm := NewProviderManager(cfg, logger)
-	
+
 	modelConfig := cfg.ModelConfigs["ollama-test"]
 	provider, err := pm.createOllamaProvider(modelConfig)
-	
+
 	require.NoError(t, err)
 	assert.NotNil(t, provider)
 	assert.Equal(t, "ollama", provider.GetName())
@@ -120,9 +120,9 @@ func TestProviderManager_OllamaCapabilities(t *testing.T) {
 	cfg := &Config{}
 	logger := zap.NewNop()
 	pm := NewProviderManager(cfg, logger)
-	
+
 	capabilities := pm.getProviderCapabilities("ollama")
-	
+
 	assert.True(t, capabilities.SupportsPrompts)
 	assert.False(t, capabilities.SupportsSystemRole) // Ollama通常不支持系统角色
 	assert.True(t, capabilities.SupportsTemperature)
@@ -188,15 +188,15 @@ func TestProviderManager_CreateProvidersWithOllama(t *testing.T) {
 			},
 		},
 	}
-	
+
 	logger := zap.NewNop()
 	pm := NewProviderManager(cfg, logger)
-	
+
 	providers, err := pm.CreateProviders()
-	
+
 	require.NoError(t, err)
 	assert.Len(t, providers, 2) // 应该创建两个不同的ollama provider实例
-	
+
 	// 验证提供商
 	assert.Contains(t, providers, "ollama")
 	ollamaProvider := providers["ollama"]
@@ -237,12 +237,12 @@ func TestProviderManager_OllamaInStepSetValidation(t *testing.T) {
 			},
 		},
 	}
-	
+
 	logger := zap.NewNop()
 	pm := NewProviderManager(cfg, logger)
-	
+
 	providers, err := pm.CreateProviders()
-	
+
 	require.NoError(t, err)
 	assert.Len(t, providers, 1)
 	assert.Contains(t, providers, "ollama")
@@ -270,12 +270,12 @@ func TestProviderManager_OllamaMissingModelConfig(t *testing.T) {
 			},
 		},
 	}
-	
+
 	logger := zap.NewNop()
 	pm := NewProviderManager(cfg, logger)
-	
+
 	_, err := pm.CreateProviders()
-	
+
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found in configuration")
 }
@@ -295,17 +295,17 @@ func TestProviderManager_CreateProviderSwitchCase(t *testing.T) {
 			},
 		},
 	}
-	
+
 	logger := zap.NewNop()
 	pm := NewProviderManager(cfg, logger)
-	
+
 	modelConfig := cfg.ModelConfigs["test-model"]
-	
+
 	// 测试 "ollama" case
 	provider, err := pm.createProvider("ollama", modelConfig)
 	require.NoError(t, err)
 	assert.Equal(t, "ollama", provider.GetName())
-	
+
 	// 测试不支持的provider类型
 	_, err = pm.createProvider("unsupported", modelConfig)
 	assert.Error(t, err)

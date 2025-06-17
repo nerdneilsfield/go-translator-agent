@@ -44,52 +44,66 @@ type StepSetConfig struct {
 	FastModeThreshold  int        `mapstructure:"fast_mode_threshold"`
 }
 
+// SmartNodeSplittingConfig 智能节点分割配置
+type SmartNodeSplittingConfig struct {
+	EnableSmartSplitting bool    `mapstructure:"enable_smart_splitting"`  // 是否启用智能分割
+	MaxNodeSizeThreshold int     `mapstructure:"max_node_size_threshold"` // 超过这个阈值才进行分割（字符数）
+	MinSplitSize         int     `mapstructure:"min_split_size"`          // 分割后每部分的最小大小
+	MaxSplitSize         int     `mapstructure:"max_split_size"`          // 分割后每部分的最大大小
+	PreserveParagraphs   bool    `mapstructure:"preserve_paragraphs"`     // 是否保持段落完整性
+	PreserveSentences    bool    `mapstructure:"preserve_sentences"`      // 是否保持句子完整性
+	OverlapRatio         float64 `mapstructure:"overlap_ratio"`           // 重叠比例（0.0-0.3）
+}
+
 // Config 保存翻译器的所有配置
 type Config struct {
-	SourceLang              string                     `mapstructure:"source_lang"`
-	TargetLang              string                     `mapstructure:"target_lang"`
-	Country                 string                     `mapstructure:"country"`
-	DefaultModelName        string                     `mapstructure:"default_model_name"`
-	ModelConfigs            map[string]ModelConfig     `mapstructure:"models"`
-	StepSets                map[string]StepSetConfigV2 `mapstructure:"step_sets"` // 步骤集配置
-	ActiveStepSet           string                     `mapstructure:"active_step_set"`
-	MaxTokensPerChunk       int                        `mapstructure:"max_tokens_per_chunk"`
-	CacheDir                string                     `mapstructure:"cache_dir"`
-	UseCache                bool                       `mapstructure:"use_cache"`
-	Debug                   bool                       `mapstructure:"debug"`
-	Verbose                 bool                       `mapstructure:"verbose"`                   // 详细模式，显示翻译片段
-	
+	SourceLang        string                     `mapstructure:"source_lang"`
+	TargetLang        string                     `mapstructure:"target_lang"`
+	Country           string                     `mapstructure:"country"`
+	DefaultModelName  string                     `mapstructure:"default_model_name"`
+	ModelConfigs      map[string]ModelConfig     `mapstructure:"models"`
+	StepSets          map[string]StepSetConfigV2 `mapstructure:"step_sets"` // 步骤集配置
+	ActiveStepSet     string                     `mapstructure:"active_step_set"`
+	MaxTokensPerChunk int                        `mapstructure:"max_tokens_per_chunk"`
+	CacheDir          string                     `mapstructure:"cache_dir"`
+	UseCache          bool                       `mapstructure:"use_cache"`
+	Debug             bool                       `mapstructure:"debug"`
+	Verbose           bool                       `mapstructure:"verbose"` // 详细模式，显示翻译片段
+
 	// 详细日志配置
-	LogLevel                string                     `mapstructure:"log_level"`                 // 基础日志级别
-	EnableDetailedLog       bool                       `mapstructure:"enable_detailed_log"`       // 是否启用详细日志
-	ConsoleLogLevel         string                     `mapstructure:"console_log_level"`         // 控制台日志级别
-	NormalLogFile           string                     `mapstructure:"normal_log_file"`           // 普通日志文件路径
-	DetailedLogFile         string                     `mapstructure:"detailed_log_file"`         // 详细日志文件路径
-	RequestTimeout          int                        `mapstructure:"request_timeout"`           // 请求超时时间（秒）
-	Concurrency             int                        `mapstructure:"concurrency"`               // 并行翻译请求数
-	HtmlConcurrency         int                        `mapstructure:"html_concurrency"`          // 并行HTML翻译请求数(每个 html 内部翻译请求数)
-	EpubConcurrency         int                        `mapstructure:"epub_concurrency"`          // 并行EPUB翻译请求数（同时翻译几个内部的 html)
-	MinSplitSize            int                        `mapstructure:"min_split_size"`            // 最小分割大小（字符数）
-	MaxSplitSize            int                        `mapstructure:"max_split_size"`            // 最大分割大小（字符数）
-	FilterReasoning         bool                       `mapstructure:"filter_reasoning"`          // 是否过滤推理过程
-	AutoSaveInterval        int                        `mapstructure:"auto_save_interval"`        // 自动保存间隔（秒）
-	TranslationTimeout      int                        `mapstructure:"translation_timeout"`       // 翻译超时时间（秒）
-	PreserveMath            bool                       `mapstructure:"preserve_math"`             // 保留数学公式
-	TranslateFigureCaptions bool                       `mapstructure:"translate_figure_captions"` // 翻译图表标题
-	RetryFailedParts        bool                       `mapstructure:"retry_failed_parts"`        // 重试失败的部分
-	MaxRetries              int                        `mapstructure:"max_retries"`               // 最大重试次数
-	PostProcessMarkdown     bool                       `mapstructure:"post_process_markdown"`     // 翻译后对 Markdown 进行后处理
-	FixMathFormulas         bool                       `mapstructure:"fix_math_formulas"`         // 修复数学公式
-	FixTableFormat          bool                       `mapstructure:"fix_table_format"`          // 修复表格格式
-	FixMixedContent         bool                       `mapstructure:"fix_mixed_content"`         // 修复混合内容（中英文混合）
-	FixPicture              bool                       `mapstructure:"fix_picture"`               // 修复图片
-	TargetCurrency          string                     `mapstructure:"target_currency"`           // 目标货币单位 (例如 USD, RMB), 空字符串表示不转换
-	UsdRmbRate              float64                    `mapstructure:"usd_rmb_rate"`              // USD 到 RMB 的汇率, 用于成本估算时的货币转换
-	KeepIntermediateFiles   bool                       `mapstructure:"keep_intermediate_files"`   // 是否保留中间文件（如EPUB解压的临时文件夹）
-	SaveDebugInfo           bool                       `mapstructure:"save_debug_info"`           // 是否保存调试信息到 JSON 文件
-	ChunkSize               int                        `mapstructure:"chunk_size"`                // 分块大小
-	RetryAttempts           int                        `mapstructure:"retry_attempts"`            // 重试次数
-	Metadata                map[string]interface{}     `mapstructure:"metadata"`                  // 元数据
+	LogLevel                string                 `mapstructure:"log_level"`                 // 基础日志级别
+	EnableDetailedLog       bool                   `mapstructure:"enable_detailed_log"`       // 是否启用详细日志
+	ConsoleLogLevel         string                 `mapstructure:"console_log_level"`         // 控制台日志级别
+	NormalLogFile           string                 `mapstructure:"normal_log_file"`           // 普通日志文件路径
+	DetailedLogFile         string                 `mapstructure:"detailed_log_file"`         // 详细日志文件路径
+	RequestTimeout          int                    `mapstructure:"request_timeout"`           // 请求超时时间（秒）
+	Concurrency             int                    `mapstructure:"concurrency"`               // 并行翻译请求数
+	HtmlConcurrency         int                    `mapstructure:"html_concurrency"`          // 并行HTML翻译请求数(每个 html 内部翻译请求数)
+	EpubConcurrency         int                    `mapstructure:"epub_concurrency"`          // 并行EPUB翻译请求数（同时翻译几个内部的 html)
+	MinSplitSize            int                    `mapstructure:"min_split_size"`            // 最小分割大小（字符数）
+	MaxSplitSize            int                    `mapstructure:"max_split_size"`            // 最大分割大小（字符数）
+	FilterReasoning         bool                   `mapstructure:"filter_reasoning"`          // 是否过滤推理过程
+	AutoSaveInterval        int                    `mapstructure:"auto_save_interval"`        // 自动保存间隔（秒）
+	TranslationTimeout      int                    `mapstructure:"translation_timeout"`       // 翻译超时时间（秒）
+	PreserveMath            bool                   `mapstructure:"preserve_math"`             // 保留数学公式
+	TranslateFigureCaptions bool                   `mapstructure:"translate_figure_captions"` // 翻译图表标题
+	RetryFailedParts        bool                   `mapstructure:"retry_failed_parts"`        // 重试失败的部分
+	MaxRetries              int                    `mapstructure:"max_retries"`               // 最大重试次数
+	PostProcessMarkdown     bool                   `mapstructure:"post_process_markdown"`     // 翻译后对 Markdown 进行后处理
+	FixMathFormulas         bool                   `mapstructure:"fix_math_formulas"`         // 修复数学公式
+	FixTableFormat          bool                   `mapstructure:"fix_table_format"`          // 修复表格格式
+	FixMixedContent         bool                   `mapstructure:"fix_mixed_content"`         // 修复混合内容（中英文混合）
+	FixPicture              bool                   `mapstructure:"fix_picture"`               // 修复图片
+	TargetCurrency          string                 `mapstructure:"target_currency"`           // 目标货币单位 (例如 USD, RMB), 空字符串表示不转换
+	UsdRmbRate              float64                `mapstructure:"usd_rmb_rate"`              // USD 到 RMB 的汇率, 用于成本估算时的货币转换
+	KeepIntermediateFiles   bool                   `mapstructure:"keep_intermediate_files"`   // 是否保留中间文件（如EPUB解压的临时文件夹）
+	SaveDebugInfo           bool                   `mapstructure:"save_debug_info"`           // 是否保存调试信息到 JSON 文件
+	ChunkSize               int                    `mapstructure:"chunk_size"`                // 分块大小
+	RetryAttempts           int                    `mapstructure:"retry_attempts"`            // 重试次数
+	Metadata                map[string]interface{} `mapstructure:"metadata"`                  // 元数据
+
+	// 智能节点分割配置
+	SmartNodeSplitting SmartNodeSplittingConfig `mapstructure:"smart_node_splitting"` // 智能节点分割配置
 
 	// 格式修复配置
 	EnableFormatFix      bool `mapstructure:"enable_format_fix"`      // 启用格式修复
@@ -154,7 +168,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	if err := v.Unmarshal(&config); err != nil {
 		return nil, err
 	}
-	
+
 	// Fix for models with dots in names: manually unmarshal models section
 	modelsRaw := v.GetStringMap("models")
 	if len(modelsRaw) > 0 {
@@ -213,25 +227,25 @@ func NewDefaultConfig() *Config {
 	cacheDir := getDefaultCacheDir()
 
 	return &Config{
-		SourceLang:              "English",
-		TargetLang:              "Chinese",
-		Country:                 "China",
-		DefaultModelName:        "gpt-3.5-turbo",
-		ModelConfigs:            DefaultModelConfigs(),
-		StepSets:                GetDefaultStepSetsV2(),
-		ActiveStepSet:           "basic",
-		MaxTokensPerChunk:       2000,
-		CacheDir:                cacheDir,
-		UseCache:                true,
-		Debug:                   false,
-		
+		SourceLang:        "English",
+		TargetLang:        "Chinese",
+		Country:           "China",
+		DefaultModelName:  "gpt-3.5-turbo",
+		ModelConfigs:      DefaultModelConfigs(),
+		StepSets:          GetDefaultStepSetsV2(),
+		ActiveStepSet:     "basic",
+		MaxTokensPerChunk: 2000,
+		CacheDir:          cacheDir,
+		UseCache:          true,
+		Debug:             false,
+
 		// 详细日志默认配置
-		LogLevel:                "info",              // 默认INFO级别
-		EnableDetailedLog:       false,               // 默认禁用详细日志
-		ConsoleLogLevel:         "info",              // 控制台默认INFO级别
-		NormalLogFile:           "",                  // 默认不输出到文件
-		DetailedLogFile:         "logs/detailed.log", // 默认详细日志文件路径
-		
+		LogLevel:          "info",              // 默认INFO级别
+		EnableDetailedLog: false,               // 默认禁用详细日志
+		ConsoleLogLevel:   "info",              // 控制台默认INFO级别
+		NormalLogFile:     "",                  // 默认不输出到文件
+		DetailedLogFile:   "logs/detailed.log", // 默认详细日志文件路径
+
 		RequestTimeout:          300,  // 默认5分钟超时
 		Concurrency:             4,    // 默认4个并行请求
 		MinSplitSize:            100,  // 默认最小分割大小100字符
@@ -257,7 +271,18 @@ func NewDefaultConfig() *Config {
 		Metadata:                make(map[string]interface{}),
 
 		// HTML/EPUB 处理配置
-		HTMLProcessingMode:      "markdown", // 默认使用markdown模式
+		HTMLProcessingMode: "markdown", // 默认使用markdown模式
+
+		// 智能节点分割配置
+		SmartNodeSplitting: SmartNodeSplittingConfig{
+			EnableSmartSplitting: true, // 默认启用智能分割
+			MaxNodeSizeThreshold: 1500, // 超过1500字符才进行分割
+			MinSplitSize:         200,  // 分割后每部分最小200字符
+			MaxSplitSize:         800,  // 分割后每部分最大800字符
+			PreserveParagraphs:   true, // 默认保持段落完整性
+			PreserveSentences:    true, // 默认保持句子完整性
+			OverlapRatio:         0.1,  // 默认10%重叠比例
+		},
 	}
 }
 
@@ -529,6 +554,15 @@ func setDefaults(v *viper.Viper) {
 	// HTML/EPUB 处理配置
 	v.SetDefault("html_processing_mode", "markdown") // 默认使用markdown模式处理HTML
 
+	// 智能节点分割配置
+	v.SetDefault("smart_node_splitting.enable_smart_splitting", true)  // 默认启用智能分割
+	v.SetDefault("smart_node_splitting.max_node_size_threshold", 1500) // 超过1500字符才进行分割
+	v.SetDefault("smart_node_splitting.min_split_size", 200)           // 分割后每部分最小200字符
+	v.SetDefault("smart_node_splitting.max_split_size", 800)           // 分割后每部分最大800字符
+	v.SetDefault("smart_node_splitting.preserve_paragraphs", true)     // 默认保持段落完整性
+	v.SetDefault("smart_node_splitting.preserve_sentences", true)      // 默认保持句子完整性
+	v.SetDefault("smart_node_splitting.overlap_ratio", 0.1)            // 默认10%重叠比例
+
 	// 设置默认的步骤集
 	v.SetDefault("step_sets", GetDefaultStepSetsV2())
 }
@@ -583,6 +617,9 @@ func structToMap(config *Config) map[string]interface{} {
 		"format_fix_epub":        config.FormatFixEPUB,
 
 		// HTML/EPUB 处理配置
-		"html_processing_mode":   config.HTMLProcessingMode,
+		"html_processing_mode": config.HTMLProcessingMode,
+
+		// 智能节点分割配置
+		"smart_node_splitting": config.SmartNodeSplitting,
 	}
 }

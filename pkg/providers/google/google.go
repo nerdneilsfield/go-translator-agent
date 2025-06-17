@@ -16,8 +16,8 @@ import (
 // Config Google Translate配置
 type Config struct {
 	providers.BaseConfig
-	ProjectID   string              `json:"project_id,omitempty"` // 用于Google Cloud Translation API
-	RetryConfig retry.RetryConfig   `json:"retry_config"`
+	ProjectID   string            `json:"project_id,omitempty"` // 用于Google Cloud Translation API
+	RetryConfig retry.RetryConfig `json:"retry_config"`
 }
 
 // DefaultConfig 返回默认配置

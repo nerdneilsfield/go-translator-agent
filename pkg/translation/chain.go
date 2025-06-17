@@ -29,7 +29,7 @@ func (c *chain) traceLog(msg string, fields ...zap.Field) {
 type chain struct {
 	steps   []Step
 	options chainOptions
-	logger  *zap.Logger  // 新增：日志记录器
+	logger  *zap.Logger // 新增：日志记录器
 	mu      sync.RWMutex
 	// 执行时的状态
 	executionState struct {
@@ -77,7 +77,7 @@ func (c *chain) Execute(ctx context.Context, input string) (*ChainResult, error)
 
 	startTime := time.Now()
 	currentInput := input
-	
+
 	// 保存执行状态
 	c.executionState.originalText = input
 	c.executionState.results = make([]StepResult, 0, len(c.steps))
@@ -102,7 +102,7 @@ func (c *chain) Execute(ctx context.Context, input string) (*ChainResult, error)
 	}
 
 	result.TotalDuration = time.Since(startTime)
-	
+
 	// TRACE: 记录翻译链执行完成
 	c.traceLog("translation_chain_complete",
 		zap.String("original_text", input),
@@ -111,7 +111,7 @@ func (c *chain) Execute(ctx context.Context, input string) (*ChainResult, error)
 		zap.Bool("success", result.Success),
 		zap.Int("steps_executed", len(result.Steps)),
 		zap.Int("output_length", len(result.FinalOutput)))
-	
+
 	return result, result.Error
 }
 
@@ -157,12 +157,12 @@ func (c *chain) executeStep(ctx context.Context, step Step, input string, index 
 
 	// 设置上下文
 	stepInput.Context = make(map[string]string)
-	
+
 	// 添加基本的占位符
 	stepInput.Context["text"] = input
 	stepInput.Context["source_language"] = stepConfig.Variables["source_language"]
 	stepInput.Context["target_language"] = stepConfig.Variables["target_language"]
-	
+
 	// 从 context 中提取元数据标记
 	if ctx.Value("_is_batch") != nil {
 		stepInput.Context["_is_batch"] = fmt.Sprintf("%v", ctx.Value("_is_batch"))
@@ -170,7 +170,7 @@ func (c *chain) executeStep(ctx context.Context, step Step, input string, index 
 	if ctx.Value("_preserve_enabled") != nil {
 		stepInput.Context["_preserve_enabled"] = fmt.Sprintf("%v", ctx.Value("_preserve_enabled"))
 	}
-	
+
 	// 根据步骤类型添加特定的上下文
 	if index == 0 {
 		// 初始翻译：原文就是输入
@@ -189,7 +189,7 @@ func (c *chain) executeStep(ctx context.Context, step Step, input string, index 
 		stepInput.Context["feedback"] = c.executionState.results[1].Output
 		stepInput.Context["ai_review"] = c.executionState.results[1].Output
 	}
-	
+
 	// 如果配置中有额外的变量，也添加进去
 	for k, v := range stepConfig.Variables {
 		if k != "source_language" && k != "target_language" {
@@ -223,7 +223,7 @@ func (c *chain) executeStep(ctx context.Context, step Step, input string, index 
 			result.Output = output.Text
 			result.TokensIn = output.TokensIn
 			result.TokensOut = output.TokensOut
-			
+
 			// TRACE: 记录步骤执行成功的详细信息
 			c.traceLog("translation_step_success",
 				zap.String("step_name", step.GetName()),
@@ -233,7 +233,7 @@ func (c *chain) executeStep(ctx context.Context, step Step, input string, index 
 				zap.Int("tokens_in", output.TokensIn),
 				zap.Int("tokens_out", output.TokensOut),
 				zap.Duration("step_duration", time.Since(startTime)))
-			
+
 			return result, nil
 		}
 
@@ -246,7 +246,7 @@ func (c *chain) executeStep(ctx context.Context, step Step, input string, index 
 	}
 
 	result.Error = lastErr.Error()
-	
+
 	// TRACE: 记录步骤执行失败的详细信息
 	c.traceLog("translation_step_failed",
 		zap.String("step_name", step.GetName()),
@@ -255,11 +255,11 @@ func (c *chain) executeStep(ctx context.Context, step Step, input string, index 
 		zap.String("error", lastErr.Error()),
 		zap.Int("total_attempts", c.options.maxRetries+1),
 		zap.Duration("step_duration", time.Since(startTime)))
-	
+
 	// 创建更详细的错误信息
 	stepName := step.GetName()
 	errorMsg := fmt.Sprintf("step '%s' failed after %d attempts", stepName, c.options.maxRetries+1)
-	
+
 	// 如果是 TranslationError，保留更多上下文
 	if transErr, ok := lastErr.(*TranslationError); ok {
 		errorMsg = fmt.Sprintf("step '%s' failed: %s", stepName, transErr.Message)
@@ -272,7 +272,7 @@ func (c *chain) executeStep(ctx context.Context, step Step, input string, index 
 			Retry:   transErr.Retry,
 		}
 	}
-	
+
 	return result, WrapError(lastErr, ErrCodeStep, errorMsg)
 }
 
@@ -467,7 +467,7 @@ func (s *step) getAdditionalNotes() string {
 // getSystemRole 根据步骤名称自动生成系统角色
 func (s *step) getSystemRole() string {
 	stepName := strings.ToLower(s.config.Name)
-	
+
 	if strings.Contains(stepName, "reflection") || strings.Contains(stepName, "review") {
 		return "You are a translation quality reviewer and linguistic expert."
 	} else if strings.Contains(stepName, "improvement") || strings.Contains(stepName, "polish") {
@@ -483,7 +483,7 @@ func (s *step) preparePrompt(input StepInput) string {
 	// 根据步骤名称自动选择内置模板
 	var templateType TemplateType
 	stepName := strings.ToLower(s.config.Name)
-	
+
 	if strings.Contains(stepName, "reflection") || strings.Contains(stepName, "review") {
 		templateType = TemplateTypeReflection
 	} else if strings.Contains(stepName, "improvement") || strings.Contains(stepName, "polish") {
@@ -492,7 +492,7 @@ func (s *step) preparePrompt(input StepInput) string {
 		// 默认使用标准翻译模板
 		templateType = TemplateTypeStandard
 	}
-	
+
 	promptTemplate := GetBuiltinTemplate(templateType)
 
 	// 创建模板数据
@@ -535,7 +535,7 @@ func (s *step) preparePrompt(input StepInput) string {
 // fallbackStringReplace 回退到简单字符串替换（向后兼容）
 func (s *step) fallbackStringReplace(promptTemplate string, data map[string]interface{}) string {
 	prompt := promptTemplate
-	
+
 	// 基本变量替换
 	if text, ok := data["text"].(string); ok {
 		prompt = strings.ReplaceAll(prompt, "{{text}}", text)
@@ -548,16 +548,17 @@ func (s *step) fallbackStringReplace(promptTemplate string, data map[string]inte
 		prompt = strings.ReplaceAll(prompt, "{{target_language}}", targetLang)
 		prompt = strings.ReplaceAll(prompt, "{{target}}", targetLang)
 	}
-	
+
 	// 其他变量替换
 	for k, v := range data {
 		if str, ok := v.(string); ok {
 			prompt = strings.ReplaceAll(prompt, fmt.Sprintf("{{%s}}", k), str)
 		}
 	}
-	
+
 	return prompt
 }
+
 // getCacheKey 生成缓存键
 func (s *step) getCacheKey(prompt string) string {
 	// 简单的缓存键生成，实际使用中可能需要更复杂的逻辑

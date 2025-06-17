@@ -25,7 +25,7 @@ type CoordinatorConfig struct {
 	ChunkSize          int    // 文档处理时的分块大小
 	SourceLang         string // 源语言（用于文档处理元数据）
 	TargetLang         string // 目标语言（用于文档处理元数据）
-	
+
 	// 格式修复配置
 	EnableFormatFix      bool
 	FormatFixInteractive bool
@@ -35,7 +35,7 @@ type CoordinatorConfig struct {
 	FormatFixText        bool
 	FormatFixHTML        bool
 	FormatFixEPUB        bool
-	
+
 	// 后处理配置
 	EnablePostProcessing      bool
 	GlossaryPath              string
@@ -43,7 +43,7 @@ type CoordinatorConfig struct {
 	TerminologyConsistency    bool
 	MixedLanguageSpacing      bool
 	MachineTranslationCleanup bool
-	
+
 	// 进度和调试配置
 	Verbose bool // 详细模式
 }
@@ -55,7 +55,7 @@ func NewCoordinatorConfig(cfg *config.Config) CoordinatorConfig {
 		ChunkSize:          cfg.ChunkSize,
 		SourceLang:         cfg.SourceLang,
 		TargetLang:         cfg.TargetLang,
-		
+
 		EnableFormatFix:      cfg.EnableFormatFix,
 		FormatFixInteractive: cfg.FormatFixInteractive,
 		PreTranslationFix:    cfg.PreTranslationFix,
@@ -64,14 +64,14 @@ func NewCoordinatorConfig(cfg *config.Config) CoordinatorConfig {
 		FormatFixText:        cfg.FormatFixText,
 		FormatFixHTML:        cfg.FormatFixHTML,
 		FormatFixEPUB:        cfg.FormatFixEPUB,
-		
+
 		EnablePostProcessing:      cfg.EnablePostProcessing,
 		GlossaryPath:              cfg.GlossaryPath,
 		ContentProtection:         cfg.ContentProtection,
 		TerminologyConsistency:    cfg.TerminologyConsistency,
 		MixedLanguageSpacing:      cfg.MixedLanguageSpacing,
 		MachineTranslationCleanup: cfg.MachineTranslationCleanup,
-		
+
 		Verbose: cfg.Verbose,
 	}
 }
@@ -95,16 +95,16 @@ type TranslationResult struct {
 
 // TranslationCoordinator 翻译协调器，只负责文档解析、组装和工作流协调
 type TranslationCoordinator struct {
-	coordinatorConfig    CoordinatorConfig          // Coordinator专用配置
-	translationService   translation.Service        // 翻译服务实例
-	translator           Translator                 // 节点翻译管理器实例
-	progressTracker      *progress.Tracker
-	progressReporter     *progress.Tracker
-	formatManager        *formatter.Manager
-	formatFixRegistry    *formatfix.FixerRegistry
-	postProcessor        *TranslationPostProcessor
-	statsDB              *stats.Database
-	logger               *zap.Logger
+	coordinatorConfig  CoordinatorConfig   // Coordinator专用配置
+	translationService translation.Service // 翻译服务实例
+	translator         Translator          // 节点翻译管理器实例
+	progressTracker    *progress.Tracker
+	progressReporter   *progress.Tracker
+	formatManager      *formatter.Manager
+	formatFixRegistry  *formatfix.FixerRegistry
+	postProcessor      *TranslationPostProcessor
+	statsDB            *stats.Database
+	logger             *zap.Logger
 }
 
 // NewTranslationCoordinator 创建翻译协调器
@@ -250,10 +250,10 @@ func (c *TranslationCoordinator) TranslateFile(ctx context.Context, inputPath, o
 		ChunkSize:    c.coordinatorConfig.ChunkSize,
 		ChunkOverlap: 100,
 		Metadata: map[string]interface{}{
-			"source_language":        c.coordinatorConfig.SourceLang,
-			"target_language":        c.coordinatorConfig.TargetLang,
-			"logger":                 c.logger,
-			"html_processing_mode":   c.coordinatorConfig.HTMLProcessingMode,
+			"source_language":      c.coordinatorConfig.SourceLang,
+			"target_language":      c.coordinatorConfig.TargetLang,
+			"logger":               c.logger,
+			"html_processing_mode": c.coordinatorConfig.HTMLProcessingMode,
 		},
 	}
 
@@ -291,7 +291,7 @@ func (c *TranslationCoordinator) TranslateFile(ctx context.Context, inputPath, o
 	for _, node := range nodes {
 		totalChars += int64(len(node.OriginalText))
 	}
-	
+
 	// 创建进度条
 	progressBar := NewProgressBar(totalChars, fmt.Sprintf("翻译 %s", inputPath))
 	defer progressBar.Finish()
@@ -334,7 +334,7 @@ func (c *TranslationCoordinator) TranslateFile(ctx context.Context, inputPath, o
 		zap.String("docID", docID),
 		zap.Duration("duration", result.Duration),
 		zap.Float64("progress", result.Progress))
-	
+
 	// 生成并打印翻译汇总
 	// TODO: 修复GenerateSummary函数的参数类型
 	// summary := GenerateSummary(result, nodes, c.coordinatorConfig)
@@ -396,13 +396,13 @@ func (c *TranslationCoordinator) translateNode(ctx context.Context, node *docume
 
 	node.TranslatedText = translatedText
 	node.Status = document.NodeStatusSuccess
-	
+
 	c.logger.Debug("node translation completed",
 		zap.Int("nodeID", node.ID),
 		zap.String("path", node.Path),
 		zap.Int("inputLength", len(node.OriginalText)),
 		zap.Int("outputLength", len(translatedText)))
-	
+
 	return nil
 }
 

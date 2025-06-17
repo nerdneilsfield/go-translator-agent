@@ -33,7 +33,7 @@ func NewProviderManager(cfg *Config, logger *zap.Logger) *ProviderManager {
 // CreateProviders 根据配置创建所有需要的providers
 func (pm *ProviderManager) CreateProviders() (map[string]TranslationProvider, error) {
 	pm.logger.Info("开始创建翻译服务providers")
-	
+
 	// 检查是否配置了步骤集
 	if pm.config.ActiveStepSet == "" {
 		return nil, fmt.Errorf("no active step set configured")
@@ -41,7 +41,7 @@ func (pm *ProviderManager) CreateProviders() (map[string]TranslationProvider, er
 
 	// 查找活动的步骤集
 	stepSetName := pm.config.ActiveStepSet
-	
+
 	// 检查步骤集是否存在
 	stepSet, exists := pm.config.StepSets[stepSetName]
 	if !exists {
@@ -63,26 +63,26 @@ func (pm *ProviderManager) CreateProviders() (map[string]TranslationProvider, er
 
 	// 创建提供商映射
 	providerMap := make(map[string]TranslationProvider)
-	
+
 	// 为每个步骤创建对应的提供商
 	for _, step := range stepSet.Steps {
-		
+
 		// 检查特殊步骤选项（raw 或 none）
 		if step.ModelName == "raw" || step.ModelName == "none" {
 			pm.logger.Info("使用特殊步骤选项",
 				zap.String("step", step.Name),
 				zap.String("option", step.ModelName))
-			
+
 			// 为 raw/none 步骤创建 raw 提供商
 			provider := raw.New(raw.DefaultConfig())
 			providerMap[step.Provider] = provider
-			
+
 			pm.logger.Info("创建 Raw 提供商成功",
 				zap.String("step", step.Name),
 				zap.String("provider", step.Provider))
 			continue
 		}
-		
+
 		// 检查模型配置是否存在
 		modelConfig, exists := pm.config.ModelConfigs[step.ModelName]
 		if !exists {
@@ -103,12 +103,12 @@ func (pm *ProviderManager) CreateProviders() (map[string]TranslationProvider, er
 		if err != nil {
 			return nil, fmt.Errorf("failed to create provider for step %s: %w", step.Name, err)
 		}
-		
+
 		// 检查提供商特性
 		capabilities := pm.getProviderCapabilities(step.Provider)
 
 		providerMap[step.Provider] = provider
-		
+
 		pm.logger.Info("创建提供商成功",
 			zap.String("step", step.Name),
 			zap.String("provider", step.Provider),
@@ -122,12 +122,12 @@ func (pm *ProviderManager) CreateProviders() (map[string]TranslationProvider, er
 	for name := range providerMap {
 		providerNames = append(providerNames, name)
 	}
-	
+
 	pm.logger.Info("创建翻译服务providers完成",
 		zap.String("step_set", stepSetName),
 		zap.Int("steps_count", len(stepSet.Steps)),
 		zap.Strings("providers", providerNames))
-		
+
 	return providerMap, nil
 }
 

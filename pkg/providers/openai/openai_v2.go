@@ -45,10 +45,10 @@ func getModel(model string) openai.ChatModel {
 // ConfigV2 OpenAI配置（使用官方SDK）
 type ConfigV2 struct {
 	providers.BaseConfig
-	Model       string  `json:"model"`
-	Temperature float32 `json:"temperature"`
-	MaxTokens   int     `json:"max_tokens"`
-	OrgID       string  `json:"org_id,omitempty"` // 可选的组织ID
+	Model       string            `json:"model"`
+	Temperature float32           `json:"temperature"`
+	MaxTokens   int               `json:"max_tokens"`
+	OrgID       string            `json:"org_id,omitempty"` // 可选的组织ID
 	RetryConfig retry.RetryConfig `json:"retry_config"`
 }
 
@@ -248,14 +248,14 @@ func (p *ProviderV2) HealthCheck(ctx context.Context) error {
 // type LLMClientV2 struct {
 // 	provider *ProviderV2
 // }
-// 
+//
 // // NewLLMClientV2 创建LLMClient（使用官方SDK）
 // func NewLLMClientV2(config ConfigV2) *LLMClientV2 {
 // 	return &LLMClientV2{
 // 		provider: NewV2(config),
 // 	}
 // }
-// 
+//
 // // Chat 实现 translation.LLMClient 接口
 // func (c *LLMClientV2) Chat(ctx context.Context, req *translation.ChatRequest) (*translation.ChatResponse, error) {
 // 	// 转换消息格式
@@ -272,18 +272,18 @@ func (p *ProviderV2) HealthCheck(ctx context.Context) error {
 // 			messages[i] = openai.UserMessage(msg.Content)
 // 		}
 // 	}
-// 
+//
 // 	// 创建请求
 // 	model := req.Model
 // 	if model == "" {
 // 		model = c.provider.config.Model
 // 	}
-// 
+//
 // 	params := openai.ChatCompletionNewParams{
 // 		Messages: messages,
 // 		Model:    getModel(model),
 // 	}
-// 
+//
 // 	// 设置可选参数
 // 	if req.Temperature > 0 {
 // 		params.Temperature = openai.Float(float64(req.Temperature))
@@ -291,17 +291,17 @@ func (p *ProviderV2) HealthCheck(ctx context.Context) error {
 // 	if req.MaxTokens > 0 {
 // 		params.MaxTokens = openai.Int(int64(req.MaxTokens))
 // 	}
-// 
+//
 // 	// 执行请求
 // 	completion, err := c.provider.client.Chat.Completions.New(ctx, params)
 // 	if err != nil {
 // 		return nil, err
 // 	}
-// 
+//
 // 	if len(completion.Choices) == 0 {
 // 		return nil, fmt.Errorf("no choices returned")
 // 	}
-// 
+//
 // 	// 转换响应
 // 	return &translation.ChatResponse{
 // 		Message: translation.ChatMessage{
@@ -313,7 +313,7 @@ func (p *ProviderV2) HealthCheck(ctx context.Context) error {
 // 		TokensOut: int(completion.Usage.CompletionTokens),
 // 	}, nil
 // }
-// 
+//
 // // Complete 实现 translation.LLMClient 接口
 // func (c *LLMClientV2) Complete(ctx context.Context, req *translation.CompletionRequest) (*translation.CompletionResponse, error) {
 // 	// 将completion请求转换为chat请求
@@ -328,12 +328,12 @@ func (p *ProviderV2) HealthCheck(ctx context.Context) error {
 // 		Temperature: req.Temperature,
 // 		MaxTokens:   req.MaxTokens,
 // 	}
-// 
+//
 // 	resp, err := c.Chat(ctx, chatReq)
 // 	if err != nil {
 // 		return nil, err
 // 	}
-// 
+//
 // 	return &translation.CompletionResponse{
 // 		Text:      resp.Message.Content,
 // 		Model:     resp.Model,
@@ -341,12 +341,12 @@ func (p *ProviderV2) HealthCheck(ctx context.Context) error {
 // 		TokensOut: resp.TokensOut,
 // 	}, nil
 // }
-// 
+//
 // // GetModel 获取模型
 // func (c *LLMClientV2) GetModel() string {
 // 	return c.provider.config.Model
 // }
-// 
+//
 // // HealthCheck 健康检查
 // func (c *LLMClientV2) HealthCheck(ctx context.Context) error {
 // 	return c.provider.HealthCheck(ctx)

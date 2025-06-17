@@ -16,22 +16,22 @@ import (
 type RetryConfig struct {
 	// 最大重试次数（总重试次数）
 	MaxRetries int `json:"max_retries"`
-	
+
 	// 网络错误专用重试次数（快速重试）
 	NetworkMaxRetries int `json:"network_max_retries"`
-	
+
 	// 初始延迟时间
 	InitialDelay time.Duration `json:"initial_delay"`
-	
+
 	// 最大延迟时间
 	MaxDelay time.Duration `json:"max_delay"`
-	
+
 	// 退避因子（指数退避）
 	BackoffFactor float64 `json:"backoff_factor"`
-	
+
 	// 网络错误的初始延迟（通常更短）
 	NetworkInitialDelay time.Duration `json:"network_initial_delay"`
-	
+
 	// 网络错误的最大延迟
 	NetworkMaxDelay time.Duration `json:"network_max_delay"`
 }
@@ -53,12 +53,12 @@ func DefaultRetryConfig() RetryConfig {
 type ErrorType int
 
 const (
-	ErrorTypeNone ErrorType = iota
-	ErrorTypeNetwork        // 网络瞬时错误
-	ErrorTypeRetryableHTTP  // 可重试的HTTP错误
-	ErrorTypeClientError    // 客户端错误（4xx）
-	ErrorTypeServerError    // 服务端错误（5xx）
-	ErrorTypePermanent      // 永久性错误
+	ErrorTypeNone          ErrorType = iota
+	ErrorTypeNetwork                 // 网络瞬时错误
+	ErrorTypeRetryableHTTP           // 可重试的HTTP错误
+	ErrorTypeClientError             // 客户端错误（4xx）
+	ErrorTypeServerError             // 服务端错误（5xx）
+	ErrorTypePermanent               // 永久性错误
 )
 
 // NetworkRetrier 网络重试器
@@ -80,7 +80,7 @@ type RetryableFunc func() (*http.Response, error)
 func (nr *NetworkRetrier) ExecuteWithRetry(ctx context.Context, fn RetryableFunc) (*http.Response, error) {
 	var lastErr error
 	var lastResp *http.Response
-	
+
 	// 网络错误的快速重试循环
 	for networkRetry := 0; networkRetry <= nr.config.NetworkMaxRetries; networkRetry++ {
 		// 总体重试循环
@@ -91,18 +91,18 @@ func (nr *NetworkRetrier) ExecuteWithRetry(ctx context.Context, fn RetryableFunc
 				return nil, ctx.Err()
 			default:
 			}
-			
+
 			// 执行函数
 			resp, err := fn()
-			
+
 			// 成功的情况
 			if err == nil && resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				return resp, nil
 			}
-			
+
 			// 分析错误类型
 			errorType := nr.classifyError(err, resp)
-			
+
 			// 记录错误和响应
 			lastErr = err
 			if resp != nil {
@@ -111,17 +111,17 @@ func (nr *NetworkRetrier) ExecuteWithRetry(ctx context.Context, fn RetryableFunc
 				}
 				lastResp = resp
 			}
-			
+
 			// 根据错误类型决定是否重试
 			shouldRetry, isNetworkError := nr.shouldRetry(errorType, totalRetry, networkRetry)
 			if !shouldRetry {
 				break
 			}
-			
+
 			// 计算延迟时间
-			delay := nr.calculateDelay(isNetworkError, 
+			delay := nr.calculateDelay(isNetworkError,
 				totalRetry, networkRetry)
-			
+
 			// 等待后重试
 			select {
 			case <-ctx.Done():
@@ -130,22 +130,22 @@ func (nr *NetworkRetrier) ExecuteWithRetry(ctx context.Context, fn RetryableFunc
 				// 继续重试
 			}
 		}
-		
+
 		// 如果不是网络错误，不进行网络级别的重试
 		if lastErr == nil || !nr.isNetworkError(lastErr) {
 			break
 		}
 	}
-	
+
 	// 返回最后的错误
 	if lastErr != nil {
 		return lastResp, lastErr
 	}
-	
+
 	if lastResp != nil {
 		return lastResp, nil
 	}
-	
+
 	return nil, errors.New("no response received")
 }
 
@@ -158,7 +158,7 @@ func (nr *NetworkRetrier) classifyError(err error, resp *http.Response) ErrorTyp
 		}
 		return ErrorTypePermanent
 	}
-	
+
 	// HTTP状态码错误
 	if resp != nil {
 		switch {
@@ -170,7 +170,7 @@ func (nr *NetworkRetrier) classifyError(err error, resp *http.Response) ErrorTyp
 			return ErrorTypeClientError
 		}
 	}
-	
+
 	return ErrorTypeNone
 }
 
@@ -179,32 +179,32 @@ func (nr *NetworkRetrier) isNetworkError(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	// 检查网络相关错误
 	var netErr net.Error
 	if errors.As(err, &netErr) {
 		return netErr.Timeout() || netErr.Temporary()
 	}
-	
+
 	// 检查URL错误
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
 		return nr.isNetworkError(urlErr.Err)
 	}
-	
+
 	// 检查系统调用错误
 	var syscallErr *net.OpError
 	if errors.As(err, &syscallErr) {
 		return true
 	}
-	
+
 	// 检查连接错误
 	if errors.Is(err, syscall.ECONNREFUSED) ||
 		errors.Is(err, syscall.ECONNRESET) ||
 		errors.Is(err, syscall.EPIPE) {
 		return true
 	}
-	
+
 	// 检查错误消息模式
 	errStr := strings.ToLower(err.Error())
 	networkPatterns := []string{
@@ -221,13 +221,13 @@ func (nr *NetworkRetrier) isNetworkError(err error) bool {
 		"i/o timeout",
 		"eof",
 	}
-	
+
 	for _, pattern := range networkPatterns {
 		if strings.Contains(errStr, pattern) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -236,17 +236,17 @@ func (nr *NetworkRetrier) shouldRetry(errorType ErrorType, totalRetry, networkRe
 	switch errorType {
 	case ErrorTypeNetwork:
 		// 网络错误：两层重试都检查
-		return totalRetry < nr.config.MaxRetries && 
+		return totalRetry < nr.config.MaxRetries &&
 			networkRetry < nr.config.NetworkMaxRetries, true
-			
+
 	case ErrorTypeServerError, ErrorTypeRetryableHTTP:
 		// 服务端错误和可重试HTTP错误：只检查总重试次数
 		return totalRetry < nr.config.MaxRetries, false
-		
+
 	case ErrorTypeClientError, ErrorTypePermanent:
 		// 客户端错误和永久性错误：不重试
 		return false, false
-		
+
 	default:
 		return false, false
 	}
@@ -257,7 +257,7 @@ func (nr *NetworkRetrier) calculateDelay(isNetworkError bool, totalRetry, networ
 	var delay time.Duration
 	var maxDelay time.Duration
 	var retryCount int
-	
+
 	if isNetworkError {
 		// 网络错误使用较短的延迟
 		delay = nr.config.NetworkInitialDelay
@@ -269,23 +269,23 @@ func (nr *NetworkRetrier) calculateDelay(isNetworkError bool, totalRetry, networ
 		maxDelay = nr.config.MaxDelay
 		retryCount = totalRetry
 	}
-	
+
 	// 指数退避
 	if retryCount > 0 {
 		backoffFactor := nr.config.BackoffFactor
 		if backoffFactor <= 1.0 {
 			backoffFactor = 2.0
 		}
-		
+
 		multiplier := math.Pow(backoffFactor, float64(retryCount))
 		delay = time.Duration(float64(delay) * multiplier)
 	}
-	
+
 	// 限制最大延迟
 	if delay > maxDelay {
 		delay = maxDelay
 	}
-	
+
 	return delay
 }
 

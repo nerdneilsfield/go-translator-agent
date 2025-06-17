@@ -7,9 +7,9 @@ import (
 
 // NodeMarkerPreserveConfig 节点标记保护配置
 type NodeMarkerPreserveConfig struct {
-	Enabled         bool
-	StartMarkerFmt  string // 格式如 "@@NODE_START_%d@@"
-	EndMarkerFmt    string // 格式如 "@@NODE_END_%d@@"
+	Enabled        bool
+	StartMarkerFmt string // 格式如 "@@NODE_START_%d@@"
+	EndMarkerFmt   string // 格式如 "@@NODE_END_%d@@"
 }
 
 // DefaultNodeMarkerConfig 默认节点标记配置
@@ -57,10 +57,10 @@ func AppendNodeMarkerPrompt(prompt string, config NodeMarkerPreserveConfig) stri
 func CombinePromptWithPreserves(basePrompt string, preserveConfig PreserveConfig, nodeMarkerConfig NodeMarkerPreserveConfig) string {
 	// 先添加内容保护块说明（如 LaTeX、代码块等）
 	prompt := AppendPreservePrompt(basePrompt, preserveConfig)
-	
+
 	// 再添加节点标记保护说明
 	prompt = AppendNodeMarkerPrompt(prompt, nodeMarkerConfig)
-	
+
 	return prompt
 }
 

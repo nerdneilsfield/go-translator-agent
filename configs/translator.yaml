@@ -49,6 +49,16 @@ min_split_size: 100
 max_split_size: 1000
 chunk_size: 1000
 
+# 智能节点分割设置
+smart_node_splitting:
+  enable_smart_splitting: false        # 是否启用智能分割（默认关闭）
+  max_node_size_threshold: 1500        # 超过这个阈值才进行分割（字符数）
+  min_split_size: 500                  # 分割后每部分的最小大小
+  max_split_size: 1000                 # 分割后每部分的最大大小
+  preserve_paragraphs: true            # 是否保持段落完整性
+  preserve_sentences: true             # 是否保持句子完整性
+  overlap_ratio: 0.1                   # 重叠比例（0.0-0.3）
+
 # 重试设置
 retry_attempts: 3
 max_retries: 3

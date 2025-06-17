@@ -16,8 +16,8 @@ import (
 // Config DeepL配置
 type Config struct {
 	providers.BaseConfig
-	UseFreeAPI  bool                 `json:"use_free_api"` // 是否使用免费API
-	RetryConfig retry.RetryConfig    `json:"retry_config"`
+	UseFreeAPI  bool              `json:"use_free_api"` // 是否使用免费API
+	RetryConfig retry.RetryConfig `json:"retry_config"`
 }
 
 // DefaultConfig 返回默认配置
@@ -54,7 +54,7 @@ func New(config Config) *Provider {
 	httpClient := &http.Client{
 		Timeout: config.Timeout,
 	}
-	
+
 	// 创建网络重试器
 	networkRetrier := retry.NewNetworkRetrier(config.RetryConfig)
 	retryClient := networkRetrier.WrapHTTPClient(httpClient)
@@ -229,7 +229,7 @@ func (p *Provider) translate(ctx context.Context, params url.Values) (*Translate
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	
+
 	// 检查HTTP状态码
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// 读取错误响应

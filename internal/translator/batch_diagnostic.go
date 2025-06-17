@@ -28,7 +28,7 @@ func DiagnoseBatchTranslationIssue(request string, response string) *BatchDiagno
 	diag.MarkersPreserved = diag.RequestStartMarkers == diag.ResponseStartMarkers
 
 	// 检查响应格式
-	diag.ResponseIsJSON = strings.HasPrefix(strings.TrimSpace(response), "{") || 
+	diag.ResponseIsJSON = strings.HasPrefix(strings.TrimSpace(response), "{") ||
 		strings.HasPrefix(strings.TrimSpace(response), "[")
 	diag.ResponseIsEmpty = len(strings.TrimSpace(response)) == 0
 
@@ -41,7 +41,7 @@ func DiagnoseBatchTranslationIssue(request string, response string) *BatchDiagno
 		"[NODE",
 		"{NODE",
 	}
-	
+
 	diag.AlternativeMarkers = make(map[string]int)
 	for _, variant := range variants {
 		count := countOccurrences(response, variant)
@@ -58,19 +58,19 @@ func DiagnoseBatchTranslationIssue(request string, response string) *BatchDiagno
 
 // BatchDiagnostic 批量翻译诊断结果
 type BatchDiagnostic struct {
-	RequestLength          int
-	ResponseLength         int
-	RequestStartMarkers    int
-	RequestEndMarkers      int
-	ResponseStartMarkers   int
-	ResponseEndMarkers     int
-	RequestMarkersBalanced bool
+	RequestLength           int
+	ResponseLength          int
+	RequestStartMarkers     int
+	RequestEndMarkers       int
+	ResponseStartMarkers    int
+	ResponseEndMarkers      int
+	RequestMarkersBalanced  bool
 	ResponseMarkersBalanced bool
-	MarkersPreserved       bool
-	ResponseIsJSON         bool
-	ResponseIsEmpty        bool
-	AlternativeMarkers     map[string]int
-	Issues                 []string
+	MarkersPreserved        bool
+	ResponseIsJSON          bool
+	ResponseIsEmpty         bool
+	AlternativeMarkers      map[string]int
+	Issues                  []string
 }
 
 // countOccurrences 计算字符串出现次数
@@ -121,7 +121,7 @@ func diagnoseProbableIssues(diag *BatchDiagnostic) []string {
 // FormatDiagnostic 格式化诊断结果
 func (diag *BatchDiagnostic) Format() string {
 	var sb strings.Builder
-	
+
 	sb.WriteString("=== 批量翻译诊断结果 ===\n")
 	sb.WriteString(fmt.Sprintf("请求长度: %d\n", diag.RequestLength))
 	sb.WriteString(fmt.Sprintf("响应长度: %d\n", diag.ResponseLength))
@@ -137,14 +137,14 @@ func (diag *BatchDiagnostic) Format() string {
 	sb.WriteString(fmt.Sprintf("  标记保留: %v\n", diag.MarkersPreserved))
 	sb.WriteString(fmt.Sprintf("  响应是JSON: %v\n", diag.ResponseIsJSON))
 	sb.WriteString(fmt.Sprintf("  响应为空: %v\n", diag.ResponseIsEmpty))
-	
+
 	if len(diag.AlternativeMarkers) > 0 {
 		sb.WriteString(fmt.Sprintf("\n发现的变体标记:\n"))
 		for variant, count := range diag.AlternativeMarkers {
 			sb.WriteString(fmt.Sprintf("  %s: %d次\n", variant, count))
 		}
 	}
-	
+
 	if len(diag.Issues) > 0 {
 		sb.WriteString(fmt.Sprintf("\n诊断出的问题:\n"))
 		for _, issue := range diag.Issues {
@@ -153,6 +153,6 @@ func (diag *BatchDiagnostic) Format() string {
 	} else {
 		sb.WriteString(fmt.Sprintf("\n未发现明显问题\n"))
 	}
-	
+
 	return sb.String()
 }
