@@ -7,10 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers"
-	
+	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/retry"
 )
 
 // Config OpenAI配置
@@ -19,6 +18,7 @@ type Config struct {
 	Model       string  `json:"model"`
 	Temperature float32 `json:"temperature"`
 	MaxTokens   int     `json:"max_tokens"`
+	RetryConfig retry.RetryConfig `json:"retry_config"`
 }
 
 // DefaultConfig 返回默认配置
@@ -28,13 +28,15 @@ func DefaultConfig() Config {
 		Model:       "gpt-3.5-turbo",
 		Temperature: 0.3,
 		MaxTokens:   4096,
+		RetryConfig: retry.DefaultRetryConfig(),
 	}
 }
 
 // Provider OpenAI提供商
 type Provider struct {
-	config     Config
-	httpClient *http.Client
+	config      Config
+	httpClient  *http.Client
+	retryClient *retry.RetryableHTTPClient
 }
 
 // New 创建新的OpenAI提供商
@@ -43,11 +45,18 @@ func New(config Config) *Provider {
 		config.APIEndpoint = "https://api.openai.com/v1"
 	}
 
+	httpClient := &http.Client{
+		Timeout: config.Timeout,
+	}
+	
+	// 创建网络重试器
+	networkRetrier := retry.NewNetworkRetrier(config.RetryConfig)
+	retryClient := networkRetrier.WrapHTTPClient(httpClient)
+
 	return &Provider{
-		config: config,
-		httpClient: &http.Client{
-			Timeout: config.Timeout,
-		},
+		config:      config,
+		httpClient:  httpClient,
+		retryClient: retryClient,
 	}
 }
 
@@ -185,51 +194,24 @@ func (p *Provider) chat(ctx context.Context, req ChatRequest) (*ChatResponse, er
 		httpReq.Header.Set(k, v)
 	}
 
-	// 执行请求，带重试
-	var resp *http.Response
-	var lastErr error
-
-	for i := 0; i <= p.config.MaxRetries; i++ {
-		if i > 0 {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(p.config.RetryDelay * time.Duration(i)):
-			}
-		}
-
-		resp, err = p.httpClient.Do(httpReq)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		// 检查状态码
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			break
-		}
-
+	// 执行请求，使用智能重试
+	resp, err := p.retryClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	
+	// 检查HTTP状态码
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// 读取错误响应
 		errBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 
 		// 解析错误
 		var apiErr APIError
-		if err := json.Unmarshal(errBody, &apiErr); err == nil {
-			lastErr = &apiErr
-		} else {
-			lastErr = fmt.Errorf("API error: %s", resp.Status)
+		if json.Unmarshal(errBody, &apiErr) == nil {
+			return nil, &apiErr
 		}
-
-		// 检查是否可重试
-		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
-			continue
-		}
-		break
-	}
-
-	if lastErr != nil {
-		return nil, lastErr
+		return nil, fmt.Errorf("API error: %s", resp.Status)
 	}
 
 	defer resp.Body.Close()

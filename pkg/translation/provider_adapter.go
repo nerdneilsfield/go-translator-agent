@@ -37,7 +37,7 @@ func (a *llmClientAdapter) Translate(ctx context.Context, req *ProviderRequest) 
 
 	resp, err := a.client.Chat(ctx, chatReq)
 	if err != nil {
-		return nil, err
+		return nil, WrapError(err, ErrCodeLLM, "provider '"+a.client.GetModel()+"' translation failed")
 	}
 
 	return &ProviderResponse{

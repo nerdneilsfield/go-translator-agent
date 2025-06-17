@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers"
+	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/retry"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 )
@@ -48,6 +49,7 @@ type ConfigV2 struct {
 	Temperature float32 `json:"temperature"`
 	MaxTokens   int     `json:"max_tokens"`
 	OrgID       string  `json:"org_id,omitempty"` // 可选的组织ID
+	RetryConfig retry.RetryConfig `json:"retry_config"`
 }
 
 // DefaultConfigV2 返回默认配置
@@ -57,6 +59,7 @@ func DefaultConfigV2() ConfigV2 {
 		Model:       "gpt-3.5-turbo",
 		Temperature: 0.3,
 		MaxTokens:   4096,
+		RetryConfig: retry.DefaultRetryConfig(),
 	}
 }
 

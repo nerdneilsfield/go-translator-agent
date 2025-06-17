@@ -149,6 +149,13 @@ func isRetryableError(err error) bool {
 		"429",
 		"503",
 		"504",
+		"ContentLength",                    // HTTP Content-Length 错误
+		"Body length 0",                   // HTTP Body 长度为0的错误
+		"connection reset",                // 连接重置
+		"broken pipe",                     // 管道中断
+		"no such host",                    // DNS解析失败
+		"network is unreachable",          // 网络不可达
+		"i/o timeout",                     // I/O超时
 	}
 
 	for _, pattern := range retryablePatterns {

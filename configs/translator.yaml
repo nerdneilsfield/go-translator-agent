@@ -13,6 +13,20 @@ console_log_level: "info"              # 控制台日志级别
 normal_log_file: ""                    # 普通日志文件路径（空表示不输出到文件）
 detailed_log_file: "logs/detailed.log" # 详细日志文件路径
 
+# 网络重试设置（所有网络providers自动应用）
+# 注意：以下配置会被各个模型的具体重试配置覆盖
+# 双层重试机制：
+# 1. 网络错误快速重试（毫秒级，用于瞬时网络故障）
+# 2. 总体重试（秒级，用于持续性问题）
+network_retry:
+  max_retries: 3                       # 总体最大重试次数
+  network_max_retries: 5               # 网络错误专用最大重试次数
+  initial_delay: "1s"                  # 总体重试初始延迟
+  max_delay: "30s"                     # 总体重试最大延迟
+  backoff_factor: 2.0                  # 指数退避因子
+  network_initial_delay: "100ms"       # 网络重试初始延迟
+  network_max_delay: "5s"              # 网络重试最大延迟
+
 # 默认模型设置
 default_model_name: "gpt-3.5-turbo"
 

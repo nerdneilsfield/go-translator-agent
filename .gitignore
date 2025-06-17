@@ -45,3 +45,4 @@ config.yaml
 fix_tests.ps1
 test.html
 test.log
+detailed.log

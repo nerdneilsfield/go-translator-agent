@@ -72,6 +72,18 @@ Formatting Rules:
 
 	// 添加保护块说明
 	prompt = AppendPreservePrompt(prompt, pb.PreserveConfig)
+	
+	// 添加节点标记保护说明
+	prompt += `
+
+CRITICAL: Node Marker Preservation
+- NEVER translate, modify, or remove @@NODE_START_X@@ and @@NODE_END_X@@ markers
+- These markers are ESSENTIAL for the translation system to function
+- MUST preserve ALL node markers EXACTLY as they appear
+- MUST maintain their exact position in your translation
+- Example: "@@NODE_START_42@@" → keep as "@@NODE_START_42@@" (unchanged)
+- Example: "@@NODE_END_42@@" → keep as "@@NODE_END_42@@" (unchanged)
+- WARNING: Removing or modifying these markers will cause system failure`
 
 	// 添加要翻译的文本
 	prompt += fmt.Sprintf("\n\nPlease translate the following text:\n\n%s", text)
@@ -148,6 +160,14 @@ Please provide an improved translation that addresses all the issues mentioned i
 
 	// 添加保护块说明
 	prompt = AppendPreservePrompt(prompt, pb.PreserveConfig)
+	
+	// 添加节点标记保护说明
+	prompt += `
+
+CRITICAL: Node Marker Preservation
+- NEVER translate, modify, or remove @@NODE_START_X@@ and @@NODE_END_X@@ markers
+- These markers are ESSENTIAL for the translation system to function
+- MUST preserve ALL node markers EXACTLY as they appear`
 
 	prompt += "\n\nProvide only the improved translation without any explanation or commentary."
 
@@ -171,6 +191,14 @@ Rules:
 
 	// 添加保护块说明
 	prompt = AppendPreservePrompt(prompt, pb.PreserveConfig)
+	
+	// 添加节点标记保护说明
+	prompt += `
+
+CRITICAL: Node Marker Preservation
+- NEVER translate, modify, or remove @@NODE_START_X@@ and @@NODE_END_X@@ markers
+- These markers are ESSENTIAL for the translation system to function
+- MUST preserve ALL node markers EXACTLY as they appear`
 
 	prompt += fmt.Sprintf("\n\nText to translate:\n\n%s", text)
 

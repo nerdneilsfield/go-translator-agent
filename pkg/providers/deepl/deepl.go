@@ -8,22 +8,24 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers"
+	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/retry"
 )
 
 // Config DeepL配置
 type Config struct {
 	providers.BaseConfig
-	UseFreeAPI bool `json:"use_free_api"` // 是否使用免费API
+	UseFreeAPI  bool                 `json:"use_free_api"` // 是否使用免费API
+	RetryConfig retry.RetryConfig    `json:"retry_config"`
 }
 
 // DefaultConfig 返回默认配置
 func DefaultConfig() Config {
 	config := Config{
-		BaseConfig: providers.DefaultConfig(),
-		UseFreeAPI: false,
+		BaseConfig:  providers.DefaultConfig(),
+		UseFreeAPI:  false,
+		RetryConfig: retry.DefaultRetryConfig(),
 	}
 	config.APIEndpoint = "https://api.deepl.com/v2"
 	return config
@@ -31,8 +33,9 @@ func DefaultConfig() Config {
 
 // Provider DeepL提供商
 type Provider struct {
-	config     Config
-	httpClient *http.Client
+	config      Config
+	httpClient  *http.Client
+	retryClient *retry.RetryableHTTPClient
 }
 
 // 确保 Provider 实现 providers.TranslationProvider 接口
@@ -48,11 +51,18 @@ func New(config Config) *Provider {
 		}
 	}
 
+	httpClient := &http.Client{
+		Timeout: config.Timeout,
+	}
+	
+	// 创建网络重试器
+	networkRetrier := retry.NewNetworkRetrier(config.RetryConfig)
+	retryClient := networkRetrier.WrapHTTPClient(httpClient)
+
 	return &Provider{
-		config: config,
-		httpClient: &http.Client{
-			Timeout: config.Timeout,
-		},
+		config:      config,
+		httpClient:  httpClient,
+		retryClient: retryClient,
 	}
 }
 
@@ -184,9 +194,9 @@ func (p *Provider) HealthCheck(ctx context.Context) error {
 
 	req.Header.Set("Authorization", "DeepL-Auth-Key "+p.config.APIKey)
 
-	resp, err := p.httpClient.Do(req)
+	resp, err := p.retryClient.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("health check request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -214,30 +224,14 @@ func (p *Provider) translate(ctx context.Context, params url.Values) (*Translate
 		httpReq.Header.Set(k, v)
 	}
 
-	// 执行请求，带重试
-	var resp *http.Response
-	var lastErr error
-
-	for i := 0; i <= p.config.MaxRetries; i++ {
-		if i > 0 {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(p.config.RetryDelay * time.Duration(i)):
-			}
-		}
-
-		resp, err = p.httpClient.Do(httpReq)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		// 检查状态码
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			break
-		}
-
+	// 执行请求，使用智能重试
+	resp, err := p.retryClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	
+	// 检查HTTP状态码
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// 读取错误响应
 		errBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -245,34 +239,24 @@ func (p *Provider) translate(ctx context.Context, params url.Values) (*Translate
 		// 处理特定错误码
 		switch resp.StatusCode {
 		case 400:
-			lastErr = fmt.Errorf("bad request: %s", string(errBody))
+			return nil, fmt.Errorf("bad request: %s", string(errBody))
 		case 403:
-			lastErr = fmt.Errorf("authentication failed")
+			return nil, fmt.Errorf("authentication failed")
 		case 404:
-			lastErr = fmt.Errorf("requested resource not found")
+			return nil, fmt.Errorf("requested resource not found")
 		case 413:
-			lastErr = fmt.Errorf("request size exceeded")
+			return nil, fmt.Errorf("request size exceeded")
 		case 414:
-			lastErr = fmt.Errorf("request URI too long")
+			return nil, fmt.Errorf("request URI too long")
 		case 429:
-			lastErr = fmt.Errorf("too many requests")
+			return nil, fmt.Errorf("too many requests")
 		case 456:
-			lastErr = fmt.Errorf("quota exceeded")
+			return nil, fmt.Errorf("quota exceeded")
 		case 503:
-			lastErr = fmt.Errorf("service temporarily unavailable")
+			return nil, fmt.Errorf("service temporarily unavailable")
 		default:
-			lastErr = fmt.Errorf("API error: %s", resp.Status)
+			return nil, fmt.Errorf("API error: %s", resp.Status)
 		}
-
-		// 检查是否可重试
-		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
-			continue
-		}
-		break
-	}
-
-	if lastErr != nil {
-		return nil, lastErr
 	}
 
 	defer resp.Body.Close()

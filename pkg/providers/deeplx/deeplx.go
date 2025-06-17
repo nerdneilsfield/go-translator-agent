@@ -8,22 +8,24 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers"
+	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/retry"
 )
 
 // Config DeepLX配置
 type Config struct {
 	providers.BaseConfig
 	// DeepLX特定配置
-	AccessToken string `json:"access_token,omitempty"` // 可选的访问令牌
+	AccessToken string              `json:"access_token,omitempty"` // 可选的访问令牌
+	RetryConfig retry.RetryConfig   `json:"retry_config"`
 }
 
 // DefaultConfig 返回默认配置
 func DefaultConfig() Config {
 	config := Config{
-		BaseConfig: providers.DefaultConfig(),
+		BaseConfig:  providers.DefaultConfig(),
+		RetryConfig: retry.DefaultRetryConfig(),
 	}
 	// 默认使用公共DeepLX服务
 	config.APIEndpoint = "http://localhost:1188/translate"
@@ -32,8 +34,9 @@ func DefaultConfig() Config {
 
 // Provider DeepLX提供商
 type Provider struct {
-	config     Config
-	httpClient *http.Client
+	config      Config
+	httpClient  *http.Client
+	retryClient *retry.RetryableHTTPClient
 }
 
 // New 创建新的DeepLX提供商
@@ -42,11 +45,18 @@ func New(config Config) *Provider {
 		config.APIEndpoint = "http://localhost:1188/translate"
 	}
 
+	httpClient := &http.Client{
+		Timeout: config.Timeout,
+	}
+	
+	// 创建网络重试器
+	networkRetrier := retry.NewNetworkRetrier(config.RetryConfig)
+	retryClient := networkRetrier.WrapHTTPClient(httpClient)
+
 	return &Provider{
-		config: config,
-		httpClient: &http.Client{
-			Timeout: config.Timeout,
-		},
+		config:      config,
+		httpClient:  httpClient,
+		retryClient: retryClient,
 	}
 }
 
@@ -184,54 +194,31 @@ func (p *Provider) translate(ctx context.Context, req TranslateRequest) (*Transl
 		httpReq.Header.Set(k, v)
 	}
 
-	// 执行请求，带重试
-	var resp *http.Response
-	var lastErr error
+	// 执行请求，使用智能重试
+	resp, err := p.retryClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
 
-	for i := 0; i <= p.config.MaxRetries; i++ {
-		if i > 0 {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(p.config.RetryDelay * time.Duration(i)):
-			}
-		}
-
-		resp, err = p.httpClient.Do(httpReq)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		// 读取响应体
-		respBody, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			lastErr = fmt.Errorf("failed to read response: %w", err)
-			continue
-		}
-
-		// 解析响应
-		var translateResp TranslateResponse
-		if err := json.Unmarshal(respBody, &translateResp); err != nil {
-			lastErr = fmt.Errorf("failed to decode response: %w", err)
-			continue
-		}
-
-		// 检查业务错误
-		if translateResp.Code != 200 {
-			lastErr = fmt.Errorf("API error: %s", translateResp.Message)
-			// 某些错误不应重试
-			if translateResp.Code == 400 || translateResp.Code == 404 {
-				break
-			}
-			continue
-		}
-
-		return &translateResp, nil
+	// 读取响应体
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	return nil, lastErr
+	// 解析响应
+	var translateResp TranslateResponse
+	if err := json.Unmarshal(respBody, &translateResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// 检查业务错误
+	if translateResp.Code != 200 {
+		return nil, fmt.Errorf("API error: %s", translateResp.Message)
+	}
+
+	return &translateResp, nil
 }
 
 // normalizeLanguageCode 标准化语言代码

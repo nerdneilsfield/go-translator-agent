@@ -8,21 +8,23 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers"
+	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/retry"
 )
 
 // Config Google Translate配置
 type Config struct {
 	providers.BaseConfig
-	ProjectID string `json:"project_id,omitempty"` // 用于Google Cloud Translation API
+	ProjectID   string              `json:"project_id,omitempty"` // 用于Google Cloud Translation API
+	RetryConfig retry.RetryConfig   `json:"retry_config"`
 }
 
 // DefaultConfig 返回默认配置
 func DefaultConfig() Config {
 	config := Config{
-		BaseConfig: providers.DefaultConfig(),
+		BaseConfig:  providers.DefaultConfig(),
+		RetryConfig: retry.DefaultRetryConfig(),
 	}
 	// Google Translation API endpoint
 	config.APIEndpoint = "https://translation.googleapis.com/language/translate/v2"
@@ -31,8 +33,9 @@ func DefaultConfig() Config {
 
 // Provider Google Translate提供商
 type Provider struct {
-	config     Config
-	httpClient *http.Client
+	config      Config
+	httpClient  *http.Client
+	retryClient *retry.RetryableHTTPClient
 }
 
 // New 创建新的Google Translate提供商
@@ -41,11 +44,18 @@ func New(config Config) *Provider {
 		config.APIEndpoint = "https://translation.googleapis.com/language/translate/v2"
 	}
 
+	httpClient := &http.Client{
+		Timeout: config.Timeout,
+	}
+
+	// 创建网络重试器
+	networkRetrier := retry.NewNetworkRetrier(config.RetryConfig)
+	retryClient := networkRetrier.WrapHTTPClient(httpClient)
+
 	return &Provider{
-		config: config,
-		httpClient: &http.Client{
-			Timeout: config.Timeout,
-		},
+		config:      config,
+		httpClient:  httpClient,
+		retryClient: retryClient,
 	}
 }
 
@@ -239,51 +249,24 @@ func (p *Provider) translate(ctx context.Context, req TranslateRequest) (*Transl
 		httpReq.Header.Set(k, v)
 	}
 
-	// 执行请求，带重试
-	var resp *http.Response
-	var lastErr error
+	// 执行请求，使用智能重试
+	resp, err := p.retryClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
 
-	for i := 0; i <= p.config.MaxRetries; i++ {
-		if i > 0 {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(p.config.RetryDelay * time.Duration(i)):
-			}
-		}
-
-		resp, err = p.httpClient.Do(httpReq)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		// 检查状态码
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			break
-		}
-
+	// 检查HTTP状态码
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// 读取错误响应
 		errBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 
 		// 解析错误
 		var apiErr APIError
-		if err := json.Unmarshal(errBody, &apiErr); err == nil {
-			lastErr = fmt.Errorf("Google API error: %s", apiErr.Error.Message)
-		} else {
-			lastErr = fmt.Errorf("API error: %s", resp.Status)
+		if json.Unmarshal(errBody, &apiErr) == nil {
+			return nil, fmt.Errorf("Google API error: %s", apiErr.Error.Message)
 		}
-
-		// 检查是否可重试
-		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
-			continue
-		}
-		break
-	}
-
-	if lastErr != nil {
-		return nil, lastErr
+		return nil, fmt.Errorf("API error: %s", resp.Status)
 	}
 
 	defer resp.Body.Close()

@@ -113,6 +113,42 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 			break
 		}
 		
+		// 检查是否有可重试的失败节点
+		retryableNodes := 0
+		nonRetryableNodes := 0
+		for _, node := range failedNodes {
+			if node.Error != nil {
+				if transErr, ok := node.Error.(*translation.TranslationError); ok {
+					if transErr.IsRetryable() {
+						retryableNodes++
+					} else {
+						nonRetryableNodes++
+					}
+				} else {
+					// 非TranslationError默认作为可重试处理
+					retryableNodes++
+				}
+			} else {
+				retryableNodes++
+			}
+		}
+		
+		// 如果没有可重试的节点，停止重试
+		if retryableNodes == 0 {
+			bt.logger.Warn("no retryable nodes found, stopping retry",
+				zap.Int("retryRound", retry),
+				zap.Int("totalFailedNodes", len(failedNodes)),
+				zap.Int("nonRetryableNodes", nonRetryableNodes),
+				zap.String("reason", "all failed nodes have non-retryable errors"))
+			break
+		}
+		
+		bt.logger.Info("retryable nodes analysis",
+			zap.Int("retryRound", retry),
+			zap.Int("totalFailedNodes", len(failedNodes)),
+			zap.Int("retryableNodes", retryableNodes),
+			zap.Int("nonRetryableNodes", nonRetryableNodes))
+		
 		// 使用INFO级别记录重试开始信息
 		bt.logger.Info("starting retry for failed nodes",
 			zap.Int("retryRound", retry),
