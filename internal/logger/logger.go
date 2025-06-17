@@ -366,9 +366,14 @@ func NewLoggerWithDetailedConfig(config DetailedLogConfig) *zap.Logger {
 	// 创建输出目标
 	var cores []zapcore.Core
 
-	// 1. 控制台输出
+	// 1. 控制台输出（确保不包含 TRACE 级别）
 	consoleWriter := zapcore.AddSync(os.Stdout)
-	cores = append(cores, zapcore.NewCore(consoleEncoder, consoleWriter, consoleLevel))
+	// 如果控制台级别设置为 TRACE，提升到 DEBUG
+	actualConsoleLevel := consoleLevel
+	if consoleLevel == TraceLevel {
+		actualConsoleLevel = zapcore.DebugLevel
+	}
+	cores = append(cores, zapcore.NewCore(consoleEncoder, consoleWriter, actualConsoleLevel))
 
 	// 2. 普通日志文件
 	if config.NormalLogFile != "" {
