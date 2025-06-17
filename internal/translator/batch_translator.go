@@ -45,11 +45,57 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 	// 并行处理第一轮翻译
 	bt.processGroups(ctx, groups)
 	
+	// 检查是否启用失败重试功能
+	if !bt.config.RetryOnFailure {
+		bt.logger.Info("retry disabled by configuration", 
+			zap.String("retryOnFailure", "false"))
+		
+		// 统计最终结果但不重试
+		successCount := 0
+		failedCount := 0
+		for _, node := range nodes {
+			if node.Status == document.NodeStatusSuccess {
+				successCount++
+			} else {
+				failedCount++
+			}
+		}
+		
+		bt.logger.Info("translation completed without retry",
+			zap.Int("completed", successCount),
+			zap.Int("failed", failedCount),
+			zap.Int("total", len(nodes)),
+			zap.Float64("progress", float64(successCount)/float64(len(nodes))*100))
+			
+		return nil
+	}
+
 	// 收集失败节点并进行重试
 	maxRetries := bt.config.MaxRetries
 	if maxRetries <= 0 {
 		maxRetries = 3
 	}
+	
+	// 统计初始翻译结果
+	initialSuccessCount := 0
+	initialFailedCount := 0
+	for _, node := range nodes {
+		if node.Status == document.NodeStatusSuccess {
+			initialSuccessCount++
+		} else {
+			initialFailedCount++
+		}
+	}
+	
+	bt.logger.Info("initial translation round completed",
+		zap.Int("successful", initialSuccessCount),
+		zap.Int("failed", initialFailedCount),
+		zap.Int("total", len(nodes)),
+		zap.Float64("successRate", float64(initialSuccessCount)/float64(len(nodes))*100))
+	
+	bt.logger.Info("file-level retry mechanism enabled",
+		zap.Int("maxRetries", maxRetries),
+		zap.Bool("retryOnFailure", bt.config.RetryOnFailure))
 	
 	// 用于跟踪已处理的节点，避免无限递归
 	processedNodes := make(map[int]bool)
@@ -67,7 +113,13 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 			break
 		}
 		
-		bt.logger.Debug("collecting failed nodes for retry",
+		// 使用INFO级别记录重试开始信息
+		bt.logger.Info("starting retry for failed nodes",
+			zap.Int("retryRound", retry),
+			zap.Int("maxRetries", maxRetries),
+			zap.Int("failedNodes", len(failedNodes)))
+		
+		bt.logger.Debug("collecting failed nodes for retry details",
 			zap.Int("retryRound", retry),
 			zap.Int("failedNodes", len(failedNodes)))
 		
@@ -75,7 +127,10 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 		retryGroups := bt.groupFailedNodesWithContext(nodes, failedNodes, processedNodes)
 		
 		if len(retryGroups) == 0 {
-			bt.logger.Warn("no retry groups created, stopping retry")
+			bt.logger.Warn("no retry groups created, stopping retry",
+				zap.Int("retryRound", retry),
+				zap.Int("failedNodes", len(failedNodes)),
+				zap.String("reason", "failed to create retry groups with context"))
 			break
 		}
 		
@@ -92,6 +147,24 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 		
 		// 并行处理重试组
 		bt.processGroups(ctx, retryGroups)
+		
+		// 统计重试结果
+		retrySuccessCount := 0
+		retryFailedCount := 0
+		for _, failed := range failedNodes {
+			if failed.Status == document.NodeStatusSuccess {
+				retrySuccessCount++
+			} else {
+				retryFailedCount++
+			}
+		}
+		
+		// 记录重试结果
+		bt.logger.Info("retry round completed",
+			zap.Int("retryRound", retry),
+			zap.Int("originalFailedNodes", len(failedNodes)),
+			zap.Int("nowSuccessful", retrySuccessCount),
+			zap.Int("stillFailed", retryFailedCount))
 		
 		// 更新已处理节点集合
 		for _, node := range nodes {
@@ -115,12 +188,19 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 	// 计算进度百分比
 	progressPercent := float64(successCount) / float64(len(nodes)) * 100
 	
-	// 使用 INFO 级别显示翻译完成信息（仅显示重要信息）
+	// 使用 INFO 级别显示翻译完成信息（包含重试信息）
 	bt.logger.Info("translation completed",
 		zap.Int("completed", successCount),
 		zap.Int("failed", failedCount),
 		zap.Int("total", len(nodes)),
-		zap.Float64("progress", progressPercent))
+		zap.Float64("progress", progressPercent),
+		zap.Int("maxRetries", maxRetries),
+		zap.String("retryStatus", func() string {
+			if failedCount > 0 {
+				return "some nodes failed after retries"
+			}
+			return "all retries successful"
+		}()))
 	
 	return nil
 }
@@ -254,6 +334,16 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 			// 保护内容
 			protectedText := bt.protectContent(node.OriginalText, preserveManager)
 			protectedTexts[node.ID] = protectedText
+			
+			// 在详细模式下记录保护信息
+			if bt.config.Verbose && protectedText != node.OriginalText {
+				bt.logger.Debug("content protection applied",
+					zap.Int("nodeID", node.ID),
+					zap.String("originalLength", fmt.Sprintf("%d chars", len(node.OriginalText))),
+					zap.String("protectedLength", fmt.Sprintf("%d chars", len(protectedText))),
+					zap.String("originalSample", truncateText(node.OriginalText, 100)),
+					zap.String("protectedSample", truncateText(protectedText, 100)))
+			}
 			
 			// 添加节点标记
 			builder.WriteString(fmt.Sprintf("@@NODE_START_%d@@\n", node.ID))
@@ -627,11 +717,11 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 
 // protectContent 保护不需要翻译的内容
 func (bt *BatchTranslator) protectContent(text string, pm *translation.PreserveManager) string {
-	// LaTeX 公式
-	text = pm.ProtectPattern(text, `\$[^$]+\$`)                // 行内公式
-	text = pm.ProtectPattern(text, `\$\$[^$]+\$\$`)          // 行间公式
-	text = pm.ProtectPattern(text, `\\\([^)]+\\\)`)          // \(...\)
-	text = pm.ProtectPattern(text, `\\\[[^\]]+\\\]`)         // \[...\]
+	// LaTeX 公式 - 使用更精确的正则表达式
+	text = pm.ProtectPattern(text, `\$[^$\n]+\$`)              // 行内公式 (不包含换行)
+	text = pm.ProtectPattern(text, `\$\$[\s\S]*?\$\$`)         // 行间公式 (非贪婪匹配)
+	text = pm.ProtectPattern(text, `\\\([\s\S]*?\\\)`)         // \(...\) (非贪婪匹配)
+	text = pm.ProtectPattern(text, `\\\[[\s\S]*?\\\]`)         // \[...\] (非贪婪匹配)
 	
 	// 代码块
 	text = pm.ProtectPattern(text, "`[^`]+`")                // 行内代码
@@ -799,7 +889,9 @@ func (bt *BatchTranslator) groupFailedNodesWithContext(allNodes []*document.Node
 	
 	bt.logger.Debug("context nodes added for retry",
 		zap.Int("contextNodes", contextNodeCount),
-		zap.Int("totalNodesForRetry", len(includeSet)))
+		zap.Int("totalNodesForRetry", len(includeSet)),
+		zap.Int("failedNodesCount", len(failedNodes)),
+		zap.Int("processedNodesCount", len(processedNodes)))
 	
 	// 收集所有需要翻译的节点，保持原始顺序
 	var nodesToTranslate []*document.NodeInfo
@@ -829,6 +921,20 @@ func (bt *BatchTranslator) groupFailedNodesWithContext(allNodes []*document.Node
 			nodesToTranslate = append(nodesToTranslate, newNode)
 		}
 	}
+	
+	// 检查是否有节点需要重试
+	if len(nodesToTranslate) == 0 {
+		bt.logger.Warn("no nodes collected for retry",
+			zap.Int("originalFailedNodes", len(failedNodes)),
+			zap.Int("includeSetSize", len(includeSet)),
+			zap.String("possibleCause", "all failed nodes might have been filtered out or context collection failed"))
+		return []*document.NodeGroup{}
+	}
+	
+	bt.logger.Debug("nodes collected for retry",
+		zap.Int("nodesToTranslate", len(nodesToTranslate)),
+		zap.Int("failedNodes", len(failedNodes)),
+		zap.Int("contextNodes", contextNodeCount))
 	
 	// 分组
 	return bt.groupNodes(nodesToTranslate)

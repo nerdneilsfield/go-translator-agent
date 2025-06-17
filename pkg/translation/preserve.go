@@ -101,12 +101,15 @@ func GetPreservePrompt(config PreserveConfig) string {
 	pattern := regexp.QuoteMeta(config.Prefix) + `\d+` + regexp.QuoteMeta(config.Suffix)
 
 	return fmt.Sprintf(`
-IMPORTANT: Preserve Markers
-- Do not translate or modify any text that matches the pattern: %s
-- These markers protect content that should not be translated (code blocks, formulas, etc.)
-- Keep these markers and their content exactly as they are in your output.
-- Example: %s0%s should remain unchanged.`,
+CRITICAL: Protected Content Markers
+- NEVER translate, modify, or alter any text matching: %s
+- These markers protect mathematical formulas, code blocks, and special content
+- MUST preserve these markers EXACTLY as they appear in the input
+- MUST maintain their exact position and format in your translation
+- Example: "%s0%s" → keep as "%s0%s" (unchanged)
+- WARNING: Modifying these markers will break the translation system`,
 		pattern,
+		config.Prefix, config.Suffix,
 		config.Prefix, config.Suffix,
 	)
 }
