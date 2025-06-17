@@ -2,6 +2,66 @@
 
 这个文档记录了 Claude 在项目中完成的主要工作和贡献。
 
+## 2025-06-18 08:15 (GMT+8)
+
+### 🧠 **关键修复: 推理模型流式传输和思考标记处理优化**
+
+#### 🎯 **用户反馈问题**
+- **截断响应**: 推理模型(qwen3:0.6b)显示不完整的<think>内容
+- **流式传输**: 需要禁用推理模型的streaming以避免截断
+- **思考标记**: 需要移除显示中的<think>等推理标记
+
+#### 🔧 **关键修复实现**
+
+**1. 推理模型识别扩展**
+- **文件**: `pkg/translation/three_step_translator.go`
+- **新增支持**: qwen系列推理模型
+  ```go
+  reasoningModelPatterns := []string{
+      "o1-preview", "o1-mini", "claude-3-opus", 
+      "deepseek-r1", "qwq-32b", "qwen",  // 新增
+  }
+  ```
+
+**2. OpenAI Provider流式传输禁用**
+- **文件**: `pkg/providers/openai/openai.go`
+- **明确设置**: 为所有请求禁用Stream
+  ```go
+  chatReq := ChatRequest{
+      Model: p.config.Model,
+      Messages: messages,
+      Stream: false, // 明确禁用流式传输
+  }
+  ```
+- **新增功能**: 推理模型检测方法
+  ```go
+  func (p *Provider) isReasoningModel(model string) bool {
+      // 检测 o1-*, deepseek-r1, qwq-32b, qwen 等模型
+  }
+  ```
+
+**3. 批量翻译器推理标记清理**
+- **文件**: `internal/translator/batch_translator.go`
+- **新增处理**: 在翻译结果赋值前自动移除推理标记
+  ```go
+  // 移除推理模型的思考标记
+  finalText := translation.RemoveReasoningMarkers(restoredText)
+  node.TranslatedText = finalText
+  ```
+
+#### 🎨 **推理标记处理增强**
+- **支持标记**: `<think>`, `<thinking>`, `<reflection>`, `<answer>`
+- **截断处理**: 自动处理不完整的`<think>`开始标记
+- **内容保留**: `<answer>`标记内的内容会被保留
+
+#### 📊 **效果预期**
+- **响应完整性**: 推理模型不再出现截断响应
+- **输出清洁**: 自动移除所有类型的推理标记
+- **兼容性提升**: 支持更多推理模型(qwen/qwq系列)
+- **用户体验**: 翻译结果更加纯洁，不包含思考过程
+
+---
+
 ## 2025-06-18 07:30 (GMT+8)
 
 ### 📊 **改进: 批量翻译日志系统优化**

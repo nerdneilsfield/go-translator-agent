@@ -288,6 +288,10 @@ func RemoveReasoningMarkers(text string) string {
 	thinkingRe := regexp.MustCompile(`(?s)<thinking>.*?</thinking>`)
 	text = thinkingRe.ReplaceAllString(text, "")
 
+	// 移除 <think>...</think> 标记（支持qwen等模型）
+	thinkRe := regexp.MustCompile(`(?s)<think>.*?</think>`)
+	text = thinkRe.ReplaceAllString(text, "")
+
 	// 移除 <reflection>...</reflection> 标记
 	reflectionRe := regexp.MustCompile(`(?s)<reflection>.*?</reflection>`)
 	text = reflectionRe.ReplaceAllString(text, "")
@@ -296,6 +300,13 @@ func RemoveReasoningMarkers(text string) string {
 	answerRe := regexp.MustCompile(`(?s)<answer>(.*?)</answer>`)
 	if matches := answerRe.FindStringSubmatch(text); len(matches) > 1 {
 		text = matches[1]
+	}
+
+	// 如果整个响应都在思考标记中且没有结束标记，尝试提取思考后的内容
+	if strings.HasPrefix(strings.TrimSpace(text), "<think>") && !strings.Contains(text, "</think>") {
+		// 如果只有开始标记没有结束标记，可能是被截断了，记录警告
+		// 但仍然尝试移除开始部分
+		text = regexp.MustCompile(`(?s)^<think>.*`).ReplaceAllString(text, "")
 	}
 
 	// 移除多余的空行

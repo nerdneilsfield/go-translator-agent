@@ -751,7 +751,9 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 				}
 			} else {
 				// 翻译成功
-				node.TranslatedText = restoredText
+				// 移除推理模型的思考标记
+				finalText := translation.RemoveReasoningMarkers(restoredText)
+				node.TranslatedText = finalText
 				node.Status = document.NodeStatusSuccess
 				node.Error = nil
 				// 增加重试计数
@@ -762,7 +764,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 					bt.logger.Debug("translation success",
 						zap.Int("nodeID", node.ID),
 						zap.String("original", truncateText(node.OriginalText, 100)),
-						zap.String("translated", truncateText(restoredText, 100)))
+						zap.String("translated", truncateText(finalText, 100)))
 				}
 			}
 		} else {
