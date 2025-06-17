@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers"
-	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
 )
 
 // Config LibreTranslate配置
@@ -64,7 +63,7 @@ func (p *Provider) Configure(config interface{}) error {
 }
 
 // Translate 执行翻译
-func (p *Provider) Translate(ctx context.Context, req *translation.ProviderRequest) (*translation.ProviderResponse, error) {
+func (p *Provider) Translate(ctx context.Context, req *providers.ProviderRequest) (*providers.ProviderResponse, error) {
 	// 获取支持的语言列表（如果还没有）
 	if p.languages == nil {
 		if err := p.fetchLanguages(ctx); err != nil {
@@ -91,8 +90,12 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 	}
 
 	// 检查选项
-	if format, ok := req.Options["format"]; ok && format == "html" {
-		translateReq.Format = "html"
+	if req.Metadata != nil {
+		if format, ok := req.Metadata["format"]; ok {
+			if formatStr, ok := format.(string); ok && formatStr == "html" {
+				translateReq.Format = "html"
+			}
+		}
 	}
 
 	// 执行翻译
@@ -108,10 +111,13 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 		metadata["confidence"] = fmt.Sprintf("%.2f", resp.DetectedLanguage.Confidence)
 	}
 
-	return &translation.ProviderResponse{
-		Text:     resp.TranslatedText,
-		Model:    "libretranslate",
-		Metadata: metadata,
+	return &providers.ProviderResponse{
+		Text: resp.TranslatedText,
+		Metadata: map[string]interface{}{
+			"model": "libretranslate",
+			"detected_source": metadata["detected_source"],
+			"confidence": metadata["confidence"],
+		},
 	}, nil
 }
 

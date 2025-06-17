@@ -2,30 +2,15 @@ package translation
 
 import (
 	"context"
+
+	"github.com/nerdneilsfield/go-translator-agent/pkg/providers"
 )
 
-// Service 高层翻译服务接口
+// Service 翻译服务核心接口 - 专注多阶段翻译
 type Service interface {
-	// Translate 执行完整的翻译流程
-	Translate(ctx context.Context, req *Request) (*Response, error)
-
-	// TranslateText 简化的文本翻译接口（无分块）
+	// TranslateText 执行多阶段翻译：initial→reflection→improvement
+	// 内部处理raw/none步骤，无分块
 	TranslateText(ctx context.Context, text string) (string, error)
-
-	// TranslateBatch 批量翻译
-	TranslateBatch(ctx context.Context, reqs []*Request) ([]*Response, error)
-
-	// GetConfig 获取当前配置
-	GetConfig() *Config
-}
-
-// Translator 单步翻译器接口
-type Translator interface {
-	// TranslateText 翻译文本
-	TranslateText(ctx context.Context, text string, opts ...TranslateOption) (string, error)
-
-	// GetName 获取翻译器名称
-	GetName() string
 }
 
 // Chain 翻译链接口
@@ -68,16 +53,8 @@ type LLMClient interface {
 }
 
 // TranslationProvider 翻译提供商接口（支持 DeepL, Google Translate 等专业服务）
-type TranslationProvider interface {
-	// Translate 执行翻译
-	Translate(ctx context.Context, req *ProviderRequest) (*ProviderResponse, error)
-
-	// GetName 获取提供商名称
-	GetName() string
-
-	// SupportsSteps 是否支持多步骤翻译
-	SupportsSteps() bool
-}
+// TranslationProvider 直接使用 providers.TranslationProvider 以避免循环依赖
+type TranslationProvider = providers.TranslationProvider
 
 // Cache 缓存接口
 type Cache interface {

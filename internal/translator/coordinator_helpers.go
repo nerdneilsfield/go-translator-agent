@@ -128,8 +128,8 @@ func (c *TranslationCoordinator) createSuccessResult(docID, inputFile, outputFil
 		DocID:          docID,
 		InputFile:      inputFile,
 		OutputFile:     outputFile,
-		SourceLanguage: c.config.SourceLang,
-		TargetLanguage: c.config.TargetLang,
+		SourceLanguage: c.coordinatorConfig.SourceLang,
+		TargetLanguage: c.coordinatorConfig.TargetLang,
 		TotalNodes:     totalNodes,
 		CompletedNodes: completedNodes,
 		FailedNodes:    failedNodes,
@@ -198,13 +198,13 @@ func (c *TranslationCoordinator) assembleDocumentWithProcessor(inputPath string,
 
 	// 重新获取processor进行渲染
 	processorOpts := document.ProcessorOptions{
-		ChunkSize:    c.config.ChunkSize,
+		ChunkSize:    c.coordinatorConfig.ChunkSize,
 		ChunkOverlap: 100,
 		Metadata: map[string]interface{}{
-			"source_language":        c.config.SourceLang,
-			"target_language":        c.config.TargetLang,
+			"source_language":        c.coordinatorConfig.SourceLang,
+			"target_language":        c.coordinatorConfig.TargetLang,
 			"logger":                 c.logger,
-			"html_processing_mode":   c.config.HTMLProcessingMode,
+			"html_processing_mode":   c.coordinatorConfig.HTMLProcessingMode,
 		},
 	}
 
@@ -240,8 +240,8 @@ func (c *TranslationCoordinator) createFailedResult(docID, inputFile, outputFile
 		DocID:          docID,
 		InputFile:      inputFile,
 		OutputFile:     outputFile,
-		SourceLanguage: c.config.SourceLang,
-		TargetLanguage: c.config.TargetLang,
+		SourceLanguage: c.coordinatorConfig.SourceLang,
+		TargetLanguage: c.coordinatorConfig.TargetLang,
 		TotalNodes:     0,
 		CompletedNodes: 0,
 		FailedNodes:    0,

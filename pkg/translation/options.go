@@ -1,5 +1,7 @@
 package translation
 
+import "go.uber.org/zap"
+
 // Option 服务配置选项函数
 type Option func(*serviceOptions)
 
@@ -15,6 +17,7 @@ type serviceOptions struct {
 	errorHandler     func(error)
 	beforeTranslate  func(*Request)
 	afterTranslate   func(*Response)
+	logger           *zap.Logger
 }
 
 // WithLLMClient 设置LLM客户端
@@ -94,6 +97,13 @@ func WithSingleProvider(name string, provider TranslationProvider) Option {
 			o.providers = make(map[string]TranslationProvider)
 		}
 		o.providers[name] = provider
+	}
+}
+
+// WithLogger 设置logger
+func WithLogger(logger *zap.Logger) Option {
+	return func(o *serviceOptions) {
+		o.logger = logger
 	}
 }
 

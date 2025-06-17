@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers"
-	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 )
@@ -67,6 +66,9 @@ type ProviderV2 struct {
 	client openai.Client
 }
 
+// 确保 ProviderV2 实现 providers.TranslationProvider 接口
+var _ providers.TranslationProvider = (*ProviderV2)(nil)
+
 // NewV2 创建新的OpenAI提供商（使用官方SDK）
 func NewV2(config ConfigV2) *ProviderV2 {
 	// 构建客户端选项
@@ -121,7 +123,7 @@ func (p *ProviderV2) Configure(config interface{}) error {
 }
 
 // Translate 执行翻译
-func (p *ProviderV2) Translate(ctx context.Context, req *translation.ProviderRequest) (*translation.ProviderResponse, error) {
+func (p *ProviderV2) Translate(ctx context.Context, req *providers.ProviderRequest) (*providers.ProviderResponse, error) {
 	// 构建消息
 	messages := []openai.ChatCompletionMessageParamUnion{
 		openai.SystemMessage("You are a professional translator. Translate accurately while preserving the original meaning and tone."),
@@ -130,8 +132,12 @@ func (p *ProviderV2) Translate(ctx context.Context, req *translation.ProviderReq
 	}
 
 	// 如果有额外的指令
-	if instruction, ok := req.Options["instruction"]; ok {
-		messages[0] = openai.SystemMessage("You are a professional translator. Translate accurately while preserving the original meaning and tone.\n\n" + instruction)
+	if req.Metadata != nil {
+		if instruction, ok := req.Metadata["instruction"]; ok {
+			if instructionStr, ok := instruction.(string); ok {
+				messages[0] = openai.SystemMessage("You are a professional translator. Translate accurately while preserving the original meaning and tone.\n\n" + instructionStr)
+			}
+		}
 	}
 
 	// 创建聊天完成请求
@@ -160,12 +166,12 @@ func (p *ProviderV2) Translate(ctx context.Context, req *translation.ProviderReq
 	}
 
 	// 返回响应
-	return &translation.ProviderResponse{
+	return &providers.ProviderResponse{
 		Text:      completion.Choices[0].Message.Content,
-		Model:     completion.Model,
 		TokensIn:  int(completion.Usage.PromptTokens),
 		TokensOut: int(completion.Usage.CompletionTokens),
-		Metadata: map[string]string{
+		Metadata: map[string]interface{}{
+			"model":         completion.Model,
 			"finish_reason": string(completion.Choices[0].FinishReason),
 			"id":            completion.ID,
 		},
@@ -235,118 +241,118 @@ func (p *ProviderV2) HealthCheck(ctx context.Context) error {
 	return err
 }
 
-// LLMClientV2 实现 translation.LLMClient 接口（使用官方SDK）
-type LLMClientV2 struct {
-	provider *ProviderV2
-}
-
-// NewLLMClientV2 创建LLMClient（使用官方SDK）
-func NewLLMClientV2(config ConfigV2) *LLMClientV2 {
-	return &LLMClientV2{
-		provider: NewV2(config),
-	}
-}
-
-// Chat 实现 translation.LLMClient 接口
-func (c *LLMClientV2) Chat(ctx context.Context, req *translation.ChatRequest) (*translation.ChatResponse, error) {
-	// 转换消息格式
-	messages := make([]openai.ChatCompletionMessageParamUnion, len(req.Messages))
-	for i, msg := range req.Messages {
-		switch msg.Role {
-		case "system":
-			messages[i] = openai.SystemMessage(msg.Content)
-		case "user":
-			messages[i] = openai.UserMessage(msg.Content)
-		case "assistant":
-			messages[i] = openai.AssistantMessage(msg.Content)
-		default:
-			messages[i] = openai.UserMessage(msg.Content)
-		}
-	}
-
-	// 创建请求
-	model := req.Model
-	if model == "" {
-		model = c.provider.config.Model
-	}
-
-	params := openai.ChatCompletionNewParams{
-		Messages: messages,
-		Model:    getModel(model),
-	}
-
-	// 设置可选参数
-	if req.Temperature > 0 {
-		params.Temperature = openai.Float(float64(req.Temperature))
-	}
-	if req.MaxTokens > 0 {
-		params.MaxTokens = openai.Int(int64(req.MaxTokens))
-	}
-
-	// 执行请求
-	completion, err := c.provider.client.Chat.Completions.New(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(completion.Choices) == 0 {
-		return nil, fmt.Errorf("no choices returned")
-	}
-
-	// 转换响应
-	return &translation.ChatResponse{
-		Message: translation.ChatMessage{
-			Role:    "assistant",
-			Content: completion.Choices[0].Message.Content,
-		},
-		Model:     completion.Model,
-		TokensIn:  int(completion.Usage.PromptTokens),
-		TokensOut: int(completion.Usage.CompletionTokens),
-	}, nil
-}
-
-// Complete 实现 translation.LLMClient 接口
-func (c *LLMClientV2) Complete(ctx context.Context, req *translation.CompletionRequest) (*translation.CompletionResponse, error) {
-	// 将completion请求转换为chat请求
-	chatReq := &translation.ChatRequest{
-		Messages: []translation.ChatMessage{
-			{
-				Role:    "user",
-				Content: req.Prompt,
-			},
-		},
-		Model:       req.Model,
-		Temperature: req.Temperature,
-		MaxTokens:   req.MaxTokens,
-	}
-
-	resp, err := c.Chat(ctx, chatReq)
-	if err != nil {
-		return nil, err
-	}
-
-	return &translation.CompletionResponse{
-		Text:      resp.Message.Content,
-		Model:     resp.Model,
-		TokensIn:  resp.TokensIn,
-		TokensOut: resp.TokensOut,
-	}, nil
-}
-
-// GetModel 获取模型
-func (c *LLMClientV2) GetModel() string {
-	return c.provider.config.Model
-}
-
-// HealthCheck 健康检查
-func (c *LLMClientV2) HealthCheck(ctx context.Context) error {
-	return c.provider.HealthCheck(ctx)
-}
+// // LLMClientV2 实现 translation.LLMClient 接口（使用官方SDK）
+// type LLMClientV2 struct {
+// 	provider *ProviderV2
+// }
+// 
+// // NewLLMClientV2 创建LLMClient（使用官方SDK）
+// func NewLLMClientV2(config ConfigV2) *LLMClientV2 {
+// 	return &LLMClientV2{
+// 		provider: NewV2(config),
+// 	}
+// }
+// 
+// // Chat 实现 translation.LLMClient 接口
+// func (c *LLMClientV2) Chat(ctx context.Context, req *translation.ChatRequest) (*translation.ChatResponse, error) {
+// 	// 转换消息格式
+// 	messages := make([]openai.ChatCompletionMessageParamUnion, len(req.Messages))
+// 	for i, msg := range req.Messages {
+// 		switch msg.Role {
+// 		case "system":
+// 			messages[i] = openai.SystemMessage(msg.Content)
+// 		case "user":
+// 			messages[i] = openai.UserMessage(msg.Content)
+// 		case "assistant":
+// 			messages[i] = openai.AssistantMessage(msg.Content)
+// 		default:
+// 			messages[i] = openai.UserMessage(msg.Content)
+// 		}
+// 	}
+// 
+// 	// 创建请求
+// 	model := req.Model
+// 	if model == "" {
+// 		model = c.provider.config.Model
+// 	}
+// 
+// 	params := openai.ChatCompletionNewParams{
+// 		Messages: messages,
+// 		Model:    getModel(model),
+// 	}
+// 
+// 	// 设置可选参数
+// 	if req.Temperature > 0 {
+// 		params.Temperature = openai.Float(float64(req.Temperature))
+// 	}
+// 	if req.MaxTokens > 0 {
+// 		params.MaxTokens = openai.Int(int64(req.MaxTokens))
+// 	}
+// 
+// 	// 执行请求
+// 	completion, err := c.provider.client.Chat.Completions.New(ctx, params)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 
+// 	if len(completion.Choices) == 0 {
+// 		return nil, fmt.Errorf("no choices returned")
+// 	}
+// 
+// 	// 转换响应
+// 	return &translation.ChatResponse{
+// 		Message: translation.ChatMessage{
+// 			Role:    "assistant",
+// 			Content: completion.Choices[0].Message.Content,
+// 		},
+// 		Model:     completion.Model,
+// 		TokensIn:  int(completion.Usage.PromptTokens),
+// 		TokensOut: int(completion.Usage.CompletionTokens),
+// 	}, nil
+// }
+// 
+// // Complete 实现 translation.LLMClient 接口
+// func (c *LLMClientV2) Complete(ctx context.Context, req *translation.CompletionRequest) (*translation.CompletionResponse, error) {
+// 	// 将completion请求转换为chat请求
+// 	chatReq := &translation.ChatRequest{
+// 		Messages: []translation.ChatMessage{
+// 			{
+// 				Role:    "user",
+// 				Content: req.Prompt,
+// 			},
+// 		},
+// 		Model:       req.Model,
+// 		Temperature: req.Temperature,
+// 		MaxTokens:   req.MaxTokens,
+// 	}
+// 
+// 	resp, err := c.Chat(ctx, chatReq)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 
+// 	return &translation.CompletionResponse{
+// 		Text:      resp.Message.Content,
+// 		Model:     resp.Model,
+// 		TokensIn:  resp.TokensIn,
+// 		TokensOut: resp.TokensOut,
+// 	}, nil
+// }
+// 
+// // GetModel 获取模型
+// func (c *LLMClientV2) GetModel() string {
+// 	return c.provider.config.Model
+// }
+// 
+// // HealthCheck 健康检查
+// func (c *LLMClientV2) HealthCheck(ctx context.Context) error {
+// 	return c.provider.HealthCheck(ctx)
+// }
 
 // 流式响应支持（可选功能）
 
 // StreamTranslate 流式翻译（返回channel）
-func (p *ProviderV2) StreamTranslate(ctx context.Context, req *translation.ProviderRequest) (<-chan StreamChunk, error) {
+func (p *ProviderV2) StreamTranslate(ctx context.Context, req *providers.ProviderRequest) (<-chan StreamChunk, error) {
 	// 创建结果channel
 	chunks := make(chan StreamChunk)
 

@@ -36,6 +36,17 @@ func New(config *Config, opts ...Option) (Service, error) {
 		opt(&options)
 	}
 
+	// 如果没有提供providers，则自动创建
+	if len(options.providers) == 0 {
+		// 创建provider管理器
+		providerManager := NewProviderManager(config, options.logger)
+		providers, err := providerManager.CreateProviders()
+		if err != nil {
+			return nil, WrapError(err, ErrCodeConfig, fmt.Sprintf("failed to create providers: %v", err))
+		}
+		options.providers = providers
+	}
+
 	// 检查必要的依赖 - 至少需要 LLM client 或者 providers
 	if options.llmClient == nil && len(options.providers) == 0 {
 		return nil, ErrNoLLMClient

@@ -3,8 +3,6 @@ package providers
 import (
 	"context"
 	"time"
-
-	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
 )
 
 // BaseConfig 基础配置
@@ -35,9 +33,21 @@ func DefaultConfig() BaseConfig {
 	}
 }
 
-// Provider 提供商接口（扩展 translation.TranslationProvider）
+// TranslationProvider 提供商基础接口
+type TranslationProvider interface {
+	// Translate 执行翻译
+	Translate(ctx context.Context, req *ProviderRequest) (*ProviderResponse, error)
+
+	// GetName 获取提供商名称
+	GetName() string
+
+	// SupportsSteps 是否支持多步骤翻译
+	SupportsSteps() bool
+}
+
+// Provider 提供商接口（扩展 TranslationProvider）
 type Provider interface {
-	translation.TranslationProvider
+	TranslationProvider
 
 	// Configure 配置提供商
 	Configure(config interface{}) error
@@ -118,4 +128,24 @@ func NewErrorWithDetails(code, message string, details map[string]interface{}) *
 		Message: message,
 		Details: details,
 	}
+}
+
+// ProviderRequest 提供商请求
+type ProviderRequest struct {
+	Text           string                 `json:"text"`
+	SourceLanguage string                 `json:"source_language,omitempty"`
+	TargetLanguage string                 `json:"target_language,omitempty"`
+	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// ProviderResponse 提供商响应
+type ProviderResponse struct {
+	Text         string                 `json:"text"`
+	SourceLang   string                 `json:"source_lang,omitempty"`
+	TargetLang   string                 `json:"target_lang,omitempty"`
+	TokensIn     int                    `json:"tokens_in,omitempty"`
+	TokensOut    int                    `json:"tokens_out,omitempty"`
+	Cost         float64                `json:"cost,omitempty"`
+	CostCurrency string                 `json:"cost_currency,omitempty"`
+	Metadata     map[string]interface{} `json:"metadata,omitempty"`
 }

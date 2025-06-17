@@ -18,13 +18,69 @@ import (
 	"go.uber.org/zap"
 )
 
+// CoordinatorConfig Coordinator包专用配置，管理文档解析、格式修复、后处理等功能
+type CoordinatorConfig struct {
+	// 文档处理配置
+	HTMLProcessingMode string // HTML处理模式: "markdown" 或 "native"
+	ChunkSize          int    // 文档处理时的分块大小
+	SourceLang         string // 源语言（用于文档处理元数据）
+	TargetLang         string // 目标语言（用于文档处理元数据）
+	
+	// 格式修复配置
+	EnableFormatFix      bool
+	FormatFixInteractive bool
+	PreTranslationFix    bool
+	PostTranslationFix   bool
+	FormatFixMarkdown    bool
+	FormatFixText        bool
+	FormatFixHTML        bool
+	FormatFixEPUB        bool
+	
+	// 后处理配置
+	EnablePostProcessing      bool
+	GlossaryPath              string
+	ContentProtection         bool
+	TerminologyConsistency    bool
+	MixedLanguageSpacing      bool
+	MachineTranslationCleanup bool
+	
+	// 进度和调试配置
+	Verbose bool // 详细模式
+}
+
+// NewCoordinatorConfig 从全局配置创建Coordinator专用配置
+func NewCoordinatorConfig(cfg *config.Config) CoordinatorConfig {
+	return CoordinatorConfig{
+		HTMLProcessingMode: cfg.HTMLProcessingMode,
+		ChunkSize:          cfg.ChunkSize,
+		SourceLang:         cfg.SourceLang,
+		TargetLang:         cfg.TargetLang,
+		
+		EnableFormatFix:      cfg.EnableFormatFix,
+		FormatFixInteractive: cfg.FormatFixInteractive,
+		PreTranslationFix:    cfg.PreTranslationFix,
+		PostTranslationFix:   cfg.PostTranslationFix,
+		FormatFixMarkdown:    cfg.FormatFixMarkdown,
+		FormatFixText:        cfg.FormatFixText,
+		FormatFixHTML:        cfg.FormatFixHTML,
+		FormatFixEPUB:        cfg.FormatFixEPUB,
+		
+		EnablePostProcessing:      cfg.EnablePostProcessing,
+		GlossaryPath:              cfg.GlossaryPath,
+		ContentProtection:         cfg.ContentProtection,
+		TerminologyConsistency:    cfg.TerminologyConsistency,
+		MixedLanguageSpacing:      cfg.MixedLanguageSpacing,
+		MachineTranslationCleanup: cfg.MachineTranslationCleanup,
+		
+		Verbose: cfg.Verbose,
+	}
+}
+
 // TranslationResult 翻译结果
 type TranslationResult struct {
 	DocID          string                 `json:"doc_id"`
 	InputFile      string                 `json:"input_file"`
 	OutputFile     string                 `json:"output_file"`
-	SourceLanguage string                 `json:"source_language"`
-	TargetLanguage string                 `json:"target_language"`
 	TotalNodes     int                    `json:"total_nodes"`
 	CompletedNodes int                    `json:"completed_nodes"`
 	FailedNodes    int                    `json:"failed_nodes"`
@@ -37,11 +93,11 @@ type TranslationResult struct {
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`
 }
 
-// TranslationCoordinator 翻译协调器，集成完善的翻译系统
+// TranslationCoordinator 翻译协调器，只负责文档解析、组装和工作流协调
 type TranslationCoordinator struct {
-	config               *config.Config
-	translationService   translation.Service    // 完善的翻译服务
-	translator           Translator             // 节点翻译管理器
+	coordinatorConfig    CoordinatorConfig          // Coordinator专用配置
+	translationService   translation.Service        // 翻译服务实例
+	translator           Translator                 // 节点翻译管理器实例
 	progressTracker      *progress.Tracker
 	progressReporter     *progress.Tracker
 	formatManager        *formatter.Manager
@@ -60,6 +116,9 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 	if logger == nil {
 		logger = zap.NewNop()
 	}
+
+	// 创建Coordinator专用配置
+	coordinatorConfig := NewCoordinatorConfig(cfg)
 
 	// 创建 progress tracker
 	if progressPath == "" {
@@ -85,8 +144,8 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 	// 创建格式修复器注册中心
 	var formatFixRegistry *formatfix.FixerRegistry
 	var err error
-	if cfg.EnableFormatFix {
-		if cfg.FormatFixInteractive {
+	if coordinatorConfig.EnableFormatFix {
+		if coordinatorConfig.FormatFixInteractive {
 			formatFixRegistry, err = loader.CreateRegistry(logger)
 		} else {
 			formatFixRegistry, err = loader.CreateSilentRegistry(logger)
@@ -98,9 +157,9 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 			formatFixRegistry = nil
 		} else {
 			logger.Info("format fix registry initialized",
-				zap.Bool("interactive", cfg.FormatFixInteractive),
-				zap.Bool("pre_translation", cfg.PreTranslationFix),
-				zap.Bool("post_translation", cfg.PostTranslationFix),
+				zap.Bool("interactive", coordinatorConfig.FormatFixInteractive),
+				zap.Bool("pre_translation", coordinatorConfig.PreTranslationFix),
+				zap.Bool("post_translation", coordinatorConfig.PostTranslationFix),
 				zap.Strings("supported_formats", formatFixRegistry.GetSupportedFormats()))
 		}
 	} else {
@@ -116,26 +175,19 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 		statsDB = nil
 	}
 
-	// 创建完善的翻译服务
-	translationService, err := createTranslationService(cfg, progressPath, logger)
+	// 创建翻译服务（内部自己管理providers）
+	translationConfig := translation.NewConfigFromGlobal(cfg)
+	translationService, err := translation.New(translationConfig, translation.WithLogger(logger))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create translation service: %w", err)
 	}
 	logger.Info("translation service initialized successfully",
 		zap.String("source_lang", cfg.SourceLang),
 		zap.String("target_lang", cfg.TargetLang),
-		zap.Int("chunk_size", cfg.ChunkSize),
-		zap.Int("concurrency", cfg.Concurrency))
+		zap.String("active_step_set", cfg.ActiveStepSet))
 
 	// 创建节点翻译管理器
-	translatorConfig := TranslatorConfig{
-		ChunkSize:   cfg.ChunkSize,
-		Concurrency: cfg.Concurrency,
-		MaxRetries:  cfg.RetryAttempts,
-		SourceLang:  cfg.SourceLang,
-		TargetLang:  cfg.TargetLang,
-		Verbose:     cfg.Verbose,
-	}
+	translatorConfig := NewTranslatorConfig(cfg)
 	translator := NewBatchTranslator(translatorConfig, translationService, logger)
 	logger.Info("translator initialized",
 		zap.Int("chunk_size", translatorConfig.ChunkSize),
@@ -144,25 +196,25 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 
 	// 创建翻译后处理器
 	var postProcessor *TranslationPostProcessor
-	if cfg.EnablePostProcessing {
+	if coordinatorConfig.EnablePostProcessing {
 		postProcessor = NewTranslationPostProcessor(cfg, logger)
 		logger.Info("translation post processor initialized",
-			zap.String("glossary_path", cfg.GlossaryPath),
-			zap.Bool("content_protection", cfg.ContentProtection),
-			zap.Bool("terminology_consistency", cfg.TerminologyConsistency))
+			zap.String("glossary_path", coordinatorConfig.GlossaryPath),
+			zap.Bool("content_protection", coordinatorConfig.ContentProtection),
+			zap.Bool("terminology_consistency", coordinatorConfig.TerminologyConsistency))
 	}
 
 	return &TranslationCoordinator{
-		config:            cfg,
+		coordinatorConfig:  coordinatorConfig,
 		translationService: translationService,
-		translator:        translator,
-		progressTracker:   progressTracker,
-		progressReporter:  progressReporter,
-		formatManager:     formatManager,
-		formatFixRegistry: formatFixRegistry,
-		postProcessor:     postProcessor,
-		statsDB:           statsDB,
-		logger:            logger,
+		translator:         translator,
+		progressTracker:    progressTracker,
+		progressReporter:   progressReporter,
+		formatManager:      formatManager,
+		formatFixRegistry:  formatFixRegistry,
+		postProcessor:      postProcessor,
+		statsDB:            statsDB,
+		logger:             logger,
 	}, nil
 }
 
@@ -195,13 +247,13 @@ func (c *TranslationCoordinator) TranslateFile(ctx context.Context, inputPath, o
 
 	// 使用完善的document processor替代简化解析
 	processorOpts := document.ProcessorOptions{
-		ChunkSize:    c.config.ChunkSize,
+		ChunkSize:    c.coordinatorConfig.ChunkSize,
 		ChunkOverlap: 100,
 		Metadata: map[string]interface{}{
-			"source_language":        c.config.SourceLang,
-			"target_language":        c.config.TargetLang,
+			"source_language":        c.coordinatorConfig.SourceLang,
+			"target_language":        c.coordinatorConfig.TargetLang,
 			"logger":                 c.logger,
-			"html_processing_mode":   c.config.HTMLProcessingMode,
+			"html_processing_mode":   c.coordinatorConfig.HTMLProcessingMode,
 		},
 	}
 
@@ -305,22 +357,12 @@ func (c *TranslationCoordinator) TranslateText(ctx context.Context, text string)
 		zap.Int("textLength", len(text)))
 
 	// 直接使用翻译服务翻译文本
-	req := &translation.Request{
-		Text:           text,
-		SourceLanguage: c.config.SourceLang,
-		TargetLanguage: c.config.TargetLang,
-		Metadata: map[string]interface{}{
-			"docID":    docID,
-			"fileName": fileName,
-		},
-	}
-
-	resp, err := c.translationService.Translate(ctx, req)
+	translatedText, err := c.translationService.TranslateText(ctx, text)
 	if err != nil {
 		return "", fmt.Errorf("text translation failed: %w", err)
 	}
 
-	result := resp.Text
+	result := translatedText
 
 	c.logger.Debug("text translation completed",
 		zap.String("docID", docID),
@@ -340,18 +382,7 @@ func (c *TranslationCoordinator) translateNode(ctx context.Context, node *docume
 	}
 
 	// 使用完善的翻译服务
-	req := &translation.Request{
-		Text:           node.OriginalText,
-		SourceLanguage: c.config.SourceLang,
-		TargetLanguage: c.config.TargetLang,
-		Metadata: map[string]interface{}{
-			"node_id":   node.ID,
-			"block_id":  node.BlockID,
-			"node_path": node.Path,
-		},
-	}
-
-	resp, err := c.translationService.Translate(ctx, req)
+	translatedText, err := c.translationService.TranslateText(ctx, node.OriginalText)
 	if err != nil {
 		node.Status = document.NodeStatusFailed
 		node.Error = err
@@ -362,7 +393,7 @@ func (c *TranslationCoordinator) translateNode(ctx context.Context, node *docume
 		return err
 	}
 
-	node.TranslatedText = resp.Text
+	node.TranslatedText = translatedText
 	node.Status = document.NodeStatusSuccess
 	
 	c.logger.Debug("node translation completed",
@@ -406,8 +437,6 @@ func (c *TranslationCoordinator) ResumeSession(ctx context.Context, sessionID st
 	result := &TranslationResult{
 		DocID:          sessionID,
 		InputFile:      progressInfo.FileName,
-		SourceLanguage: c.config.SourceLang,
-		TargetLanguage: c.config.TargetLang,
 		TotalNodes:     progressInfo.TotalChunks,
 		CompletedNodes: progressInfo.CompletedChunks,
 		FailedNodes:    progressInfo.FailedChunks,
@@ -434,8 +463,6 @@ func (c *TranslationCoordinator) GetActiveSession() ([]*TranslationResult, error
 				result := &TranslationResult{
 					DocID:          session.ID,
 					InputFile:      session.FileName,
-					SourceLanguage: c.config.SourceLang,
-					TargetLanguage: c.config.TargetLang,
 					TotalNodes:     progressInfo.TotalChunks,
 					CompletedNodes: progressInfo.CompletedChunks,
 					FailedNodes:    progressInfo.FailedChunks,
@@ -472,8 +499,8 @@ func (c *TranslationCoordinator) recordTranslationStats(result *TranslationResul
 		Timestamp:      result.StartTime,
 		InputFile:      result.InputFile,
 		OutputFile:     result.OutputFile,
-		SourceLanguage: result.SourceLanguage,
-		TargetLanguage: result.TargetLanguage,
+		SourceLanguage: c.coordinatorConfig.SourceLang,
+		TargetLanguage: c.coordinatorConfig.TargetLang,
 		Format:         format,
 		TotalNodes:     result.TotalNodes,
 		CompletedNodes: result.CompletedNodes,
@@ -484,9 +511,7 @@ func (c *TranslationCoordinator) recordTranslationStats(result *TranslationResul
 		Progress:       result.Progress,
 		ErrorMessage:   result.ErrorMessage,
 		Metadata: map[string]interface{}{
-			"chunk_size":      c.config.ChunkSize,
-			"retry_attempts":  c.config.RetryAttempts,
-			"active_step_set": c.config.ActiveStepSet,
+			"chunk_size": c.coordinatorConfig.ChunkSize,
 		},
 	}
 
@@ -525,7 +550,7 @@ func (c *TranslationCoordinator) detectFileFormat(filePath string) string {
 // preTranslationFormatFix 预翻译格式修复
 func (c *TranslationCoordinator) preTranslationFormatFix(ctx context.Context, filePath string, content []byte) ([]byte, error) {
 	// 检查是否启用预翻译修复
-	if !c.config.EnableFormatFix || !c.config.PreTranslationFix {
+	if !c.coordinatorConfig.EnableFormatFix || !c.coordinatorConfig.PreTranslationFix {
 		c.logger.Debug("pre-translation format fix disabled")
 		return content, nil
 	}
@@ -585,13 +610,13 @@ func (c *TranslationCoordinator) preTranslationFormatFix(ctx context.Context, fi
 func (c *TranslationCoordinator) isFormatFixEnabled(format string) bool {
 	switch format {
 	case "markdown", "md":
-		return c.config.FormatFixMarkdown
+		return c.coordinatorConfig.FormatFixMarkdown
 	case "text", "txt":
-		return c.config.FormatFixText
+		return c.coordinatorConfig.FormatFixText
 	case "html", "htm":
-		return c.config.FormatFixHTML
+		return c.coordinatorConfig.FormatFixHTML
 	case "epub":
-		return c.config.FormatFixEPUB
+		return c.coordinatorConfig.FormatFixEPUB
 	default:
 		return false
 	}
@@ -600,7 +625,7 @@ func (c *TranslationCoordinator) isFormatFixEnabled(format string) bool {
 // postTranslationFormatFix 后翻译格式修复
 func (c *TranslationCoordinator) postTranslationFormatFix(ctx context.Context, filePath string, content []byte) ([]byte, error) {
 	// 检查是否启用后翻译修复
-	if !c.config.EnableFormatFix || !c.config.PostTranslationFix {
+	if !c.coordinatorConfig.EnableFormatFix || !c.coordinatorConfig.PostTranslationFix {
 		c.logger.Debug("post-translation format fix disabled")
 		return content, nil
 	}

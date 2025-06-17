@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers"
-	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
 )
 
 // Config Raw 提供商配置（实际上不需要任何配置）
@@ -38,15 +37,15 @@ func (p *Provider) Configure(config interface{}) error {
 }
 
 // Translate 执行翻译（直接返回原文）
-func (p *Provider) Translate(ctx context.Context, req *translation.ProviderRequest) (*translation.ProviderResponse, error) {
+func (p *Provider) Translate(ctx context.Context, req *providers.ProviderRequest) (*providers.ProviderResponse, error) {
 	// Raw 提供商直接返回原文，不进行任何翻译
-	return &translation.ProviderResponse{
+	return &providers.ProviderResponse{
 		Text:      req.Text,
-		Model:     "raw",
 		TokensIn:  0,
 		TokensOut: 0,
-		Metadata: map[string]string{
-			"type": "raw_passthrough",
+		Metadata: map[string]interface{}{
+			"type":  "raw_passthrough",
+			"model": "raw",
 		},
 	}, nil
 }

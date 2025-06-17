@@ -2,6 +2,8 @@ package translation
 
 import (
 	"time"
+
+	"github.com/nerdneilsfield/go-translator-agent/pkg/providers"
 )
 
 // Request 翻译请求
@@ -169,22 +171,11 @@ type CompletionResponse struct {
 	FinishReason string `json:"finish_reason"`
 }
 
-// ProviderRequest 翻译提供商请求
-type ProviderRequest struct {
-	Text           string            `json:"text"`
-	SourceLanguage string            `json:"source_language"`
-	TargetLanguage string            `json:"target_language"`
-	Options        map[string]string `json:"options,omitempty"`
-}
+// ProviderRequest 翻译提供商请求 - 使用providers包中的类型以避免循环依赖
+type ProviderRequest = providers.ProviderRequest
 
-// ProviderResponse 翻译提供商响应
-type ProviderResponse struct {
-	Text      string            `json:"text"`
-	Model     string            `json:"model"`
-	TokensIn  int               `json:"tokens_in,omitempty"`
-	TokensOut int               `json:"tokens_out,omitempty"`
-	Metadata  map[string]string `json:"metadata,omitempty"`
-}
+// ProviderResponse 翻译提供商响应 - 使用providers包中的类型以避免循环依赖
+type ProviderResponse = providers.ProviderResponse
 
 // ChatRequest 对话请求
 type ChatRequest struct {

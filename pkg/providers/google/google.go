@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers"
-	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
 )
 
 // Config Google Translate配置
@@ -61,7 +60,7 @@ func (p *Provider) Configure(config interface{}) error {
 }
 
 // Translate 执行翻译
-func (p *Provider) Translate(ctx context.Context, req *translation.ProviderRequest) (*translation.ProviderResponse, error) {
+func (p *Provider) Translate(ctx context.Context, req *providers.ProviderRequest) (*providers.ProviderResponse, error) {
 	// 构建请求
 	translateReq := TranslateRequest{
 		Q:      req.Text,
@@ -71,8 +70,12 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 	}
 
 	// 检查是否包含HTML格式
-	if format, ok := req.Options["format"]; ok && format == "html" {
-		translateReq.Format = "html"
+	if req.Metadata != nil {
+		if format, ok := req.Metadata["format"]; ok {
+			if formatStr, ok := format.(string); ok && formatStr == "html" {
+				translateReq.Format = "html"
+			}
+		}
 	}
 
 	// 执行翻译
@@ -86,10 +89,10 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 	}
 
 	// 返回响应
-	return &translation.ProviderResponse{
-		Text:  resp.Data.Translations[0].TranslatedText,
-		Model: "google-translate",
-		Metadata: map[string]string{
+	return &providers.ProviderResponse{
+		Text: resp.Data.Translations[0].TranslatedText,
+		Metadata: map[string]interface{}{
+			"model":           "google-translate",
 			"detected_source": resp.Data.Translations[0].DetectedSourceLanguage,
 		},
 	}, nil
@@ -203,7 +206,7 @@ func (p *Provider) GetCapabilities() providers.Capabilities {
 // HealthCheck 健康检查
 func (p *Provider) HealthCheck(ctx context.Context) error {
 	// 翻译一个简单的文本
-	req := &translation.ProviderRequest{
+	req := &providers.ProviderRequest{
 		Text:           "Hello",
 		SourceLanguage: "en",
 		TargetLanguage: "es",

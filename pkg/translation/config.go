@@ -3,15 +3,17 @@ package translation
 import (
 	"errors"
 	"time"
+
+	"github.com/nerdneilsfield/go-translator-agent/internal/config"
 )
 
-// Config 翻译器独立配置，不依赖外部配置框架
+// Config 翻译服务专用配置，管理所有translation相关的功能
 type Config struct {
 	// 语言配置
 	SourceLanguage string `json:"source_language"`
 	TargetLanguage string `json:"target_language"`
 
-	// 分块配置
+	// 分块配置 - 在Translation Service内部进行分块时使用
 	ChunkSize      int `json:"chunk_size"`
 	ChunkOverlap   int `json:"chunk_overlap"`
 	MaxConcurrency int `json:"max_concurrency"`
@@ -23,8 +25,13 @@ type Config struct {
 	// 超时配置
 	Timeout time.Duration `json:"timeout"`
 
-	// 翻译步骤
+	// 翻译步骤配置
 	Steps []StepConfig `json:"steps"`
+
+	// Provider管理配置
+	ModelConfigs  map[string]config.ModelConfig `json:"model_configs"`   // 模型配置映射
+	ActiveStepSet string                        `json:"active_step_set"` // 活动步骤集名称
+	StepSets      map[string]config.StepSetConfigV2 `json:"step_sets"`   // 步骤集配置
 
 	// 缓存配置
 	EnableCache bool   `json:"enable_cache"`
@@ -60,6 +67,9 @@ func DefaultConfig() *Config {
 		Timeout:        5 * time.Minute,
 		EnableCache:    true,
 		CacheDir:       ".translation_cache",
+		ModelConfigs:   config.DefaultModelConfigs(),
+		ActiveStepSet:  "basic",
+		StepSets:       config.GetDefaultStepSetsV2(),
 		Steps: []StepConfig{
 			{
 				Name:        "initial_translation",
@@ -107,6 +117,20 @@ func (c *Config) Validate() error {
 		return errors.New("at least one translation step is required")
 	}
 
+	// 验证步骤集配置
+	if c.ActiveStepSet == "" {
+		return errors.New("active step set is required")
+	}
+	
+	if len(c.StepSets) == 0 {
+		return errors.New("at least one step set must be configured")
+	}
+	
+	// 验证活动步骤集是否存在
+	if _, exists := c.StepSets[c.ActiveStepSet]; !exists {
+		return errors.New("active step set not found in step sets")
+	}
+	
 	// 验证每个步骤
 	var hasRawStep bool
 	
@@ -164,6 +188,54 @@ func (c *Config) Clone() *Config {
 		}
 	}
 	return &clone
+}
+
+// NewConfigFromGlobal 从全局配置创建 Translation 配置
+func NewConfigFromGlobal(globalCfg *config.Config) *Config {
+	translationCfg := &Config{
+		SourceLanguage: globalCfg.SourceLang,
+		TargetLanguage: globalCfg.TargetLang,
+		ChunkSize:      globalCfg.ChunkSize,
+		ChunkOverlap:   100, // 默认重叠大小
+		MaxConcurrency: globalCfg.Concurrency,
+		MaxRetries:     globalCfg.MaxRetries,
+		RetryDelay:     time.Second,
+		Timeout:        time.Duration(globalCfg.TranslationTimeout) * time.Second,
+		EnableCache:    globalCfg.UseCache,
+		CacheDir:       globalCfg.CacheDir,
+		ModelConfigs:   globalCfg.ModelConfigs,
+		ActiveStepSet:  globalCfg.ActiveStepSet,
+		StepSets:       globalCfg.StepSets,
+		Metadata:       globalCfg.Metadata,
+	}
+	
+	// 从活动步骤集生成Steps配置
+	if stepSet, exists := globalCfg.StepSets[globalCfg.ActiveStepSet]; exists {
+		translationCfg.Steps = make([]StepConfig, len(stepSet.Steps))
+		for i, step := range stepSet.Steps {
+			// 获取模型的 IsLLM 信息
+			var isLLM bool
+			if step.ModelName == "raw" || step.ModelName == "none" {
+				isLLM = false // 特殊选项不是 LLM
+			} else if modelConfig, exists := globalCfg.ModelConfigs[step.ModelName]; exists {
+				isLLM = modelConfig.IsLLM
+			}
+			
+			translationCfg.Steps[i] = StepConfig{
+				Name:            step.Name,
+				Provider:        step.Provider,
+				Model:           step.ModelName,
+				Temperature:     float32(step.Temperature),
+				MaxTokens:       step.MaxTokens,
+				Timeout:         time.Duration(step.Timeout) * time.Second,
+				AdditionalNotes: step.AdditionalNotes,
+				Variables:       make(map[string]string), // 初始化空的 variables
+				IsLLM:           isLLM,
+			}
+		}
+	}
+	
+	return translationCfg
 }
 
 // 默认提示词模板

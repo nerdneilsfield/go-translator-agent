@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers"
-	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
 )
 
 // Config DeepL配置
@@ -35,6 +34,9 @@ type Provider struct {
 	config     Config
 	httpClient *http.Client
 }
+
+// 确保 Provider 实现 providers.TranslationProvider 接口
+var _ providers.TranslationProvider = (*Provider)(nil)
 
 // New 创建新的DeepL提供商
 func New(config Config) *Provider {
@@ -65,7 +67,7 @@ func (p *Provider) Configure(config interface{}) error {
 }
 
 // Translate 执行翻译
-func (p *Provider) Translate(ctx context.Context, req *translation.ProviderRequest) (*translation.ProviderResponse, error) {
+func (p *Provider) Translate(ctx context.Context, req *providers.ProviderRequest) (*providers.ProviderResponse, error) {
 	// 构建请求参数
 	params := url.Values{}
 	params.Set("text", req.Text)
@@ -73,14 +75,22 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 	params.Set("target_lang", normalizeLanguageCode(req.TargetLanguage, false))
 
 	// 可选参数
-	if formality, ok := req.Options["formality"]; ok {
-		params.Set("formality", formality)
-	}
-	if preserveFormatting, ok := req.Options["preserve_formatting"]; ok && preserveFormatting == "true" {
-		params.Set("preserve_formatting", "1")
-	}
-	if tagHandling, ok := req.Options["tag_handling"]; ok {
-		params.Set("tag_handling", tagHandling)
+	if req.Metadata != nil {
+		if formality, ok := req.Metadata["formality"]; ok {
+			if formalityStr, ok := formality.(string); ok {
+				params.Set("formality", formalityStr)
+			}
+		}
+		if preserveFormatting, ok := req.Metadata["preserve_formatting"]; ok {
+			if preserveFormattingStr, ok := preserveFormatting.(string); ok && preserveFormattingStr == "true" {
+				params.Set("preserve_formatting", "1")
+			}
+		}
+		if tagHandling, ok := req.Metadata["tag_handling"]; ok {
+			if tagHandlingStr, ok := tagHandling.(string); ok {
+				params.Set("tag_handling", tagHandlingStr)
+			}
+		}
 	}
 
 	// 执行翻译
@@ -94,14 +104,13 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 	}
 
 	// 返回响应
-	metadata := make(map[string]string)
+	metadata := make(map[string]interface{})
 	if resp.Translations[0].DetectedSourceLanguage != "" {
 		metadata["detected_source"] = resp.Translations[0].DetectedSourceLanguage
 	}
 
-	return &translation.ProviderResponse{
+	return &providers.ProviderResponse{
 		Text:     resp.Translations[0].Text,
-		Model:    "deepl",
 		Metadata: metadata,
 	}, nil
 }

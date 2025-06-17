@@ -269,11 +269,15 @@ func (s *step) executeWithProvider(ctx context.Context, input StepInput) (*StepO
 	}
 
 	// 准备请求
+	metadata := make(map[string]interface{})
+	for k, v := range s.config.Variables {
+		metadata[k] = v
+	}
 	req := &ProviderRequest{
 		Text:           input.Text,
 		SourceLanguage: input.SourceLanguage,
 		TargetLanguage: input.TargetLanguage,
-		Options:        s.config.Variables,
+		Metadata:       metadata,
 	}
 
 	// 设置超时
@@ -292,9 +296,19 @@ func (s *step) executeWithProvider(ctx context.Context, input StepInput) (*StepO
 		return nil, WrapError(err, ErrCodeLLM, errorMsg)
 	}
 
+	// 从 metadata 中获取 model 信息
+	model := ""
+	if resp.Metadata != nil {
+		if m, ok := resp.Metadata["model"]; ok {
+			if modelStr, ok := m.(string); ok {
+				model = modelStr
+			}
+		}
+	}
+
 	output := &StepOutput{
 		Text:      resp.Text,
-		Model:     resp.Model,
+		Model:     model,
 		TokensIn:  resp.TokensIn,
 		TokensOut: resp.TokensOut,
 	}

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers"
-	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
 )
 
 // Config DeepLX配置
@@ -62,7 +61,7 @@ func (p *Provider) Configure(config interface{}) error {
 }
 
 // Translate 执行翻译
-func (p *Provider) Translate(ctx context.Context, req *translation.ProviderRequest) (*translation.ProviderResponse, error) {
+func (p *Provider) Translate(ctx context.Context, req *providers.ProviderRequest) (*providers.ProviderResponse, error) {
 	// 构建请求
 	deeplxReq := TranslateRequest{
 		Text:       req.Text,
@@ -87,10 +86,12 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 		metadata["detected_source"] = resp.SourceLang
 	}
 
-	return &translation.ProviderResponse{
-		Text:     resp.Data,
-		Model:    "deeplx",
-		Metadata: metadata,
+	return &providers.ProviderResponse{
+		Text: resp.Data,
+		Metadata: map[string]interface{}{
+			"model": "deeplx",
+			"detected_source": metadata["detected_source"],
+		},
 	}, nil
 }
 
@@ -149,7 +150,7 @@ func (p *Provider) GetCapabilities() providers.Capabilities {
 // HealthCheck 健康检查
 func (p *Provider) HealthCheck(ctx context.Context) error {
 	// 尝试翻译一个简单的文本
-	req := &translation.ProviderRequest{
+	req := &providers.ProviderRequest{
 		Text:           "Hello",
 		SourceLanguage: "EN",
 		TargetLanguage: "ZH",

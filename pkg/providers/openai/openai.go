@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/nerdneilsfield/go-translator-agent/pkg/providers"
-	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
+	
 )
 
 // Config OpenAI配置
@@ -62,7 +62,7 @@ func (p *Provider) Configure(config interface{}) error {
 }
 
 // Translate 执行翻译
-func (p *Provider) Translate(ctx context.Context, req *translation.ProviderRequest) (*translation.ProviderResponse, error) {
+func (p *Provider) Translate(ctx context.Context, req *providers.ProviderRequest) (*providers.ProviderResponse, error) {
 	// 构建聊天消息
 	messages := []Message{
 		{
@@ -77,8 +77,12 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 	}
 
 	// 如果有额外的上下文或指令
-	if instruction, ok := req.Options["instruction"]; ok {
-		messages[0].Content += "\n\n" + instruction
+	if req.Metadata != nil {
+		if instruction, ok := req.Metadata["instruction"]; ok {
+			if instructionStr, ok := instruction.(string); ok {
+				messages[0].Content += "\n\n" + instructionStr
+			}
+		}
 	}
 
 	// 创建请求
@@ -96,12 +100,12 @@ func (p *Provider) Translate(ctx context.Context, req *translation.ProviderReque
 	}
 
 	// 返回响应
-	return &translation.ProviderResponse{
+	return &providers.ProviderResponse{
 		Text:      resp.Choices[0].Message.Content,
-		Model:     resp.Model,
 		TokensIn:  resp.Usage.PromptTokens,
 		TokensOut: resp.Usage.CompletionTokens,
-		Metadata: map[string]string{
+		Metadata: map[string]interface{}{
+			"model":         resp.Model,
 			"finish_reason": resp.Choices[0].FinishReason,
 			"id":            resp.ID,
 		},
@@ -286,92 +290,92 @@ func (e *APIError) Error() string {
 }
 
 // 实现 LLMClient 接口以支持三步翻译
-type LLMClient struct {
-	provider *Provider
-}
-
-// NewLLMClient 创建LLMClient
-func NewLLMClient(config Config) *LLMClient {
-	return &LLMClient{
-		provider: New(config),
-	}
-}
-
-// Chat 实现 translation.LLMClient 接口
-func (c *LLMClient) Chat(ctx context.Context, req *translation.ChatRequest) (*translation.ChatResponse, error) {
-	// 转换消息格式
-	messages := make([]Message, len(req.Messages))
-	for i, msg := range req.Messages {
-		messages[i] = Message{
-			Role:    msg.Role,
-			Content: msg.Content,
-		}
-	}
-
-	// 创建请求
-	chatReq := ChatRequest{
-		Model:       req.Model,
-		Messages:    messages,
-		Temperature: req.Temperature,
-		MaxTokens:   req.MaxTokens,
-	}
-
-	if chatReq.Model == "" {
-		chatReq.Model = c.provider.config.Model
-	}
-
-	// 执行请求
-	resp, err := c.provider.chat(ctx, chatReq)
-	if err != nil {
-		return nil, err
-	}
-
-	// 转换响应
-	return &translation.ChatResponse{
-		Message: translation.ChatMessage{
-			Role:    resp.Choices[0].Message.Role,
-			Content: resp.Choices[0].Message.Content,
-		},
-		Model:     resp.Model,
-		TokensIn:  resp.Usage.PromptTokens,
-		TokensOut: resp.Usage.CompletionTokens,
-	}, nil
-}
-
-// Complete 实现 translation.LLMClient 接口
-func (c *LLMClient) Complete(ctx context.Context, req *translation.CompletionRequest) (*translation.CompletionResponse, error) {
-	// 将completion请求转换为chat请求
-	chatReq := &translation.ChatRequest{
-		Messages: []translation.ChatMessage{
-			{
-				Role:    "user",
-				Content: req.Prompt,
-			},
-		},
-		Model:       req.Model,
-		Temperature: req.Temperature,
-		MaxTokens:   req.MaxTokens,
-	}
-
-	resp, err := c.Chat(ctx, chatReq)
-	if err != nil {
-		return nil, err
-	}
-
-	return &translation.CompletionResponse{
-		Text:      resp.Message.Content,
-		Model:     resp.Model,
-		TokensIn:  resp.TokensIn,
-		TokensOut: resp.TokensOut,
-	}, nil
-}
-
-// GetModel 获取模型
-func (c *LLMClient) GetModel() string {
-	return c.provider.config.Model
-}
-
-// HealthCheck 健康检查
-func (c *LLMClient) HealthCheck(ctx context.Context) error {
-	return c.provider.HealthCheck(ctx)
-}
+// type LLMClient struct {
+// 	provider *Provider
+// }
+// 
+// // NewLLMClient 创建LLMClient
+// func NewLLMClient(config Config) *LLMClient {
+// 	return &LLMClient{
+// 		provider: New(config),
+// 	}
+// }
+// 
+// // Chat 实现 translation.LLMClient 接口
+// func (c *LLMClient) Chat(ctx context.Context, req *translation.ChatRequest) (*translation.ChatResponse, error) {
+// 	// 转换消息格式
+// 	messages := make([]Message, len(req.Messages))
+// 	for i, msg := range req.Messages {
+// 		messages[i] = Message{
+// 			Role:    msg.Role,
+// 			Content: msg.Content,
+// 		}
+// 	}
+// 
+// 	// 创建请求
+// 	chatReq := ChatRequest{
+// 		Model:       req.Model,
+// 		Messages:    messages,
+// 		Temperature: req.Temperature,
+// 		MaxTokens:   req.MaxTokens,
+// 	}
+// 
+// 	if chatReq.Model == "" {
+// 		chatReq.Model = c.provider.config.Model
+// 	}
+// 
+// 	// 执行请求
+// 	resp, err := c.provider.chat(ctx, chatReq)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 
+// 	// 转换响应
+// 	return &translation.ChatResponse{
+// 		Message: translation.ChatMessage{
+// 			Role:    resp.Choices[0].Message.Role,
+// 			Content: resp.Choices[0].Message.Content,
+// 		},
+// 		Model:     resp.Model,
+// 		TokensIn:  resp.Usage.PromptTokens,
+// 		TokensOut: resp.Usage.CompletionTokens,
+// 	}, nil
+// }
+// 
+// // Complete 实现 translation.LLMClient 接口
+// func (c *LLMClient) Complete(ctx context.Context, req *translation.CompletionRequest) (*translation.CompletionResponse, error) {
+// 	// 将completion请求转换为chat请求
+// 	chatReq := &translation.ChatRequest{
+// 		Messages: []translation.ChatMessage{
+// 			{
+// 				Role:    "user",
+// 				Content: req.Prompt,
+// 			},
+// 		},
+// 		Model:       req.Model,
+// 		Temperature: req.Temperature,
+// 		MaxTokens:   req.MaxTokens,
+// 	}
+// 
+// 	resp, err := c.Chat(ctx, chatReq)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 
+// 	return &translation.CompletionResponse{
+// 		Text:      resp.Message.Content,
+// 		Model:     resp.Model,
+// 		TokensIn:  resp.TokensIn,
+// 		TokensOut: resp.TokensOut,
+// 	}, nil
+// }
+// 
+// // GetModel 获取模型
+// func (c *LLMClient) GetModel() string {
+// 	return c.provider.config.Model
+// }
+// 
+// // HealthCheck 健康检查
+// func (c *LLMClient) HealthCheck(ctx context.Context) error {
+// 	return c.provider.HealthCheck(ctx)
+// }
