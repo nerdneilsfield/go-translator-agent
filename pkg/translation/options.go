@@ -168,6 +168,7 @@ type chainOptions struct {
 	continueOnError bool
 	maxRetries      int
 	parallelSteps   bool
+	logger          *zap.Logger // 新增：日志记录器
 }
 
 // WithSkipCache 跳过缓存
@@ -195,5 +196,12 @@ func WithMaxRetries(retries int) ChainOption {
 func WithParallelSteps(parallel bool) ChainOption {
 	return func(o *chainOptions) {
 		o.parallelSteps = parallel
+	}
+}
+
+// WithChainLogger 设置翻译链日志记录器
+func WithChainLogger(logger *zap.Logger) ChainOption {
+	return func(o *chainOptions) {
+		o.logger = logger
 	}
 }

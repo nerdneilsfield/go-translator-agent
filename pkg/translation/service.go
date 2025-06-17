@@ -73,7 +73,7 @@ func New(config *Config, opts ...Option) (Service, error) {
 
 // buildChain 构建翻译链
 func (s *service) buildChain() error {
-	s.chain = NewChain()
+	s.chain = NewChain(WithChainLogger(s.options.logger))
 
 	// 为每个配置的步骤创建 Step
 	for _, stepConfig := range s.config.Steps {

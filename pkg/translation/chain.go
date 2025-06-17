@@ -8,12 +8,28 @@ import (
 	"sync"
 	"text/template"
 	"time"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
+
+// TraceLevel 定义 TRACE 日志级别，与logger包保持一致
+const TraceLevel zapcore.Level = -2
+
+// traceLog 安全地记录TRACE级别日志
+func (c *chain) traceLog(msg string, fields ...zap.Field) {
+	if c.logger != nil {
+		if ce := c.logger.Check(TraceLevel, msg); ce != nil {
+			ce.Write(fields...)
+		}
+	}
+}
 
 // chain 翻译链实现
 type chain struct {
 	steps   []Step
 	options chainOptions
+	logger  *zap.Logger  // 新增：日志记录器
 	mu      sync.RWMutex
 	// 执行时的状态
 	executionState struct {
@@ -34,6 +50,7 @@ func NewChain(opts ...ChainOption) Chain {
 	return &chain{
 		steps:   make([]Step, 0),
 		options: options,
+		logger:  options.logger,
 	}
 }
 
@@ -45,6 +62,12 @@ func (c *chain) Execute(ctx context.Context, input string) (*ChainResult, error)
 	if len(c.steps) == 0 {
 		return nil, ErrNoSteps
 	}
+
+	// TRACE: 记录翻译链开始执行
+	c.traceLog("translation_chain_start",
+		zap.String("original_text", input),
+		zap.Int("num_steps", len(c.steps)),
+		zap.Int("input_length", len(input)))
 
 	result := &ChainResult{
 		Steps:       make([]StepResult, 0, len(c.steps)),
@@ -79,6 +102,16 @@ func (c *chain) Execute(ctx context.Context, input string) (*ChainResult, error)
 	}
 
 	result.TotalDuration = time.Since(startTime)
+	
+	// TRACE: 记录翻译链执行完成
+	c.traceLog("translation_chain_complete",
+		zap.String("original_text", input),
+		zap.String("final_output", result.FinalOutput),
+		zap.Duration("total_duration", result.TotalDuration),
+		zap.Bool("success", result.Success),
+		zap.Int("steps_executed", len(result.Steps)),
+		zap.Int("output_length", len(result.FinalOutput)))
+	
 	return result, result.Error
 }
 
@@ -176,11 +209,31 @@ func (c *chain) executeStep(ctx context.Context, step Step, input string, index 
 			}
 		}
 
+		// TRACE: 记录步骤执行前的详细信息
+		c.traceLog("translation_step_start",
+			zap.String("step_name", step.GetName()),
+			zap.Int("step_index", index),
+			zap.Int("attempt", attempt),
+			zap.String("input_text", input),
+			zap.String("model", stepConfig.Model),
+			zap.Any("step_context", stepInput.Context))
+
 		output, err := step.Execute(ctx, stepInput)
 		if err == nil {
 			result.Output = output.Text
 			result.TokensIn = output.TokensIn
 			result.TokensOut = output.TokensOut
+			
+			// TRACE: 记录步骤执行成功的详细信息
+			c.traceLog("translation_step_success",
+				zap.String("step_name", step.GetName()),
+				zap.Int("step_index", index),
+				zap.String("input_text", input),
+				zap.String("output_text", output.Text),
+				zap.Int("tokens_in", output.TokensIn),
+				zap.Int("tokens_out", output.TokensOut),
+				zap.Duration("step_duration", time.Since(startTime)))
+			
 			return result, nil
 		}
 
@@ -193,6 +246,15 @@ func (c *chain) executeStep(ctx context.Context, step Step, input string, index 
 	}
 
 	result.Error = lastErr.Error()
+	
+	// TRACE: 记录步骤执行失败的详细信息
+	c.traceLog("translation_step_failed",
+		zap.String("step_name", step.GetName()),
+		zap.Int("step_index", index),
+		zap.String("input_text", input),
+		zap.String("error", lastErr.Error()),
+		zap.Int("total_attempts", c.options.maxRetries+1),
+		zap.Duration("step_duration", time.Since(startTime)))
 	
 	// 创建更详细的错误信息
 	stepName := step.GetName()

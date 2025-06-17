@@ -6,6 +6,13 @@ source_lang: "English"
 target_lang: "Chinese"
 country: "China"
 
+# 日志设置
+log_level: "info"                      # 基础日志级别: trace/debug/info/warn/error
+enable_detailed_log: false             # 是否启用详细日志（包含完整输入输出）
+console_log_level: "info"              # 控制台日志级别
+normal_log_file: ""                    # 普通日志文件路径（空表示不输出到文件）
+detailed_log_file: "logs/detailed.log" # 详细日志文件路径
+
 # 默认模型设置
 default_model_name: "gpt-3.5-turbo"
 

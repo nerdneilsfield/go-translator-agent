@@ -98,10 +98,10 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			return nil
 		},
 		Run: func(cmd *cobra.Command, args []string) {
-			// 初始化日志
-			log := logger.NewLoggerWithVerbose(debugMode, verboseMode)
+			// 初始化临时日志（用于加载配置）
+			tempLog := logger.NewLoggerWithVerbose(debugMode, verboseMode)
 			defer func() {
-				_ = log.Sync()
+				_ = tempLog.Sync()
 			}()
 
 			if showVersion {
@@ -121,25 +121,25 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 
 			// 处理其他列表命令
 			if listModels || listStepSets || listFormats || listCache || listFormatFixers || showConfig {
-				handleListCommands(cmd, args, log)
+				handleListCommands(cmd, args, tempLog)
 				return
 			}
 
 			// 处理格式检查模式
 			if checkFormatOnly {
-				handleFormatCheckOnly(cmd, args, log)
+				handleFormatCheckOnly(cmd, args, tempLog)
 				return
 			}
 
 			// 处理预演模式
 			if dryRun {
-				handleDryRun(cmd, args, log)
+				handleDryRun(cmd, args, tempLog)
 				return
 			}
 
 			// 获取输入和输出文件路径
 			if len(args) < 2 {
-				log.Error("缺少输入或输出文件参数")
+				tempLog.Error("缺少输入或输出文件参数")
 				fmt.Println("使用方法: translator [flags] input_file output_file")
 				os.Exit(1)
 			}
@@ -148,35 +148,52 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			outputPath := args[1]
 
 			// 创建格式化管理器
-			formatterManager := formatter.NewManager(log)
+			formatterManager := formatter.NewManager(tempLog)
 
 			if formatOnly {
 				// 仅格式化文件
 				_, err := formatterManager.FormatFile(inputPath, inputPath, nil)
 				if err != nil {
-					log.Error("格式化文件失败", zap.Error(err))
+					tempLog.Error("格式化文件失败", zap.Error(err))
 					os.Exit(1)
 				}
-				log.Info("格式化完成", zap.String("文件", inputPath))
+				tempLog.Info("格式化完成", zap.String("文件", inputPath))
 				return
 			}
 
 			// 在翻译之前先格式化文件
 			_, err := formatterManager.FormatFile(inputPath, inputPath, nil)
 			if err != nil {
-				log.Error("文件格式化失败，无法继续翻译",
+				tempLog.Error("文件格式化失败，无法继续翻译",
 					zap.String("文件", inputPath),
 					zap.Error(err))
 				os.Exit(1)
 			}
-			log.Info("文件格式化完成", zap.String("文件", inputPath))
+			tempLog.Info("文件格式化完成", zap.String("文件", inputPath))
 
 			// 加载配置
 			cfg, err := config.LoadConfig(cfgFile)
 			if err != nil {
-				log.Error("加载配置失败", zap.Error(err))
+				tempLog.Error("加载配置失败", zap.Error(err))
 				os.Exit(1)
 			}
+
+			// 根据配置创建详细日志
+			detailedLogConfig := logger.DetailedLogConfig{
+				EnableDetailedLog: cfg.EnableDetailedLog,
+				LogLevel:         cfg.LogLevel,
+				ConsoleLogLevel:  cfg.ConsoleLogLevel,
+				NormalLogFile:    cfg.NormalLogFile,
+				DetailedLogFile:  cfg.DetailedLogFile,
+				Debug:           cfg.Debug || debugMode,
+				Verbose:         cfg.Verbose || verboseMode,
+			}
+			
+			loggerWrapper := logger.NewDetailedLogger(detailedLogConfig)
+			log := loggerWrapper.GetZapLogger()
+			defer func() {
+				_ = log.Sync()
+			}()
 
 			// 处理预定义翻译（暂时不使用）
 			if predefinedTranslationsPath != "" {

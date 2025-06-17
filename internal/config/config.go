@@ -58,6 +58,13 @@ type Config struct {
 	UseCache                bool                       `mapstructure:"use_cache"`
 	Debug                   bool                       `mapstructure:"debug"`
 	Verbose                 bool                       `mapstructure:"verbose"`                   // 详细模式，显示翻译片段
+	
+	// 详细日志配置
+	LogLevel                string                     `mapstructure:"log_level"`                 // 基础日志级别
+	EnableDetailedLog       bool                       `mapstructure:"enable_detailed_log"`       // 是否启用详细日志
+	ConsoleLogLevel         string                     `mapstructure:"console_log_level"`         // 控制台日志级别
+	NormalLogFile           string                     `mapstructure:"normal_log_file"`           // 普通日志文件路径
+	DetailedLogFile         string                     `mapstructure:"detailed_log_file"`         // 详细日志文件路径
 	RequestTimeout          int                        `mapstructure:"request_timeout"`           // 请求超时时间（秒）
 	Concurrency             int                        `mapstructure:"concurrency"`               // 并行翻译请求数
 	HtmlConcurrency         int                        `mapstructure:"html_concurrency"`          // 并行HTML翻译请求数(每个 html 内部翻译请求数)
@@ -217,6 +224,14 @@ func NewDefaultConfig() *Config {
 		CacheDir:                cacheDir,
 		UseCache:                true,
 		Debug:                   false,
+		
+		// 详细日志默认配置
+		LogLevel:                "info",              // 默认INFO级别
+		EnableDetailedLog:       false,               // 默认禁用详细日志
+		ConsoleLogLevel:         "info",              // 控制台默认INFO级别
+		NormalLogFile:           "",                  // 默认不输出到文件
+		DetailedLogFile:         "logs/detailed.log", // 默认详细日志文件路径
+		
 		RequestTimeout:          300,  // 默认5分钟超时
 		Concurrency:             4,    // 默认4个并行请求
 		MinSplitSize:            100,  // 默认最小分割大小100字符

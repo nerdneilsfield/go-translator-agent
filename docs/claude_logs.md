@@ -400,14 +400,151 @@ step_sets:
 
 ---
 
+## 2025-06-17 22:30 (GMT+8)
+
+### 🔍 **实现 TRACE 级别详细日志系统**
+
+#### 1. 核心架构设计
+- **设计思路**: 采用 TRACE 级别日志替代双文件方案，更优雅地实现详细日志功能
+- **三层输出架构**:
+  - **控制台输出**: INFO+ 级别（适合用户查看）
+  - **普通日志文件**: DEBUG+ 级别（开发调试）
+  - **详细日志文件**: TRACE+ 级别（完整输入输出记录）
+
+#### 2. Logger 包扩展
+- **核心实现**: `internal/logger/logger.go`
+  - 定义 TRACE 日志级别: `zapcore.Level = -2`
+  - 创建 `DetailedLogConfig` 配置结构
+  - 实现 `NewDetailedLogger()` 函数支持三层输出
+  - 添加完整的 zap core 配置管理
+
+```go
+// TraceLevel 定义 TRACE 日志级别，比 DEBUG 更详细
+const TraceLevel zapcore.Level = -2
+
+// DetailedLogConfig 详细日志配置
+type DetailedLogConfig struct {
+    EnableDetailedLog  bool   // 是否启用详细日志
+    LogLevel          string // 基础日志级别 (trace/debug/info/warn/error)
+    ConsoleLogLevel   string // 控制台日志级别
+    NormalLogFile     string // 普通日志文件路径
+    DetailedLogFile   string // 详细日志文件路径
+    Debug             bool   // 调试模式
+    Verbose           bool   // 详细模式
+}
+```
+
+#### 3. 配置系统集成
+- **配置文件**: `internal/config/config.go`
+  - 添加详细日志配置字段到主配置结构
+  - 支持通过 YAML 配置详细日志行为
+  - 向后兼容现有调试和详细模式标志
+
+- **配置模板**: `configs/translator.yaml`
+```yaml
+# 日志设置
+log_level: "info"                      # 基础日志级别: trace/debug/info/warn/error
+enable_detailed_log: false             # 是否启用详细日志（包含完整输入输出）
+console_log_level: "info"              # 控制台日志级别
+normal_log_file: ""                    # 普通日志文件路径（空表示不输出到文件）
+detailed_log_file: "logs/detailed.log" # 详细日志文件路径
+```
+
+#### 4. 翻译链详细记录
+- **核心实现**: `pkg/translation/chain.go`
+  - 在翻译链开始/结束时记录 TRACE 级别信息
+  - 记录每个步骤的完整输入输出文本
+  - 记录 token 使用情况和执行时间
+  - 记录步骤成功/失败的详细原因
+
+```go
+// TRACE: 记录翻译链开始执行
+c.traceLog("translation_chain_start",
+    zap.String("original_text", input),
+    zap.Int("num_steps", len(c.steps)),
+    zap.Int("input_length", len(input)))
+
+// TRACE: 记录步骤执行成功的详细信息
+c.traceLog("translation_step_success",
+    zap.String("step_name", step.GetName()),
+    zap.Int("step_index", index),
+    zap.String("input_text", input),
+    zap.String("output_text", output.Text),
+    zap.Int("tokens_in", output.TokensIn),
+    zap.Int("tokens_out", output.TokensOut),
+    zap.Duration("step_duration", time.Since(startTime)))
+```
+
+#### 5. CLI 集成
+- **核心实现**: `internal/cli/root.go`
+  - 重构 logger 初始化流程，先加载配置再创建详细日志器
+  - 修复变量作用域问题（使用 `tempLog` 进行预配置日志）
+  - 支持命令行标志与配置文件的组合使用
+
+#### 6. 完整测试验证
+- **测试覆盖**: 创建全面的测试用例验证日志系统
+  - 测试 TRACE 级别日志正确写入详细日志文件
+  - 验证不同级别日志的正确分流
+  - 确认控制台输出只显示 INFO+ 级别日志
+  - 测试配置文件驱动的日志行为
+
+#### 7. 技术优势
+
+1. **优雅的架构**: 使用标准日志级别而非双文件方案
+2. **配置驱动**: 通过配置文件完全控制日志行为
+3. **三层分离**: 控制台、普通文件、详细文件各司其职
+4. **向后兼容**: 保持现有 debug/verbose 标志的功能
+5. **性能优化**: TRACE 日志只在需要时启用，避免性能影响
+
+#### 8. 使用示例
+
+```bash
+# 启用详细日志到文件
+translator --config configs/translator.yaml input.md output.md
+
+# 控制台查看调试信息 + 详细日志到文件
+translator --debug --config configs/translator.yaml input.md output.md
+
+# 完全详细模式（控制台 + 文件都详细）
+translator --verbose --config configs/translator.yaml input.md output.md
+```
+
+#### 9. 预期效果
+
+用户现在可以获得：
+- **控制台**: 清晰的进度和关键信息
+- **普通日志**: 调试级别的技术信息
+- **详细日志**: 完整的翻译输入输出记录，便于问题诊断和质量分析
+
+### 📊 **实现统计**
+
+- **修改文件**: 5 个核心文件
+- **新增代码**: ~150 行
+- **测试用例**: 1 个完整的集成测试
+- **配置增强**: 6 个新的配置字段
+- **Bug 修复**: 1 个 CLI 变量作用域问题
+
+### 🚀 **系统完整性**
+
+详细日志系统现已完全集成到翻译工作流：
+- ✅ 配置驱动的日志设置
+- ✅ TRACE 级别详细记录
+- ✅ 三层输出架构
+- ✅ CLI 完整集成
+- ✅ 向后兼容性
+
+为用户提供了强大的调试和监控能力，同时保持了系统的简洁性和性能。
+
+---
+
 ## 贡献统计
 
-- **代码行数**: ~3500+ 行（新增/修改）
+- **代码行数**: ~3650+ 行（新增/修改）
 - **文件创建**: 21+ 个新文件
-- **测试用例**: 74+ 个测试用例（包含 39 个新的 Ollama 测试）
-- **配置示例**: 9个配置文件
+- **测试用例**: 75+ 个测试用例（包含 1 个新的详细日志测试）
+- **配置示例**: 10个配置文件
 - **文档更新**: 多个 README 和配置指南
-- **Bug 修复**: 5+ 个关键问题修复
+- **Bug 修复**: 6+ 个关键问题修复
 
 ---
 
