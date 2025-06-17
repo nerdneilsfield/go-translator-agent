@@ -2,6 +2,51 @@
 
 这个文档记录了 Claude 在项目中完成的主要工作和贡献。
 
+## 2025-06-18 07:30 (GMT+8)
+
+### 📊 **改进: 批量翻译日志系统优化**
+
+#### 🎯 **用户需求**
+- **问题**: 无法清晰看到输入节点IDs vs 解析到的节点IDs对比
+- **需求**: 显示节点丢失统计，调整日志级别便于监控
+
+#### 🔧 **日志系统改进**
+- **输入输出对比**: 明确显示 `inputNodeIDs` vs `foundNodeIDs` vs `missingNodeIDs`
+- **成功率计算**: 自动计算并显示节点解析成功率百分比
+- **智能日志级别**: 
+  ```go
+  // 成功时使用INFO，失败时使用WARN
+  if len(missingNodeIDs) > 0 {
+      bt.logger.Warn("batch translation parsing results", ...)
+  } else {
+      bt.logger.Info("batch translation parsing successful", ...)
+  }
+  ```
+
+#### 📈 **新增日志信息**
+```
+INFO  preparing batch translation request  
+{"inputNodeIDs": [24,25,26,27], "nodesToTranslate": 4, ...}
+
+WARN  response format check - missing node markers  
+{"hasStartMarkers": false, "hasEndMarkers": false, ...}
+
+WARN  batch translation parsing results  
+{"inputNodeIDs": [24,25,26,27], "foundNodeIDs": [], "missingNodeIDs": [24,25,26,27], 
+ "inputCount": 4, "foundCount": 0, "missingCount": 4, "successRate": 0.00}
+
+WARN  node translation not found  
+{"nodeID": 24, "originalText": "To efficiently process...", ...}
+```
+
+#### 🎯 **监控价值**
+- **一目了然**: 直接看到哪些节点丢失了
+- **成功率追踪**: 量化批量翻译的可靠性
+- **问题定位**: 快速识别是节点标记问题还是解析问题
+- **性能监控**: 跟踪不同模型的节点保持率
+
+---
+
 ## 2025-06-17 23:15 (GMT+8)
 
 ### 🐛 **关键修复: Provider提示词传递问题**

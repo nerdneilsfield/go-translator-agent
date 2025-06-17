@@ -418,12 +418,9 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		nodeIDsToTranslate = append(nodeIDsToTranslate, node.ID)
 	}
 
-	if bt.config.Verbose && len(nodeIDsToTranslate) > 0 {
-		bt.logger.Debug("nodes to translate in this group",
-			zap.Ints("nodeIDs", nodeIDsToTranslate))
-	}
-
-	bt.logger.Debug("preparing batch translation request",
+	// 记录准备翻译的节点信息
+	bt.logger.Info("preparing batch translation request",
+		zap.Ints("inputNodeIDs", nodeIDsToTranslate),
 		zap.Int("totalNodes", len(group.Nodes)),
 		zap.Int("nodesToTranslate", nodesToTranslate),
 		zap.Int("contextNodes", contextNodes),
@@ -474,11 +471,20 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 	// 检查响应是否包含节点标记
 	hasStartMarkers := strings.Contains(translatedText, "@@NODE_START_")
 	hasEndMarkers := strings.Contains(translatedText, "@@NODE_END_")
-	bt.logger.Debug("response format check",
-		zap.Bool("hasStartMarkers", hasStartMarkers),
-		zap.Bool("hasEndMarkers", hasEndMarkers),
-		zap.Bool("isJSON", isJSON),
-		zap.Bool("isEmpty", isEmpty))
+	
+	// 根据节点标记存在情况选择日志级别
+	if !hasStartMarkers || !hasEndMarkers {
+		bt.logger.Warn("response format check - missing node markers",
+			zap.Bool("hasStartMarkers", hasStartMarkers),
+			zap.Bool("hasEndMarkers", hasEndMarkers),
+			zap.Bool("isJSON", isJSON),
+			zap.Bool("isEmpty", isEmpty),
+			zap.Int("responseLength", len(translatedText)))
+	} else {
+		bt.logger.Debug("response format check - markers found",
+			zap.Bool("hasStartMarkers", hasStartMarkers),
+			zap.Bool("hasEndMarkers", hasEndMarkers))
+	}
 
 	// 如果响应看起来像 JSON，尝试提取其中的文本
 	if isJSON && !hasStartMarkers {
@@ -641,15 +647,40 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		match, _ = pattern.FindNextMatch(match)
 	}
 
-	if bt.config.Verbose {
-		bt.logger.Debug("parsed translation results",
-			zap.Int("matchCount", matchCount),
-			zap.Int("expectedNodes", len(group.Nodes)),
-			zap.Int("translatedTextLength", len(translatedText)),
-			zap.Int("nodesToTranslate", nodesToTranslate),
-			zap.Int("contextNodes", contextNodes),
-			zap.Ints("foundNodeIDs", foundNodeIDs))
+	// 重用之前计算的nodeIDsToTranslate作为inputNodeIDs
+	inputNodeIDs := nodeIDsToTranslate
 
+	// 记录期望但未找到的节点
+	var missingNodeIDs []int
+	for _, nodeID := range inputNodeIDs {
+		if _, found := translationMap[nodeID]; !found {
+			missingNodeIDs = append(missingNodeIDs, nodeID)
+		}
+	}
+
+	// 计算解析成功率
+	successRate := float64(len(foundNodeIDs)) / float64(len(inputNodeIDs)) * 100
+	
+	// 根据结果选择合适的日志级别
+	if len(missingNodeIDs) > 0 {
+		bt.logger.Warn("batch translation parsing results",
+			zap.Ints("inputNodeIDs", inputNodeIDs),
+			zap.Ints("foundNodeIDs", foundNodeIDs), 
+			zap.Ints("missingNodeIDs", missingNodeIDs),
+			zap.Int("inputCount", len(inputNodeIDs)),
+			zap.Int("foundCount", len(foundNodeIDs)),
+			zap.Int("missingCount", len(missingNodeIDs)),
+			zap.Float64("successRate", successRate),
+			zap.Int("responseLength", len(translatedText)))
+	} else {
+		bt.logger.Info("batch translation parsing successful",
+			zap.Ints("inputNodeIDs", inputNodeIDs),
+			zap.Ints("foundNodeIDs", foundNodeIDs),
+			zap.Int("nodeCount", len(foundNodeIDs)),
+			zap.Float64("successRate", successRate))
+	}
+
+	if bt.config.Verbose {
 		// 显示翻译片段
 		if matchCount > 0 {
 			bt.logger.Debug("translation snippets",
@@ -657,38 +688,12 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 				zap.String("firstSnippet", truncateText(translatedText, 300)))
 		}
 
-		// 显示解析到的节点ID
-		if len(translationMap) > 0 {
-			var parsedIDs []int
-			for id := range translationMap {
-				parsedIDs = append(parsedIDs, id)
-			}
-			bt.logger.Debug("parsed node IDs",
-				zap.Ints("nodeIDs", parsedIDs))
-		}
-
-		// 记录期望但未找到的节点
-		var missingNodeIDs []int
-		for _, node := range group.Nodes {
-			// 跳过上下文节点
-			if node.Metadata != nil {
-				if ctx, ok := node.Metadata["is_context"].(bool); ok && ctx && node.Status == document.NodeStatusSuccess {
-					continue
-				}
-			}
-			if _, found := translationMap[node.ID]; !found {
-				missingNodeIDs = append(missingNodeIDs, node.ID)
-			}
-		}
-		if len(missingNodeIDs) > 0 {
-			bt.logger.Warn("missing node translations",
-				zap.Ints("missingNodeIDs", missingNodeIDs),
-				zap.Int("missingCount", len(missingNodeIDs)))
-		}
-	} else {
-		bt.logger.Debug("parsed translation results",
-			zap.Int("matchCount", matchCount),
-			zap.Int("expectedNodes", len(group.Nodes)))
+		// 详细的解析统计
+		bt.logger.Debug("detailed parsing stats",
+			zap.Int("totalNodes", len(group.Nodes)),
+			zap.Int("nodesToTranslate", nodesToTranslate),
+			zap.Int("contextNodes", contextNodes),
+			zap.Int("translatedTextLength", len(translatedText)))
 	}
 
 	// 应用翻译结果
@@ -765,35 +770,31 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 			node.Error = fmt.Errorf("translation not found in batch result for node %d", node.ID)
 			node.RetryCount++
 
-			if bt.config.Verbose {
-				// 尝试查找可能被修改的节点标记
-				alternativePatterns := []string{
-					fmt.Sprintf("NODE_START_%d", node.ID),
-					fmt.Sprintf("@@NODE_%d@@", node.ID),
-					fmt.Sprintf("NODE %d:", node.ID),
-					fmt.Sprintf("<%d>", node.ID),
-				}
-
-				foundAlternative := false
-				for _, pattern := range alternativePatterns {
-					if strings.Contains(translatedText, pattern) {
-						foundAlternative = true
-						bt.logger.Warn("found alternative node marker",
-							zap.Int("nodeID", node.ID),
-							zap.String("pattern", pattern))
-						break
-					}
-				}
-
-				bt.logger.Debug("node translation not found",
-					zap.Int("nodeID", node.ID),
-					zap.String("originalText", truncateText(node.OriginalText, 100)),
-					zap.Bool("isContext", isContext),
-					zap.Bool("foundAlternative", foundAlternative))
-			} else {
-				bt.logger.Debug("node translation not found",
-					zap.Int("nodeID", node.ID))
+			// 尝试查找可能被修改的节点标记
+			alternativePatterns := []string{
+				fmt.Sprintf("NODE_START_%d", node.ID),
+				fmt.Sprintf("@@NODE_%d@@", node.ID),
+				fmt.Sprintf("NODE %d:", node.ID),
+				fmt.Sprintf("<%d>", node.ID),
 			}
+
+			foundAlternative := false
+			for _, pattern := range alternativePatterns {
+				if strings.Contains(translatedText, pattern) {
+					foundAlternative = true
+					bt.logger.Warn("found alternative node marker",
+						zap.Int("nodeID", node.ID),
+						zap.String("pattern", pattern))
+					break
+				}
+			}
+
+			// 节点翻译失败是重要信息，使用WARN级别
+			bt.logger.Warn("node translation not found",
+				zap.Int("nodeID", node.ID),
+				zap.String("originalText", truncateText(node.OriginalText, 100)),
+				zap.Bool("isContext", isContext),
+				zap.Bool("foundAlternative", foundAlternative))
 		}
 	}
 
