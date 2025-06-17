@@ -413,8 +413,6 @@ func (t *ThreeStepTranslator) isReasoningModel(provider, model string) bool {
 		"o1-mini",
 		"claude-3-opus",
 		"deepseek-r1",
-		"qwq-32b",
-		"qwen",
 	}
 
 	modelLower := strings.ToLower(model)

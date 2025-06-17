@@ -282,65 +282,126 @@ func ExtractTranslationFromResponse(response string) string {
 	return strings.TrimSpace(result)
 }
 
-// RemoveReasoningMarkers 移除推理模型的思考标记
+// RemoveReasoningMarkers 移除推理模型的思考标记和内容（使用内置全部常见标记）
 func RemoveReasoningMarkers(text string) string {
-	// 移除 <thinking>...</thinking> 标记
-	thinkingRe := regexp.MustCompile(`(?s)<thinking>.*?</thinking>`)
-	text = thinkingRe.ReplaceAllString(text, "")
-
-	// 移除 <think>...</think> 标记（支持qwen等模型）
-	thinkRe := regexp.MustCompile(`(?s)<think>.*?</think>`)
-	text = thinkRe.ReplaceAllString(text, "")
-
-	// 移除 <reflection>...</reflection> 标记
-	reflectionRe := regexp.MustCompile(`(?s)<reflection>.*?</reflection>`)
-	text = reflectionRe.ReplaceAllString(text, "")
-
-	// 移除 <answer>...</answer> 标记，但保留内容
-	answerRe := regexp.MustCompile(`(?s)<answer>(.*?)</answer>`)
-	if matches := answerRe.FindStringSubmatch(text); len(matches) > 1 {
-		text = matches[1]
+	// 内置所有常见的推理标记对
+	commonReasoningTags := []struct{
+		start, end string
+		preserveContent bool // 是否保留标记内的内容
+	}{
+		{"<think>", "</think>", false},
+		{"<thinking>", "</thinking>", false},
+		{"<thought>", "</thought>", false},
+		{"<reasoning>", "</reasoning>", false},
+		{"<reflection>", "</reflection>", false},
+		{"<internal>", "</internal>", false},
+		{"<scratch>", "</scratch>", false},
+		{"<analysis>", "</analysis>", false},
+		{"<brainstorm>", "</brainstorm>", false},
+		{"[THINKING]", "[/THINKING]", false},
+		{"[REASONING]", "[/REASONING]", false},
+		{"[INTERNAL]", "[/INTERNAL]", false},
+		{"[SCRATCH]", "[/SCRATCH]", false},
+		{"<answer>", "</answer>", true}, // answer标记保留内容
+		{"<result>", "</result>", true}, // result标记保留内容
+		{"<output>", "</output>", true}, // output标记保留内容
 	}
 
-	// 如果整个响应都在思考标记中且没有结束标记，尝试提取思考后的内容
-	if strings.HasPrefix(strings.TrimSpace(text), "<think>") && !strings.Contains(text, "</think>") {
-		// 如果只有开始标记没有结束标记，可能是被截断了，记录警告
-		// 但仍然尝试移除开始部分
-		text = regexp.MustCompile(`(?s)^<think>.*`).ReplaceAllString(text, "")
+	result := text
+
+	// 处理所有标记对
+	for _, tag := range commonReasoningTags {
+		if tag.preserveContent {
+			// 保留内容，只移除标记
+			pattern := fmt.Sprintf(`(?s)%s(.*?)%s`, regexp.QuoteMeta(tag.start), regexp.QuoteMeta(tag.end))
+			re := regexp.MustCompile(pattern)
+			if matches := re.FindStringSubmatch(result); len(matches) > 1 {
+				result = re.ReplaceAllString(result, matches[1])
+			}
+		} else {
+			// 移除整个标记和内容
+			pattern := fmt.Sprintf(`(?s)%s.*?%s`, regexp.QuoteMeta(tag.start), regexp.QuoteMeta(tag.end))
+			re := regexp.MustCompile(pattern)
+			result = re.ReplaceAllString(result, "")
+		}
 	}
 
-	// 移除多余的空行
-	text = regexp.MustCompile(`\n{3,}`).ReplaceAllString(text, "\n\n")
+	// 处理截断的思考标记（只有开始没有结束）
+	truncatedPatterns := []string{"<think>", "<thinking>", "<thought>", "<reasoning>", "<reflection>"}
+	for _, pattern := range truncatedPatterns {
+		if strings.HasPrefix(strings.TrimSpace(result), pattern) && !strings.Contains(result, strings.Replace(pattern, "<", "</", 1)) {
+			// 移除从开始标记到文末的所有内容
+			escapedPattern := regexp.QuoteMeta(pattern)
+			re := regexp.MustCompile(fmt.Sprintf(`(?s)^%s.*`, escapedPattern))
+			result = re.ReplaceAllString(result, "")
+			break
+		}
+	}
 
-	return strings.TrimSpace(text)
+	// 清理多余的空行
+	result = regexp.MustCompile(`\n{3,}`).ReplaceAllString(result, "\n\n")
+
+	return strings.TrimSpace(result)
 }
 
-// RemoveReasoningProcess 移除推理过程（支持自定义标记）
-func RemoveReasoningProcess(text string, tags []string) string {
-	// 如果没有指定标记，使用默认的移除方法
-	if len(tags) == 0 {
+// RemoveReasoningProcess 移除推理过程（支持用户自定义标记，可选覆盖内置标记）
+func RemoveReasoningProcess(text string, userTags []string) string {
+	// 如果用户没有指定标记，使用内置的全套标记
+	if len(userTags) == 0 {
+		// 直接使用 RemoveReasoningMarkers 中的逻辑
 		return RemoveReasoningMarkers(text)
 	}
 
-	// 为每个标记创建正则表达式并移除
-	for _, tag := range tags {
-		// 处理成对标记，如 <thinking>...</thinking>
-		pattern := fmt.Sprintf(`(?s)<%s>.*?</%s>`, regexp.QuoteMeta(tag), regexp.QuoteMeta(tag))
-		re := regexp.MustCompile(pattern)
-		text = re.ReplaceAllString(text, "")
+	// 用户指定了标记，使用用户的配置
+	result := text
 
-		// 处理单独标记，如 <answer>...保留内容...</answer>
-		if tag == "answer" {
-			pattern = fmt.Sprintf(`(?s)<%s>(.*?)</%s>`, regexp.QuoteMeta(tag), regexp.QuoteMeta(tag))
-			re = regexp.MustCompile(pattern)
-			if matches := re.FindStringSubmatch(text); len(matches) > 1 {
-				text = matches[1]
+	// 处理用户配置的标记对
+	for i := 0; i < len(userTags); i += 2 {
+		if i+1 < len(userTags) {
+			startTag := userTags[i]
+			endTag := userTags[i+1]
+			
+			// 特殊处理：保留 answer/result/output 标记的内容
+			preserveContent := strings.Contains(startTag, "answer") || 
+								 strings.Contains(startTag, "result") || 
+								 strings.Contains(startTag, "output")
+			
+			if preserveContent {
+				// 保留内容，只移除标记
+				pattern := fmt.Sprintf(`(?s)%s(.*?)%s`, regexp.QuoteMeta(startTag), regexp.QuoteMeta(endTag))
+				re := regexp.MustCompile(pattern)
+				if matches := re.FindStringSubmatch(result); len(matches) > 1 {
+					result = re.ReplaceAllString(result, matches[1])
+				}
+			} else {
+				// 移除整个标记和内容
+				pattern := fmt.Sprintf(`(?s)%s.*?%s`, regexp.QuoteMeta(startTag), regexp.QuoteMeta(endTag))
+				re := regexp.MustCompile(pattern)
+				result = re.ReplaceAllString(result, "")
 			}
 		}
 	}
 
-	// 移除多余的空行
-	text = regexp.MustCompile(`\n{3,}`).ReplaceAllString(text, "\n\n")
+	// 处理截断的标记（只有开始没有结束）
+	for i := 0; i < len(userTags); i += 2 {
+		startTag := userTags[i]
+		if strings.HasPrefix(strings.TrimSpace(result), startTag) {
+			// 检查是否有对应的结束标记
+			if i+1 < len(userTags) {
+				endTag := userTags[i+1]
+				if !strings.Contains(result, endTag) {
+					// 移除从开始标记到文末的所有内容
+					escapedPattern := regexp.QuoteMeta(startTag)
+					re := regexp.MustCompile(fmt.Sprintf(`(?s)^%s.*`, escapedPattern))
+					result = re.ReplaceAllString(result, "")
+					break
+				}
+			}
+		}
+	}
 
-	return strings.TrimSpace(text)
+	// 清理多余的空行
+	result = regexp.MustCompile(`\n{3,}`).ReplaceAllString(result, "\n\n")
+
+	return strings.TrimSpace(result)
 }

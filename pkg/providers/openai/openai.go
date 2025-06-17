@@ -244,27 +244,6 @@ func (p *Provider) chat(ctx context.Context, req ChatRequest) (*ChatResponse, er
 	return &chatResp, nil
 }
 
-// isReasoningModel 判断是否为推理模型
-func (p *Provider) isReasoningModel(model string) bool {
-	// 检查已知的推理模型
-	reasoningModelPatterns := []string{
-		"o1-preview",
-		"o1-mini",
-		"deepseek-r1",
-		"qwq-32b",
-		"qwen",
-	}
-
-	modelLower := strings.ToLower(model)
-	for _, pattern := range reasoningModelPatterns {
-		if strings.Contains(modelLower, pattern) {
-			return true
-		}
-	}
-
-	return false
-}
-
 // parseFullPrompt 解析完整提示词，分离系统指令和用户内容
 func (p *Provider) parseFullPrompt(text string) (bool, string, string) {
 	// 检查是否包含系统指令和翻译指令的关键标识

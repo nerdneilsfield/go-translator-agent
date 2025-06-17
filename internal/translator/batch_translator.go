@@ -681,11 +681,12 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 	}
 
 	if bt.config.Verbose {
-		// 显示翻译片段
+		// 显示翻译片段（清理推理标记后显示）
 		if matchCount > 0 {
+			cleanedText := translation.RemoveReasoningMarkers(translatedText)
 			bt.logger.Debug("translation snippets",
 				zap.Int("totalMatches", matchCount),
-				zap.String("firstSnippet", truncateText(translatedText, 300)))
+				zap.String("firstSnippet", truncateText(cleanedText, 300)))
 		}
 
 		// 详细的解析统计
