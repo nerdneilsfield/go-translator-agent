@@ -368,16 +368,19 @@ func (s *step) executeWithProvider(ctx context.Context, input StepInput) (*StepO
 		}
 	}
 
+	// 移除推理标记（总是尝试，如果没有推理标记则无副作用）
+	cleanedText := RemoveReasoningMarkers(resp.Text)
+	
 	output := &StepOutput{
-		Text:      resp.Text,
+		Text:      cleanedText,
 		Model:     model,
 		TokensIn:  resp.TokensIn,
 		TokensOut: resp.TokensOut,
 	}
 
-	// 缓存结果
+	// 缓存结果（使用清理后的文本）
 	if s.cache != nil {
-		_ = s.cache.Set(cacheKey, output.Text)
+		_ = s.cache.Set(cacheKey, cleanedText)
 	}
 
 	return output, nil
@@ -433,17 +436,20 @@ func (s *step) executeWithLLM(ctx context.Context, input StepInput) (*StepOutput
 		return nil, WrapError(err, ErrCodeLLM, errorMsg)
 	}
 
+	// 移除推理标记（总是尝试，如果没有推理标记则无副作用）
+	cleanedText := RemoveReasoningMarkers(resp.Message.Content)
+	
 	output := &StepOutput{
-		Text:      resp.Message.Content,
+		Text:      cleanedText,
 		Model:     resp.Model,
 		TokensIn:  resp.TokensIn,
 		TokensOut: resp.TokensOut,
 	}
 
-	// 缓存结果
+	// 缓存结果（使用清理后的文本）
 	if s.cache != nil {
 		cacheKey := s.getCacheKey(prompt)
-		_ = s.cache.Set(cacheKey, output.Text)
+		_ = s.cache.Set(cacheKey, cleanedText)
 	}
 
 	return output, nil

@@ -947,6 +947,12 @@ func (bt *BatchTranslator) protectContent(text string, pm *translation.PreserveM
 	text = pm.ProtectPattern(text, `[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]+`)
 	text = pm.ProtectPattern(text, `\.{1,2}/(?:[^/\s]+/)*[^/\s]+(?:\.[a-zA-Z0-9]+)?`)
 
+	// Markdown 图片和链接
+	text = pm.ProtectPattern(text, `!\[[^\]]*\]\([^)]+\)`)  // ![alt text](image url)
+	text = pm.ProtectPattern(text, `\[[^\]]+\]\([^)]+\)`)   // [link text](url)
+	text = pm.ProtectPattern(text, `\[[^\]]+\]\[[^\]]*\]`)  // [link text][ref]
+	text = pm.ProtectPattern(text, `(?m)^\s*\[[^\]]+\]:\s*.+$`) // [ref]: url (引用定义，多行模式)
+
 	// 引用标记
 	text = pm.ProtectPattern(text, `\[\d+\]`)                                 // [1], [2]
 	text = pm.ProtectPattern(text, `\[[A-Za-z]+(?:\s+et\s+al\.)?,\s*\d{4}\]`) // [Author, Year]
