@@ -11,6 +11,7 @@ import (
 	"github.com/nerdneilsfield/go-translator-agent/internal/formatfix/loader"
 	"github.com/nerdneilsfield/go-translator-agent/internal/formatter"
 	"github.com/nerdneilsfield/go-translator-agent/internal/logger"
+	"github.com/nerdneilsfield/go-translator-agent/internal/preformat"
 	"github.com/nerdneilsfield/go-translator-agent/internal/translator"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -171,6 +172,29 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 			}
 			tempLog.Info("文件格式化完成", zap.String("文件", inputPath))
 
+			// 创建预处理器并处理文件
+			preFormatter := preformat.NewPreFormatter(tempLog)
+			preformattedPath, err := preFormatter.ProcessFile(inputPath)
+			if err != nil {
+				tempLog.Error("文件预处理失败，无法继续翻译",
+					zap.String("文件", inputPath),
+					zap.Error(err))
+				os.Exit(1)
+			}
+			tempLog.Info("文件预处理完成", 
+				zap.String("原文件", inputPath),
+				zap.String("预处理文件", preformattedPath))
+			
+			// 确保在程序结束时清理临时文件
+			defer func() {
+				if cleanupErr := preFormatter.CleanupTempFile(preformattedPath); cleanupErr != nil {
+					tempLog.Warn("清理预处理临时文件失败", zap.Error(cleanupErr))
+				}
+			}()
+
+			// 使用预处理后的文件作为翻译输入
+			translationInputPath := preformattedPath
+
 			// 加载配置
 			cfg, err := config.LoadConfig(cfgFile)
 			if err != nil {
@@ -243,9 +267,9 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 				// TODO: 实现流式输出支持
 			}
 
-			// 直接使用 coordinator 翻译文件
+			// 直接使用 coordinator 翻译文件 (使用预处理后的文件)
 			ctx := cmd.Context()
-			result, err := coordinator.TranslateFile(ctx, inputPath, outputPath)
+			result, err := coordinator.TranslateFile(ctx, translationInputPath, outputPath)
 			if err != nil {
 				log.Error("翻译文件失败", zap.Error(err))
 				os.Exit(1)

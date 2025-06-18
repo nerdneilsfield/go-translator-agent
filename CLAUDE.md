@@ -103,6 +103,35 @@ just clean
 
 ## Recent Updates
 
+### Advanced Document Pre-Processing System (2025-06-18)
+
+- **全新预处理框架**: Implemented comprehensive document pre-processing pipeline before translation
+  - New workflow: `原始文件 → PreFormatter → 临时文件 → 现有格式化流程 → 翻译`
+  - Automatic temporary file management with cleanup after translation
+  - Intelligent content structure analysis and optimization
+- **图片内容分离**: Intelligent image content separation for better translation
+  - Detects `![](...)` image patterns and separates them into standalone paragraphs
+  - Adds proper spacing before and after images for clean document structure
+  - Handles image captions separately from image links
+- **数学公式标准化**: Mathematical formula standardization
+  - Converts irregular `$$...$$` patterns to standardized format: `$$\n公式内容\n$$`
+  - Ensures proper spacing around formulas for optimal processing
+  - Preserves formula content integrity during normalization
+- **HTML表格智能转换**: Advanced HTML table to Markdown conversion
+  - Detects `<html><body><table>` patterns and converts to standard Markdown tables
+  - Preserves table structure and content during conversion
+  - Wraps converted tables with protection markers to prevent translation
+  - Uses goquery library for robust HTML parsing
+- **裸链接自动包装**: Automatic bare link conversion to Markdown format
+  - Converts bare URLs, DOI links, and arXiv references to `[url](url)` format
+  - Intelligent detection to avoid double-processing existing Markdown links
+  - Supports multiple URL patterns (HTTP/HTTPS, DOI, arXiv)
+- **引用文献智能分离**: Intelligent reference separation and protection
+  - Automatically detects and separates individual reference entries
+  - Converts continuous reference blocks to individual lines
+  - Protects entire reference section from translation with special markers
+  - Handles various reference formatting patterns
+
 ### Critical Bug Fixes & Retry Mechanism Enhancement (2025-06-18)
 
 - **重试机制修复**: Fixed critical bug where retry rounds had 0% success rate due to node reference issues
