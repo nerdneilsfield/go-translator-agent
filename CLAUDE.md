@@ -103,6 +103,21 @@ just clean
 
 ## Recent Updates
 
+### Critical Bug Fixes & Retry Mechanism Enhancement (2025-06-18)
+
+- **重试机制修复**: Fixed critical bug where retry rounds had 0% success rate due to node reference issues
+  - Root cause: `groupFailedNodesWithContext` was creating new NodeInfo objects instead of reusing original references
+  - Fix: Use original node references so status updates are reflected in the main nodes array
+- **错误分类增强**: Completely rewrote error classification system to properly handle TranslationError structures:
+  - Support structured error codes (LLM_ERROR, NETWORK_ERROR, etc.) instead of only string matching
+  - Recursive error unwrapping to extract nested error information
+  - Proper mapping of error codes to user-friendly Chinese display names
+- **翻译步骤级别错误追踪**: Added comprehensive step-level error tracking:
+  - Track which translation step failed (initial_translation, reflection, improvement)
+  - Display step index (第1步, 第2步, 第3步) in failure reports
+  - Enhanced FailedNodeDetail structure with Step and StepIndex fields
+- **改进的错误报告**: Enhanced failure reporting with step-specific information and better error classification
+
 ### Progress Bar Optimization & Enhanced Debugging (2025-06-18)
 
 - **进度条更新频率优化**: Improved progress bar update frequency from 100ms to 50ms throttling for better visibility with increased logging

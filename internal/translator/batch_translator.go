@@ -1296,28 +1296,16 @@ func (bt *BatchTranslator) groupFailedNodesWithContext(allNodes []*document.Node
 	var nodesToTranslate []*document.NodeInfo
 	for _, node := range allNodes {
 		if includeSet[node.ID] {
-			// 为已处理的节点标记，避免重复计算
-			newNode := &document.NodeInfo{
-				ID:             node.ID,
-				BlockID:        node.BlockID,
-				OriginalText:   node.OriginalText,
-				TranslatedText: node.TranslatedText,
-				Status:         node.Status,
-				Path:           node.Path,
-				Metadata:       node.Metadata,
-				Error:          node.Error,
-				RetryCount:     node.RetryCount,
-			}
-
 			// 如果是已成功的上下文节点，添加标记
 			if processedNodes[node.ID] && node.Status == document.NodeStatusSuccess {
-				if newNode.Metadata == nil {
-					newNode.Metadata = make(map[string]interface{})
+				if node.Metadata == nil {
+					node.Metadata = make(map[string]interface{})
 				}
-				newNode.Metadata["is_context"] = true
+				node.Metadata["is_context"] = true
 			}
 
-			nodesToTranslate = append(nodesToTranslate, newNode)
+			// 直接使用原始节点引用，这样状态更新会反映到原始数组中
+			nodesToTranslate = append(nodesToTranslate, node)
 		}
 	}
 
@@ -1439,18 +1427,21 @@ func (bt *BatchTranslator) recordTranslationRound(roundNumber int, roundType str
 		} else {
 			failedNodes = append(failedNodes, node.ID)
 			
-			// 收集失败节点详情
+			// 收集失败节点详情，包括步骤信息
+			errorType, step, stepIndex := extractErrorDetails(node.Error)
 			detail := &FailedNodeDetail{
 				NodeID:       node.ID,
 				OriginalText: truncateText(node.OriginalText, 200),
 				Path:         node.Path,
-				ErrorType:    classifyErrorType(node.Error),
+				ErrorType:    errorType,
 				ErrorMessage: func() string {
 					if node.Error != nil {
 						return node.Error.Error()
 					}
 					return "unknown error"
 				}(),
+				Step:         step,
+				StepIndex:    stepIndex,
 				RetryCount:   node.RetryCount,
 				FailureTime:  time.Now(),
 			}
@@ -1498,17 +1489,20 @@ func (bt *BatchTranslator) GetDetailedTranslationSummary(nodes []*document.NodeI
 			finalSuccess++
 		} else {
 			finalFailed++
+			errorType, step, stepIndex := extractErrorDetails(node.Error)
 			detail := &FailedNodeDetail{
 				NodeID:       node.ID,
 				OriginalText: truncateText(node.OriginalText, 200),
 				Path:         node.Path,
-				ErrorType:    classifyErrorType(node.Error),
+				ErrorType:    errorType,
 				ErrorMessage: func() string {
 					if node.Error != nil {
 						return node.Error.Error()
 					}
 					return "unknown error"
 				}(),
+				Step:         step,
+				StepIndex:    stepIndex,
 				RetryCount:   node.RetryCount,
 				FailureTime:  time.Now(),
 			}

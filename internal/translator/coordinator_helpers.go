@@ -2,6 +2,7 @@ package translator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/nerdneilsfield/go-translator-agent/internal/document"
 	"github.com/nerdneilsfield/go-translator-agent/internal/progress"
+	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
 	"go.uber.org/zap"
 )
 
@@ -127,17 +129,20 @@ func (c *TranslationCoordinator) createSuccessResult(docID, inputFile, outputFil
 	var failedDetails []*FailedNodeDetail
 	for _, node := range nodes {
 		if node.Status == document.NodeStatusFailed {
+			errorType, step, stepIndex := extractErrorDetails(node.Error)
 			detail := &FailedNodeDetail{
 				NodeID:       node.ID,
 				OriginalText: truncateText(node.OriginalText, 200), // 限制原文长度为200字符
 				Path:         node.Path,
-				ErrorType:    classifyErrorType(node.Error),
+				ErrorType:    errorType,
 				ErrorMessage: func() string {
 					if node.Error != nil {
 						return node.Error.Error()
 					}
 					return "unknown error"
 				}(),
+				Step:         step,
+				StepIndex:    stepIndex,
 				RetryCount:   node.RetryCount,
 				FailureTime:  endTime,
 			}
@@ -283,12 +288,47 @@ func (c *TranslationCoordinator) createFailedResult(docID, inputFile, outputFile
 	}
 }
 
-// classifyErrorType 分类错误类型
+// classifyErrorType 分类错误类型，支持 TranslationError 结构化错误
 func classifyErrorType(err error) string {
 	if err == nil {
 		return "unknown"
 	}
 	
+	// 优先检查是否是 TranslationError
+	if transErr, ok := err.(*translation.TranslationError); ok {
+		// 直接使用结构化的错误代码
+		switch transErr.Code {
+		case translation.ErrCodeTimeout:
+			return "timeout"
+		case translation.ErrCodeRateLimit:
+			return "rate_limit"
+		case translation.ErrCodeNetwork:
+			return "network"
+		case translation.ErrCodeLLM:
+			return "llm_error"
+		case translation.ErrCodeConfig:
+			return "config_error"
+		case translation.ErrCodeValidation:
+			return "validation_error"
+		case translation.ErrCodeCache:
+			return "cache_error"
+		case translation.ErrCodeStep:
+			return "step_error"
+		case translation.ErrCodeChain:
+			return "chain_error"
+		default:
+			return strings.ToLower(transErr.Code)
+		}
+	}
+	
+	// 递归检查嵌套错误
+	if unwrapped := errors.Unwrap(err); unwrapped != nil {
+		if result := classifyErrorType(unwrapped); result != "unknown" {
+			return result
+		}
+	}
+	
+	// 回退到字符串匹配
 	errorMsg := strings.ToLower(err.Error())
 	switch {
 	case strings.Contains(errorMsg, "timeout"):
@@ -302,14 +342,54 @@ func classifyErrorType(err error) string {
 	case strings.Contains(errorMsg, "context canceled"):
 		return "canceled"
 	case strings.Contains(errorMsg, "translation too similar"):
-		return "similarity_check_failed"
+		return "相似度检查失败"
 	case strings.Contains(errorMsg, "invalid response"):
 		return "invalid_response"
 	case strings.Contains(errorMsg, "authentication"):
 		return "auth_error"
 	case strings.Contains(errorMsg, "quota"):
 		return "quota_exceeded"
+	case strings.Contains(errorMsg, "translation not found"):
+		return "translation_not_found"
 	default:
-		return "unknown"
+		return "未知错误"
+	}
+}
+
+// extractErrorDetails 提取错误详细信息，包括步骤信息
+func extractErrorDetails(err error) (errorType, step string, stepIndex int) {
+	if err == nil {
+		return "unknown", "", -1
+	}
+	
+	// 检查是否是 TranslationError
+	if transErr, ok := err.(*translation.TranslationError); ok {
+		errorType := classifyErrorType(transErr)
+		step := transErr.Step
+		stepIndex := getStepIndex(step)
+		return errorType, step, stepIndex
+	}
+	
+	// 递归检查嵌套错误
+	if unwrapped := errors.Unwrap(err); unwrapped != nil {
+		if errorType, step, stepIndex := extractErrorDetails(unwrapped); errorType != "unknown" {
+			return errorType, step, stepIndex
+		}
+	}
+	
+	return classifyErrorType(err), "", -1
+}
+
+// getStepIndex 获取步骤索引
+func getStepIndex(step string) int {
+	switch step {
+	case "initial_translation":
+		return 1
+	case "reflection":
+		return 2
+	case "improvement":
+		return 3
+	default:
+		return -1
 	}
 }

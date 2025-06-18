@@ -52,13 +52,15 @@ type CoordinatorConfig struct {
 
 // FailedNodeDetail 失败节点详细信息
 type FailedNodeDetail struct {
-	NodeID       int       `json:"node_id"`
-	OriginalText string    `json:"original_text"`
-	Path         string    `json:"path"`
-	ErrorType    string    `json:"error_type"`
-	ErrorMessage string    `json:"error_message"`
-	RetryCount   int       `json:"retry_count"`
-	FailureTime  time.Time `json:"failure_time"`
+	NodeID        int       `json:"node_id"`
+	OriginalText  string    `json:"original_text"`
+	Path          string    `json:"path"`
+	ErrorType     string    `json:"error_type"`
+	ErrorMessage  string    `json:"error_message"`
+	Step          string    `json:"step,omitempty"`       // 失败的翻译步骤
+	StepIndex     int       `json:"step_index,omitempty"` // 步骤索引 (1=初始翻译, 2=反思, 3=改进)
+	RetryCount    int       `json:"retry_count"`
+	FailureTime   time.Time `json:"failure_time"`
 }
 
 // TranslationRoundResult 单轮翻译结果
@@ -912,6 +914,17 @@ func (c *TranslationCoordinator) PrintDetailedTranslationSummary(result *Transla
 			fmt.Printf("  📍 路径: %s\n", detail.Path)
 			fmt.Printf("  🔄 重试次数: %d\n", detail.RetryCount)
 			fmt.Printf("  ⚠️  错误类型: %s\n", getErrorTypeDisplayName(detail.ErrorType))
+			
+			// 显示失败的翻译步骤信息
+			if detail.Step != "" {
+				stepName := getStepDisplayName(detail.Step)
+				fmt.Printf("  🔧 失败步骤: %s", stepName)
+				if detail.StepIndex > 0 {
+					fmt.Printf(" (第%d步)", detail.StepIndex)
+				}
+				fmt.Printf("\n")
+			}
+			
 			fmt.Printf("  💬 错误信息: %s\n", detail.ErrorMessage)
 			fmt.Printf("  📝 原文预览: %s\n", detail.OriginalText)
 		}
@@ -1006,5 +1019,19 @@ func getErrorTypeDisplayName(errorType string) string {
 		return "未知错误"
 	default:
 		return errorType
+	}
+}
+
+// getStepDisplayName 获取翻译步骤的显示名称
+func getStepDisplayName(step string) string {
+	switch step {
+	case "initial_translation":
+		return "初始翻译"
+	case "reflection":
+		return "反思阶段"
+	case "improvement":
+		return "改进阶段"
+	default:
+		return step
 	}
 }
