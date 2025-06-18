@@ -805,23 +805,32 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 
 		// 处理需要翻译的节点
 		if translatedContent, ok := translationMap[node.ID]; ok {
-			// 获取该节点的保护后文本（用于相似度比较）
-			protectedOriginal := ""
-			if protectedText, ok := protectedTexts[node.ID]; ok {
-				protectedOriginal = protectedText
-			} else {
-				protectedOriginal = node.OriginalText
-			}
-
-			// 检查翻译质量（使用编辑距离）- 比较保护后的文本
-			similarity := bt.calculateSimilarity(protectedOriginal, translatedContent)
-			// 相似度阈值 - 对于学术论文等包含大量术语的文本，使用较高的阈值
-			similarityThreshold := 0.95 // 只有几乎完全一样时才认为失败
 
 			// 还原保护的内容
 			restoredText := preserveManager.Restore(translatedContent)
+			
+			// 检查翻译质量 - 去掉保护符号后比较原文和译文
+			cleanOriginal := preserveManager.RemoveProtectionMarkers(node.OriginalText)
+			cleanTranslated := preserveManager.RemoveProtectionMarkers(restoredText)
+			
+			// 如果去掉保护符号后内容太短，跳过相似度检查
+			cleanOriginalLen := len(strings.TrimSpace(cleanOriginal))
+			cleanTranslatedLen := len(strings.TrimSpace(cleanTranslated))
+			minLengthForCheck := 20 // 少于20字符的内容不检查相似度
+			
+			shouldCheckSimilarity := cleanOriginalLen >= minLengthForCheck && cleanTranslatedLen >= minLengthForCheck
+			
+			var similarity float64
+			if shouldCheckSimilarity {
+				similarity = bt.calculateSimilarity(cleanOriginal, cleanTranslated)
+			} else {
+				similarity = 0.0 // 短内容默认通过检查
+			}
+			
+			// 相似度阈值 - 对于学术论文等包含大量术语的文本，使用较高的阈值
+			similarityThreshold := 0.95 // 只有几乎完全一样时才认为失败
 
-			if similarity >= similarityThreshold {
+			if shouldCheckSimilarity && similarity >= similarityThreshold {
 				// 翻译结果与原文太相似，视为失败
 				node.Status = document.NodeStatusFailed
 				node.Error = fmt.Errorf("translation too similar to original (similarity: %.2f)", similarity)
@@ -832,14 +841,18 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 						zap.Int("nodeID", node.ID),
 						zap.Float64("similarity", similarity),
 						zap.Float64("threshold", similarityThreshold),
-						zap.String("protectedOriginal", truncateText(protectedOriginal, 100)),
-						zap.String("translatedContent", truncateText(translatedContent, 100)),
+						zap.Int("cleanOriginalLen", cleanOriginalLen),
+						zap.Int("cleanTranslatedLen", cleanTranslatedLen),
+						zap.String("cleanOriginal", truncateText(cleanOriginal, 100)),
+						zap.String("cleanTranslated", truncateText(cleanTranslated, 100)),
 						zap.String("restoredText", truncateText(restoredText, 100)))
 				} else {
 					bt.logger.Warn("translation quality check failed",
 						zap.Int("nodeID", node.ID),
 						zap.Float64("similarity", similarity),
-						zap.Float64("threshold", similarityThreshold))
+						zap.Float64("threshold", similarityThreshold),
+						zap.Int("cleanOriginalLen", cleanOriginalLen),
+						zap.Int("cleanTranslatedLen", cleanTranslatedLen))
 				}
 			} else {
 				// 翻译成功

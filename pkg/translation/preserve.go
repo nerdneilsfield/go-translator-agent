@@ -123,3 +123,25 @@ func AppendPreservePrompt(prompt string, config PreserveConfig) string {
 
 	return prompt + "\n\n" + preservePrompt
 }
+
+// RemoveProtectionMarkers 移除所有保护标记，返回纯净的文本用于相似度比较
+func (pm *PreserveManager) RemoveProtectionMarkers(text string) string {
+	if !pm.config.Enabled {
+		return text
+	}
+	
+	// 构建正则模式匹配所有保护标记
+	pattern := regexp.QuoteMeta(pm.config.Prefix) + `\d+` + regexp.QuoteMeta(pm.config.Suffix)
+	re := regexp.MustCompile(pattern)
+	
+	// 移除所有保护标记
+	cleaned := re.ReplaceAllString(text, "")
+	
+	// 清理多余的空白字符
+	cleaned = strings.TrimSpace(cleaned)
+	// 将多个连续的空白字符替换为单个空格
+	cleanedRe := regexp.MustCompile(`\s+`)
+	cleaned = cleanedRe.ReplaceAllString(cleaned, " ")
+	
+	return cleaned
+}

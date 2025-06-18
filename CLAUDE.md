@@ -111,6 +111,11 @@ just clean
 - **上下文节点优化**: Optimized retry context strategy to reduce unnecessary overhead
   - Changed from max 2 nodes before/after (4 total) to max 1 node before/after (2 total)
   - Provides essential context while improving retry efficiency and reducing costs
+- **相似度检查改进**: Enhanced similarity check logic to reduce false positives:
+  - Now compares clean text (with protection markers removed) instead of protected text
+  - Skip similarity check for short content (< 20 characters) as high similarity is normal
+  - Added RemoveProtectionMarkers method to PreserveManager for accurate comparison
+  - Improved verbose logging with clean text comparison details
 - **错误分类增强**: Completely rewrote error classification system to properly handle TranslationError structures:
   - Support structured error codes (LLM_ERROR, NETWORK_ERROR, etc.) instead of only string matching
   - Recursive error unwrapping to extract nested error information
