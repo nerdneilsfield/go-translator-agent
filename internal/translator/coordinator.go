@@ -50,6 +50,40 @@ type CoordinatorConfig struct {
 	Verbose bool // 详细模式
 }
 
+// FailedNodeDetail 失败节点详细信息
+type FailedNodeDetail struct {
+	NodeID       int       `json:"node_id"`
+	OriginalText string    `json:"original_text"`
+	Path         string    `json:"path"`
+	ErrorType    string    `json:"error_type"`
+	ErrorMessage string    `json:"error_message"`
+	RetryCount   int       `json:"retry_count"`
+	FailureTime  time.Time `json:"failure_time"`
+}
+
+// TranslationRoundResult 单轮翻译结果
+type TranslationRoundResult struct {
+	RoundNumber      int                `json:"round_number"`
+	RoundType        string             `json:"round_type"` // "initial" 或 "retry"
+	TotalNodes       int                `json:"total_nodes"`
+	SuccessNodes     []int              `json:"success_nodes"`     // 本轮成功的节点ID列表
+	FailedNodes      []int              `json:"failed_nodes"`      // 本轮失败的节点ID列表
+	SuccessCount     int                `json:"success_count"`
+	FailedCount      int                `json:"failed_count"`
+	Duration         time.Duration      `json:"duration"`
+	FailedDetails    []*FailedNodeDetail `json:"failed_details,omitempty"`
+}
+
+// DetailedTranslationSummary 详细翻译汇总
+type DetailedTranslationSummary struct {
+	TotalNodes       int                       `json:"total_nodes"`
+	FinalSuccess     int                       `json:"final_success"`
+	FinalFailed      int                       `json:"final_failed"`
+	TotalRounds      int                       `json:"total_rounds"`
+	Rounds           []*TranslationRoundResult `json:"rounds"`
+	FinalFailedNodes []*FailedNodeDetail       `json:"final_failed_nodes"`
+}
+
 // NewCoordinatorConfig 从全局配置创建Coordinator专用配置
 func NewCoordinatorConfig(cfg *config.Config) CoordinatorConfig {
 	return CoordinatorConfig{
@@ -93,6 +127,8 @@ type TranslationResult struct {
 	Duration       time.Duration          `json:"duration"`
 	ErrorMessage   string                 `json:"error_message,omitempty"`
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+	FailedNodeDetails []*FailedNodeDetail `json:"failed_node_details,omitempty"`
+	DetailedSummary   *DetailedTranslationSummary `json:"detailed_summary,omitempty"`
 }
 
 // TranslationCoordinator 翻译协调器，只负责文档解析、组装和工作流协调
@@ -779,4 +815,171 @@ func clearCacheDirectory(cacheDir string) error {
 		// 删除文件或目录
 		return os.RemoveAll(path)
 	})
+}
+
+// PrintDetailedTranslationSummary 打印详细的翻译汇总信息
+func (c *TranslationCoordinator) PrintDetailedTranslationSummary(result *TranslationResult) {
+	if result.DetailedSummary == nil {
+		// 回退到简单的失败节点显示
+		c.PrintFailedNodesSummary(result)
+		return
+	}
+	
+	summary := result.DetailedSummary
+	
+	fmt.Printf("\n📊 详细翻译汇总报告\n")
+	fmt.Println(strings.Repeat("=", 80))
+	
+	// 总体统计
+	fmt.Printf("📈 总体统计:\n")
+	fmt.Printf("  📋 总节点数: %d\n", summary.TotalNodes)
+	fmt.Printf("  ✅ 最终成功: %d (%.1f%%)\n", summary.FinalSuccess, 
+		float64(summary.FinalSuccess)/float64(summary.TotalNodes)*100)
+	fmt.Printf("  ❌ 最终失败: %d (%.1f%%)\n", summary.FinalFailed,
+		float64(summary.FinalFailed)/float64(summary.TotalNodes)*100)
+	fmt.Printf("  🔄 翻译轮次: %d\n", summary.TotalRounds)
+	fmt.Println()
+	
+	// 每轮翻译详情
+	fmt.Printf("🔄 每轮翻译详情:\n")
+	for i, round := range summary.Rounds {
+		fmt.Printf("\n第 %d 轮 (%s):\n", round.RoundNumber, getRoundTypeDisplayName(round.RoundType))
+		fmt.Printf("  📊 处理节点: %d\n", round.TotalNodes)
+		fmt.Printf("  ✅ 成功: %d", round.SuccessCount)
+		if len(round.SuccessNodes) > 0 {
+			fmt.Printf(" (节点ID: %v)", round.SuccessNodes)
+		}
+		fmt.Println()
+		fmt.Printf("  ❌ 失败: %d", round.FailedCount)
+		if len(round.FailedNodes) > 0 {
+			fmt.Printf(" (节点ID: %v)", round.FailedNodes)
+		}
+		fmt.Println()
+		fmt.Printf("  ⏱️  耗时: %v\n", round.Duration)
+		
+		// 如果是最后一轮或有失败，显示错误类型统计
+		if round.FailedCount > 0 && (i == len(summary.Rounds)-1 || round.RoundType == "retry") {
+			errorTypes := make(map[string]int)
+			for _, detail := range round.FailedDetails {
+				errorTypes[detail.ErrorType]++
+			}
+			if len(errorTypes) > 0 {
+				fmt.Printf("  📋 错误类型分布:\n")
+				for errorType, count := range errorTypes {
+					fmt.Printf("    - %s: %d个\n", getErrorTypeDisplayName(errorType), count)
+				}
+			}
+		}
+	}
+	
+	// 最终失败节点详情
+	if len(summary.FinalFailedNodes) > 0 {
+		fmt.Printf("\n❌ 最终失败节点详情 (%d个):\n", len(summary.FinalFailedNodes))
+		
+		maxDisplay := 5 // 只显示前5个最终失败的节点
+		if len(summary.FinalFailedNodes) < maxDisplay {
+			maxDisplay = len(summary.FinalFailedNodes)
+		}
+		
+		for i := 0; i < maxDisplay; i++ {
+			detail := summary.FinalFailedNodes[i]
+			fmt.Printf("\n失败节点 #%d (ID: %d):\n", i+1, detail.NodeID)
+			fmt.Printf("  📍 路径: %s\n", detail.Path)
+			fmt.Printf("  🔄 重试次数: %d\n", detail.RetryCount)
+			fmt.Printf("  ⚠️  错误类型: %s\n", getErrorTypeDisplayName(detail.ErrorType))
+			fmt.Printf("  💬 错误信息: %s\n", detail.ErrorMessage)
+			fmt.Printf("  📝 原文预览: %s\n", detail.OriginalText)
+		}
+		
+		if len(summary.FinalFailedNodes) > maxDisplay {
+			fmt.Printf("\n... 还有 %d 个失败节点未显示\n", len(summary.FinalFailedNodes)-maxDisplay)
+		}
+	}
+	
+	fmt.Println(strings.Repeat("=", 80))
+}
+
+// PrintFailedNodesSummary 打印失败节点的详细信息（简化版，用作回退）
+func (c *TranslationCoordinator) PrintFailedNodesSummary(result *TranslationResult) {
+	if len(result.FailedNodeDetails) == 0 {
+		return
+	}
+	
+	fmt.Printf("\n❌ 失败节点详细信息 (%d个):\n", len(result.FailedNodeDetails))
+	fmt.Println(strings.Repeat("=", 80))
+	
+	// 按错误类型分组统计
+	errorTypeCount := make(map[string]int)
+	for _, detail := range result.FailedNodeDetails {
+		errorTypeCount[detail.ErrorType]++
+	}
+	
+	// 显示错误类型统计
+	fmt.Println("错误类型统计:")
+	for errorType, count := range errorTypeCount {
+		fmt.Printf("  - %s: %d个\n", getErrorTypeDisplayName(errorType), count)
+	}
+	fmt.Println()
+	
+	// 显示前10个失败节点的详细信息
+	maxDisplay := 10
+	if len(result.FailedNodeDetails) < maxDisplay {
+		maxDisplay = len(result.FailedNodeDetails)
+	}
+	
+	fmt.Printf("前 %d 个失败节点详情:\n", maxDisplay)
+	for i := 0; i < maxDisplay; i++ {
+		detail := result.FailedNodeDetails[i]
+		fmt.Printf("\n节点 #%d (ID: %d):\n", i+1, detail.NodeID)
+		fmt.Printf("  📍 路径: %s\n", detail.Path)
+		fmt.Printf("  🔄 重试次数: %d\n", detail.RetryCount)
+		fmt.Printf("  ⚠️  错误类型: %s\n", getErrorTypeDisplayName(detail.ErrorType))
+		fmt.Printf("  💬 错误信息: %s\n", detail.ErrorMessage)
+		fmt.Printf("  📝 原文预览: %s\n", detail.OriginalText)
+		fmt.Printf("  ⏰ 失败时间: %s\n", detail.FailureTime.Format("2006-01-02 15:04:05"))
+	}
+	
+	if len(result.FailedNodeDetails) > maxDisplay {
+		fmt.Printf("\n... 还有 %d 个失败节点未显示\n", len(result.FailedNodeDetails)-maxDisplay)
+	}
+	
+	fmt.Println(strings.Repeat("=", 80))
+}
+
+// getRoundTypeDisplayName 获取轮次类型的显示名称
+func getRoundTypeDisplayName(roundType string) string {
+	switch roundType {
+	case "initial":
+		return "初始翻译"
+	case "retry":
+		return "重试翻译"
+	default:
+		return roundType
+	}
+}
+
+// getErrorTypeDisplayName 获取错误类型的显示名称
+func getErrorTypeDisplayName(errorType string) string {
+	switch errorType {
+	case "timeout":
+		return "超时错误"
+	case "rate_limit":
+		return "频率限制"
+	case "network":
+		return "网络错误"
+	case "canceled":
+		return "操作取消"
+	case "similarity_check_failed":
+		return "相似度检查失败"
+	case "invalid_response":
+		return "无效响应"
+	case "auth_error":
+		return "认证错误"
+	case "quota_exceeded":
+		return "配额超出"
+	case "unknown":
+		return "未知错误"
+	default:
+		return errorType
+	}
 }

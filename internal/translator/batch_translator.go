@@ -23,6 +23,10 @@ type BatchTranslator struct {
 	preserveManager    *translation.PreserveManager
 	smartSplitter      *translation.SmartNodeSplitter // 智能节点分割器
 	statsManager       *stats.StatsManager            // 统计管理器
+	
+	// 详细翻译过程跟踪
+	translationRounds  []*TranslationRoundResult      // 每轮翻译的详细结果
+	mu                 sync.Mutex                     // 保护translationRounds的并发访问
 }
 
 // NewBatchTranslator 创建批量翻译器
@@ -34,11 +38,17 @@ func NewBatchTranslator(cfg TranslatorConfig, service translation.Service, logge
 		preserveManager:    translation.NewPreserveManager(translation.DefaultPreserveConfig),
 		smartSplitter:      translation.NewSmartNodeSplitter(cfg.SmartSplitter, logger),
 		statsManager:       statsManager,
+		translationRounds:  make([]*TranslationRoundResult, 0),
 	}
 }
 
 // TranslateNodes 翻译所有节点（并行版本，包含失败重试）
 func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document.NodeInfo) error {
+	// 重置翻译轮次记录
+	bt.mu.Lock()
+	bt.translationRounds = make([]*TranslationRoundResult, 0)
+	bt.mu.Unlock()
+	
 	// 批量翻译所有节点
 	bt.logger.Info("starting batch translation", zap.Int("totalNodes", len(nodes)))
 
@@ -49,7 +59,12 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 		zap.Int("concurrency", bt.config.Concurrency))
 
 	// 并行处理第一轮翻译
+	initialRoundStart := time.Now()
 	bt.processGroups(ctx, groups)
+	initialRoundDuration := time.Since(initialRoundStart)
+	
+	// 记录第一轮翻译结果
+	bt.recordTranslationRound(1, "initial", len(nodes), nodes, initialRoundDuration)
 
 	// 检查是否启用失败重试功能
 	if !bt.config.RetryOnFailure {
@@ -188,7 +203,12 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 			zap.Int("totalNodesWithContext", totalRetryNodes))
 
 		// 并行处理重试组
+		retryRoundStart := time.Now()
 		bt.processGroups(ctx, retryGroups)
+		retryRoundDuration := time.Since(retryRoundStart)
+
+		// 记录重试轮次结果
+		bt.recordTranslationRound(retry+1, "retry", len(failedNodes), failedNodes, retryRoundDuration)
 
 		// 统计重试结果
 		retrySuccessCount := 0
@@ -1345,4 +1365,103 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// recordTranslationRound 记录单轮翻译的详细结果
+func (bt *BatchTranslator) recordTranslationRound(roundNumber int, roundType string, totalNodes int, nodes []*document.NodeInfo, duration time.Duration) {
+	var successNodes []int
+	var failedNodes []int
+	var failedDetails []*FailedNodeDetail
+	
+	for _, node := range nodes {
+		if node.Status == document.NodeStatusSuccess {
+			successNodes = append(successNodes, node.ID)
+		} else {
+			failedNodes = append(failedNodes, node.ID)
+			
+			// 收集失败节点详情
+			detail := &FailedNodeDetail{
+				NodeID:       node.ID,
+				OriginalText: truncateText(node.OriginalText, 200),
+				Path:         node.Path,
+				ErrorType:    classifyErrorType(node.Error),
+				ErrorMessage: func() string {
+					if node.Error != nil {
+						return node.Error.Error()
+					}
+					return "unknown error"
+				}(),
+				RetryCount:   node.RetryCount,
+				FailureTime:  time.Now(),
+			}
+			failedDetails = append(failedDetails, detail)
+		}
+	}
+	
+	roundResult := &TranslationRoundResult{
+		RoundNumber:   roundNumber,
+		RoundType:     roundType,
+		TotalNodes:    totalNodes,
+		SuccessNodes:  successNodes,
+		FailedNodes:   failedNodes,
+		SuccessCount:  len(successNodes),
+		FailedCount:   len(failedNodes),
+		Duration:      duration,
+		FailedDetails: failedDetails,
+	}
+	
+	bt.mu.Lock()
+	bt.translationRounds = append(bt.translationRounds, roundResult)
+	bt.mu.Unlock()
+	
+	bt.logger.Info("recorded translation round",
+		zap.Int("roundNumber", roundNumber),
+		zap.String("roundType", roundType),
+		zap.Int("totalNodes", totalNodes),
+		zap.Int("successCount", len(successNodes)),
+		zap.Int("failedCount", len(failedNodes)),
+		zap.Duration("duration", duration))
+}
+
+// GetDetailedTranslationSummary 获取详细的翻译汇总
+func (bt *BatchTranslator) GetDetailedTranslationSummary(nodes []*document.NodeInfo) *DetailedTranslationSummary {
+	bt.mu.Lock()
+	defer bt.mu.Unlock()
+	
+	// 统计最终结果
+	finalSuccess := 0
+	finalFailed := 0
+	var finalFailedNodes []*FailedNodeDetail
+	
+	for _, node := range nodes {
+		if node.Status == document.NodeStatusSuccess {
+			finalSuccess++
+		} else {
+			finalFailed++
+			detail := &FailedNodeDetail{
+				NodeID:       node.ID,
+				OriginalText: truncateText(node.OriginalText, 200),
+				Path:         node.Path,
+				ErrorType:    classifyErrorType(node.Error),
+				ErrorMessage: func() string {
+					if node.Error != nil {
+						return node.Error.Error()
+					}
+					return "unknown error"
+				}(),
+				RetryCount:   node.RetryCount,
+				FailureTime:  time.Now(),
+			}
+			finalFailedNodes = append(finalFailedNodes, detail)
+		}
+	}
+	
+	return &DetailedTranslationSummary{
+		TotalNodes:       len(nodes),
+		FinalSuccess:     finalSuccess,
+		FinalFailed:      finalFailed,
+		TotalRounds:      len(bt.translationRounds),
+		Rounds:           bt.translationRounds,
+		FinalFailedNodes: finalFailedNodes,
+	}
 }

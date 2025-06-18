@@ -123,6 +123,34 @@ func (c *TranslationCoordinator) createSuccessResult(docID, inputFile, outputFil
 		"misses": totalNodes,
 	}
 
+	// 收集失败节点详细信息
+	var failedDetails []*FailedNodeDetail
+	for _, node := range nodes {
+		if node.Status == document.NodeStatusFailed {
+			detail := &FailedNodeDetail{
+				NodeID:       node.ID,
+				OriginalText: truncateText(node.OriginalText, 200), // 限制原文长度为200字符
+				Path:         node.Path,
+				ErrorType:    classifyErrorType(node.Error),
+				ErrorMessage: func() string {
+					if node.Error != nil {
+						return node.Error.Error()
+					}
+					return "unknown error"
+				}(),
+				RetryCount:   node.RetryCount,
+				FailureTime:  endTime,
+			}
+			failedDetails = append(failedDetails, detail)
+		}
+	}
+	
+	// 获取详细的翻译汇总（如果是BatchTranslator的话）
+	var detailedSummary *DetailedTranslationSummary
+	if batchTranslator, ok := c.translator.(*BatchTranslator); ok {
+		detailedSummary = batchTranslator.GetDetailedTranslationSummary(nodes)
+	}
+
 	return &TranslationResult{
 		DocID:      docID,
 		InputFile:  inputFile,
@@ -138,6 +166,8 @@ func (c *TranslationCoordinator) createSuccessResult(docID, inputFile, outputFil
 		EndTime:        &endTime,
 		Duration:       endTime.Sub(startTime),
 		Metadata:       metadata,
+		FailedNodeDetails: failedDetails,
+		DetailedSummary:   detailedSummary,
 	}
 }
 
@@ -250,5 +280,36 @@ func (c *TranslationCoordinator) createFailedResult(docID, inputFile, outputFile
 		EndTime:        &endTime,
 		Duration:       endTime.Sub(startTime),
 		ErrorMessage:   err.Error(),
+	}
+}
+
+// classifyErrorType 分类错误类型
+func classifyErrorType(err error) string {
+	if err == nil {
+		return "unknown"
+	}
+	
+	errorMsg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(errorMsg, "timeout"):
+		return "timeout"
+	case strings.Contains(errorMsg, "rate limit"):
+		return "rate_limit"
+	case strings.Contains(errorMsg, "network"):
+		return "network"
+	case strings.Contains(errorMsg, "context deadline exceeded"):
+		return "timeout"
+	case strings.Contains(errorMsg, "context canceled"):
+		return "canceled"
+	case strings.Contains(errorMsg, "translation too similar"):
+		return "similarity_check_failed"
+	case strings.Contains(errorMsg, "invalid response"):
+		return "invalid_response"
+	case strings.Contains(errorMsg, "authentication"):
+		return "auth_error"
+	case strings.Contains(errorMsg, "quota"):
+		return "quota_exceeded"
+	default:
+		return "unknown"
 	}
 }

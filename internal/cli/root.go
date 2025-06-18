@@ -263,6 +263,11 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 				zap.Float64("进度", result.Progress),
 				zap.Duration("耗时", result.Duration),
 			)
+			
+			// 如果有失败节点，显示详细信息
+			if result.FailedNodes > 0 {
+				coordinator.PrintDetailedTranslationSummary(result)
+			}
 		},
 	}
 
