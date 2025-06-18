@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+
+	"github.com/dlclark/regexp2"
 )
 
 // ThreeStepTranslator 三步翻译器实现
@@ -437,6 +439,36 @@ func (t *ThreeStepTranslator) applyProtection(text string) (string, error) {
 	protectedText = citationRe.ReplaceAllStringFunc(protectedText, func(match string) string {
 		return t.preserveManager.Protect(match)
 	})
+
+	// 保护Markdown表格（完整表格）
+	tableRe := regexp.MustCompile(`(?m)^\|.*\|[ \t]*$\n^\|[ \t]*[-:| ]+[ \t]*\|[ \t]*$(?:\n^\|.*\|[ \t]*$)*`)
+	protectedText = tableRe.ReplaceAllStringFunc(protectedText, func(match string) string {
+		return t.preserveManager.Protect(match)
+	})
+
+	// 保护单行图片（独立成段的图片）
+	standaloneImageRe := regexp.MustCompile(`(?m)^[ \t]*!\[[^\]]*\]\([^)]+\)[ \t]*$`)
+	protectedText = standaloneImageRe.ReplaceAllStringFunc(protectedText, func(match string) string {
+		return t.preserveManager.Protect(match)
+	})
+
+	// 保护HTML表格
+	htmlTableRe := regexp.MustCompile(`(?s)<table[^>]*>.*?</table>`)
+	protectedText = htmlTableRe.ReplaceAllStringFunc(protectedText, func(match string) string {
+		return t.preserveManager.Protect(match)
+	})
+
+	// 保护参考文献部分（# REFERENCES 标题及其内容到下一个标题或文件末尾）
+	referencesRe2, _ := regexp2.Compile(`(?mis)^#+\s*(references?|bibliography|参考文献)\s*$.*?(?=^#+\s|\z)`, 0)
+	if referencesRe2 != nil {
+		match, _ := referencesRe2.FindStringMatch(protectedText)
+		for match != nil {
+			matchText := match.String()
+			placeholder := t.preserveManager.Protect(matchText)
+			protectedText = strings.Replace(protectedText, matchText, placeholder, 1)
+			match, _ = referencesRe2.FindStringMatch(protectedText)
+		}
+	}
 
 	return protectedText, nil
 }

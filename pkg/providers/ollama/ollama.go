@@ -77,7 +77,7 @@ func (p *Provider) Configure(config interface{}) error {
 // Translate 执行翻译
 func (p *Provider) Translate(ctx context.Context, req *providers.ProviderRequest) (*providers.ProviderResponse, error) {
 	var prompt string
-	
+
 	// 检查是否有预构建的完整提示词（优先使用）
 	if p.isFullPrompt(req.Text) {
 		prompt = req.Text
@@ -240,8 +240,8 @@ func (p *Provider) generate(ctx context.Context, req GenerateRequest) (*Generate
 // isFullPrompt 检查是否为完整的预构建提示词
 func (p *Provider) isFullPrompt(text string) bool {
 	// 检查是否包含系统指令和翻译指令的关键标识
-	return strings.Contains(text, "You are a professional translator") && 
-		   strings.Contains(text, "🚨 CRITICAL INSTRUCTION")
+	return strings.Contains(text, "You are a professional translator") &&
+		strings.Contains(text, "🚨 CRITICAL INSTRUCTION")
 }
 
 // GenerateRequest 生成请求

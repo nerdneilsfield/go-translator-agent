@@ -129,10 +129,10 @@ type Config struct {
 	HTMLProcessingMode string `mapstructure:"html_processing_mode"` // HTML处理模式: "markdown" 或 "native"，默认 "markdown"
 
 	// 统计配置
-	EnableStats     bool   `mapstructure:"enable_stats"`      // 是否启用统计功能
-	StatsDBPath     string `mapstructure:"stats_db_path"`     // 统计数据库路径
-	StatsSaveInterval int  `mapstructure:"stats_save_interval"` // 统计数据保存间隔（秒）
-	ShowStatsTable  bool   `mapstructure:"show_stats_table"`  // 翻译完成后是否显示统计表格
+	EnableStats       bool   `mapstructure:"enable_stats"`        // 是否启用统计功能
+	StatsDBPath       string `mapstructure:"stats_db_path"`       // 统计数据库路径
+	StatsSaveInterval int    `mapstructure:"stats_save_interval"` // 统计数据保存间隔（秒）
+	ShowStatsTable    bool   `mapstructure:"show_stats_table"`    // 翻译完成后是否显示统计表格
 }
 
 // LoadConfig 从文件加载配置
@@ -276,12 +276,12 @@ func NewDefaultConfig() *Config {
 		ChunkSize:               2000, // 默认分块大小2000字符
 
 		// 统计配置默认值
-		EnableStats:       true,                                                // 默认启用统计
+		EnableStats:       true,                                           // 默认启用统计
 		StatsDBPath:       filepath.Join(cacheDir, "provider_stats.json"), // 使用cache目录
-		StatsSaveInterval: 300,                                                 // 默认5分钟保存一次
-		ShowStatsTable:    true,                                                // 默认显示统计表格
-		RetryAttempts:           3,    // 默认重试3次
-		Metadata:                make(map[string]interface{}),
+		StatsSaveInterval: 300,                                            // 默认5分钟保存一次
+		ShowStatsTable:    true,                                           // 默认显示统计表格
+		RetryAttempts:     3,                                              // 默认重试3次
+		Metadata:          make(map[string]interface{}),
 
 		// HTML/EPUB 处理配置
 		HTMLProcessingMode: "markdown", // 默认使用markdown模式

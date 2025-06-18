@@ -19,8 +19,8 @@ type MemoryCache struct {
 
 // cacheEntry 缓存条目
 type cacheEntry struct {
-	Value     string    `json:"value"`
-	Timestamp time.Time `json:"timestamp"`
+	Value     string        `json:"value"`
+	Timestamp time.Time     `json:"timestamp"`
 	TTL       time.Duration `json:"ttl,omitempty"`
 }
 
@@ -35,13 +35,13 @@ func NewMemoryCache() *MemoryCache {
 func (c *MemoryCache) Get(key string) (string, bool) {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
-	
+
 	entry, exists := c.data[key]
 	if !exists {
 		c.stats.Misses++
 		return "", false
 	}
-	
+
 	// 检查TTL
 	if entry.TTL > 0 && time.Since(entry.Timestamp) > entry.TTL {
 		// 过期，需要删除
@@ -49,7 +49,7 @@ func (c *MemoryCache) Get(key string) (string, bool) {
 		c.stats.Misses++
 		return "", false
 	}
-	
+
 	c.stats.Hits++
 	return entry.Value, true
 }
@@ -58,7 +58,7 @@ func (c *MemoryCache) Get(key string) (string, bool) {
 func (c *MemoryCache) Set(key string, value string) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	
+
 	c.data[key] = cacheEntry{
 		Value:     value,
 		Timestamp: time.Now(),
@@ -71,7 +71,7 @@ func (c *MemoryCache) Set(key string, value string) error {
 func (c *MemoryCache) SetWithTTL(key string, value string, ttl time.Duration) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	
+
 	c.data[key] = cacheEntry{
 		Value:     value,
 		Timestamp: time.Now(),
@@ -85,7 +85,7 @@ func (c *MemoryCache) SetWithTTL(key string, value string, ttl time.Duration) er
 func (c *MemoryCache) Delete(key string) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	
+
 	delete(c.data, key)
 	c.stats.Size = int64(len(c.data))
 	return nil
@@ -95,7 +95,7 @@ func (c *MemoryCache) Delete(key string) error {
 func (c *MemoryCache) Clear() error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	
+
 	c.data = make(map[string]cacheEntry)
 	c.stats = CacheStats{}
 	return nil
@@ -105,7 +105,7 @@ func (c *MemoryCache) Clear() error {
 func (c *MemoryCache) Stats() CacheStats {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
-	
+
 	return c.stats
 }
 
@@ -120,14 +120,14 @@ type FileCache struct {
 // NewFileCache 创建文件缓存
 func NewFileCache(basePath string) *FileCache {
 	// 确保缓存目录存在
-	if err := os.MkdirAll(basePath, 0755); err != nil {
+	if err := os.MkdirAll(basePath, 0o755); err != nil {
 		// 如果创建目录失败，回退到内存缓存
 		return &FileCache{
 			basePath: "",
 			memory:   NewMemoryCache(),
 		}
 	}
-	
+
 	return &FileCache{
 		basePath: basePath,
 		memory:   NewMemoryCache(),
@@ -155,26 +155,26 @@ func (c *FileCache) Get(key string) (string, bool) {
 		c.stats.Hits++
 		return value, true
 	}
-	
+
 	// 检查文件缓存
 	if c.basePath == "" {
 		c.stats.Misses++
 		return "", false
 	}
-	
+
 	filePath := c.getFilePath(key)
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		c.stats.Misses++
 		return "", false
 	}
-	
+
 	var entry cacheEntry
 	if err := json.Unmarshal(data, &entry); err != nil {
 		c.stats.Misses++
 		return "", false
 	}
-	
+
 	// 检查TTL
 	if entry.TTL > 0 && time.Since(entry.Timestamp) > entry.TTL {
 		// 过期，删除文件
@@ -182,7 +182,7 @@ func (c *FileCache) Get(key string) (string, bool) {
 		c.stats.Misses++
 		return "", false
 	}
-	
+
 	// 将结果放入内存缓存
 	c.memory.Set(key, entry.Value)
 	c.stats.Hits++
@@ -195,24 +195,24 @@ func (c *FileCache) Set(key string, value string) error {
 	if err := c.memory.Set(key, value); err != nil {
 		return err
 	}
-	
+
 	// 设置文件缓存
 	if c.basePath == "" {
 		return nil
 	}
-	
+
 	entry := cacheEntry{
 		Value:     value,
 		Timestamp: time.Now(),
 	}
-	
+
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return err
 	}
-	
+
 	filePath := c.getFilePath(key)
-	err = os.WriteFile(filePath, data, 0644)
+	err = os.WriteFile(filePath, data, 0o644)
 	if err == nil {
 		c.mutex.Lock()
 		c.stats.Size++
@@ -227,25 +227,25 @@ func (c *FileCache) SetWithTTL(key string, value string, ttl time.Duration) erro
 	if err := c.memory.SetWithTTL(key, value, ttl); err != nil {
 		return err
 	}
-	
+
 	// 设置文件缓存
 	if c.basePath == "" {
 		return nil
 	}
-	
+
 	entry := cacheEntry{
 		Value:     value,
 		Timestamp: time.Now(),
 		TTL:       ttl,
 	}
-	
+
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return err
 	}
-	
+
 	filePath := c.getFilePath(key)
-	err = os.WriteFile(filePath, data, 0644)
+	err = os.WriteFile(filePath, data, 0o644)
 	if err == nil {
 		c.mutex.Lock()
 		c.stats.Size++
@@ -258,12 +258,12 @@ func (c *FileCache) SetWithTTL(key string, value string, ttl time.Duration) erro
 func (c *FileCache) Delete(key string) error {
 	// 删除内存缓存
 	c.memory.Delete(key)
-	
+
 	// 删除文件缓存
 	if c.basePath == "" {
 		return nil
 	}
-	
+
 	filePath := c.getFilePath(key)
 	err := os.Remove(filePath)
 	if err == nil {
@@ -278,22 +278,22 @@ func (c *FileCache) Delete(key string) error {
 func (c *FileCache) Clear() error {
 	// 清除内存缓存
 	c.memory.Clear()
-	
+
 	// 清除文件缓存
 	if c.basePath == "" {
 		return nil
 	}
-	
+
 	// 删除缓存目录下的所有.cache文件
 	files, err := filepath.Glob(filepath.Join(c.basePath, "*.cache"))
 	if err != nil {
 		return err
 	}
-	
+
 	for _, file := range files {
 		os.Remove(file)
 	}
-	
+
 	c.mutex.Lock()
 	c.stats = CacheStats{}
 	c.mutex.Unlock()
@@ -304,7 +304,7 @@ func (c *FileCache) Clear() error {
 func (c *FileCache) Stats() CacheStats {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
-	
+
 	memStats := c.memory.Stats()
 	return CacheStats{
 		Hits:   c.stats.Hits + memStats.Hits,
@@ -315,15 +315,15 @@ func (c *FileCache) Stats() CacheStats {
 
 // CacheKeyComponents 缓存key组件
 type CacheKeyComponents struct {
-	Step           string // 翻译步骤名称 (initial, reflection, improvement)
-	Provider       string // 提供商名称 (openai, deepl, etc.)
-	Model          string // 模型名称 (gpt-4o, deepl, etc.)
-	SourceLang     string // 源语言
-	TargetLang     string // 目标语言
-	Text           string // 待翻译文本
-	Context        string // 额外上下文（如reflection中的初始翻译）
-	Temperature    float32 // 温度参数
-	MaxTokens      int     // 最大token数
+	Step        string  // 翻译步骤名称 (initial, reflection, improvement)
+	Provider    string  // 提供商名称 (openai, deepl, etc.)
+	Model       string  // 模型名称 (gpt-4o, deepl, etc.)
+	SourceLang  string  // 源语言
+	TargetLang  string  // 目标语言
+	Text        string  // 待翻译文本
+	Context     string  // 额外上下文（如reflection中的初始翻译）
+	Temperature float32 // 温度参数
+	MaxTokens   int     // 最大token数
 }
 
 // GenerateCacheKey 生成基于多个组件的缓存key
@@ -339,12 +339,12 @@ func GenerateCacheKey(components CacheKeyComponents) string {
 		components.MaxTokens,
 		components.Text,
 	)
-	
+
 	// 如果有额外上下文，添加进去
 	if components.Context != "" {
 		keyData += "|context:" + components.Context
 	}
-	
+
 	// 生成MD5哈希作为key
 	hash := md5.Sum([]byte(keyData))
 	return fmt.Sprintf("%x", hash)
@@ -355,10 +355,10 @@ func NewCache(useCache bool, cacheDir string) Cache {
 	if !useCache {
 		return nil
 	}
-	
+
 	if cacheDir != "" {
 		return NewFileCache(cacheDir)
 	}
-	
+
 	return NewMemoryCache()
 }

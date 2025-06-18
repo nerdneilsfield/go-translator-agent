@@ -141,15 +141,15 @@ func (c *TranslationCoordinator) createSuccessResult(docID, inputFile, outputFil
 					}
 					return "unknown error"
 				}(),
-				Step:         step,
-				StepIndex:    stepIndex,
-				RetryCount:   node.RetryCount,
-				FailureTime:  endTime,
+				Step:        step,
+				StepIndex:   stepIndex,
+				RetryCount:  node.RetryCount,
+				FailureTime: endTime,
 			}
 			failedDetails = append(failedDetails, detail)
 		}
 	}
-	
+
 	// 获取详细的翻译汇总（如果是BatchTranslator的话）
 	var detailedSummary *DetailedTranslationSummary
 	if batchTranslator, ok := c.translator.(*BatchTranslator); ok {
@@ -162,15 +162,15 @@ func (c *TranslationCoordinator) createSuccessResult(docID, inputFile, outputFil
 		OutputFile: outputFile,
 		// SourceLanguage: c.coordinatorConfig.SourceLang,
 		// TargetLanguage: c.coordinatorConfig.TargetLang,
-		TotalNodes:     totalNodes,
-		CompletedNodes: completedNodes,
-		FailedNodes:    failedNodes,
-		Progress:       progressPercent,
-		Status:         status,
-		StartTime:      startTime,
-		EndTime:        &endTime,
-		Duration:       endTime.Sub(startTime),
-		Metadata:       metadata,
+		TotalNodes:        totalNodes,
+		CompletedNodes:    completedNodes,
+		FailedNodes:       failedNodes,
+		Progress:          progressPercent,
+		Status:            status,
+		StartTime:         startTime,
+		EndTime:           &endTime,
+		Duration:          endTime.Sub(startTime),
+		Metadata:          metadata,
 		FailedNodeDetails: failedDetails,
 		DetailedSummary:   detailedSummary,
 	}
@@ -293,7 +293,7 @@ func classifyErrorType(err error) string {
 	if err == nil {
 		return "unknown"
 	}
-	
+
 	// 优先检查是否是 TranslationError
 	if transErr, ok := err.(*translation.TranslationError); ok {
 		// 直接使用结构化的错误代码
@@ -320,14 +320,14 @@ func classifyErrorType(err error) string {
 			return strings.ToLower(transErr.Code)
 		}
 	}
-	
+
 	// 递归检查嵌套错误
 	if unwrapped := errors.Unwrap(err); unwrapped != nil {
 		if result := classifyErrorType(unwrapped); result != "unknown" {
 			return result
 		}
 	}
-	
+
 	// 回退到字符串匹配
 	errorMsg := strings.ToLower(err.Error())
 	switch {
@@ -361,7 +361,7 @@ func extractErrorDetails(err error) (errorType, step string, stepIndex int) {
 	if err == nil {
 		return "unknown", "", -1
 	}
-	
+
 	// 检查是否是 TranslationError
 	if transErr, ok := err.(*translation.TranslationError); ok {
 		errorType := classifyErrorType(transErr)
@@ -369,14 +369,14 @@ func extractErrorDetails(err error) (errorType, step string, stepIndex int) {
 		stepIndex := getStepIndex(step)
 		return errorType, step, stepIndex
 	}
-	
+
 	// 递归检查嵌套错误
 	if unwrapped := errors.Unwrap(err); unwrapped != nil {
 		if errorType, step, stepIndex := extractErrorDetails(unwrapped); errorType != "unknown" {
 			return errorType, step, stepIndex
 		}
 	}
-	
+
 	return classifyErrorType(err), "", -1
 }
 

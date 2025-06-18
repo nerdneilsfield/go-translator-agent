@@ -181,10 +181,10 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 					zap.Error(err))
 				os.Exit(1)
 			}
-			tempLog.Info("文件预处理完成", 
+			tempLog.Info("文件预处理完成",
 				zap.String("原文件", inputPath),
 				zap.String("预处理文件", preformattedPath))
-			
+
 			// 确保在程序结束时清理临时文件
 			defer func() {
 				if cleanupErr := preFormatter.CleanupTempFile(preformattedPath); cleanupErr != nil {
@@ -287,7 +287,7 @@ func NewRootCommand(version, commit, buildDate string) *cobra.Command {
 				zap.Float64("进度", result.Progress),
 				zap.Duration("耗时", result.Duration),
 			)
-			
+
 			// 如果有失败节点，显示详细信息
 			if result.FailedNodes > 0 {
 				coordinator.PrintDetailedTranslationSummary(result)

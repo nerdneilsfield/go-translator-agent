@@ -52,28 +52,28 @@ type CoordinatorConfig struct {
 
 // FailedNodeDetail 失败节点详细信息
 type FailedNodeDetail struct {
-	NodeID        int       `json:"node_id"`
-	OriginalText  string    `json:"original_text"`
-	Path          string    `json:"path"`
-	ErrorType     string    `json:"error_type"`
-	ErrorMessage  string    `json:"error_message"`
-	Step          string    `json:"step,omitempty"`       // 失败的翻译步骤
-	StepIndex     int       `json:"step_index,omitempty"` // 步骤索引 (1=初始翻译, 2=反思, 3=改进)
-	RetryCount    int       `json:"retry_count"`
-	FailureTime   time.Time `json:"failure_time"`
+	NodeID       int       `json:"node_id"`
+	OriginalText string    `json:"original_text"`
+	Path         string    `json:"path"`
+	ErrorType    string    `json:"error_type"`
+	ErrorMessage string    `json:"error_message"`
+	Step         string    `json:"step,omitempty"`       // 失败的翻译步骤
+	StepIndex    int       `json:"step_index,omitempty"` // 步骤索引 (1=初始翻译, 2=反思, 3=改进)
+	RetryCount   int       `json:"retry_count"`
+	FailureTime  time.Time `json:"failure_time"`
 }
 
 // TranslationRoundResult 单轮翻译结果
 type TranslationRoundResult struct {
-	RoundNumber      int                `json:"round_number"`
-	RoundType        string             `json:"round_type"` // "initial" 或 "retry"
-	TotalNodes       int                `json:"total_nodes"`
-	SuccessNodes     []int              `json:"success_nodes"`     // 本轮成功的节点ID列表
-	FailedNodes      []int              `json:"failed_nodes"`      // 本轮失败的节点ID列表
-	SuccessCount     int                `json:"success_count"`
-	FailedCount      int                `json:"failed_count"`
-	Duration         time.Duration      `json:"duration"`
-	FailedDetails    []*FailedNodeDetail `json:"failed_details,omitempty"`
+	RoundNumber   int                 `json:"round_number"`
+	RoundType     string              `json:"round_type"` // "initial" 或 "retry"
+	TotalNodes    int                 `json:"total_nodes"`
+	SuccessNodes  []int               `json:"success_nodes"` // 本轮成功的节点ID列表
+	FailedNodes   []int               `json:"failed_nodes"`  // 本轮失败的节点ID列表
+	SuccessCount  int                 `json:"success_count"`
+	FailedCount   int                 `json:"failed_count"`
+	Duration      time.Duration       `json:"duration"`
+	FailedDetails []*FailedNodeDetail `json:"failed_details,omitempty"`
 }
 
 // DetailedTranslationSummary 详细翻译汇总
@@ -116,36 +116,36 @@ func NewCoordinatorConfig(cfg *config.Config) CoordinatorConfig {
 
 // TranslationResult 翻译结果
 type TranslationResult struct {
-	DocID          string                 `json:"doc_id"`
-	InputFile      string                 `json:"input_file"`
-	OutputFile     string                 `json:"output_file"`
-	TotalNodes     int                    `json:"total_nodes"`
-	CompletedNodes int                    `json:"completed_nodes"`
-	FailedNodes    int                    `json:"failed_nodes"`
-	Progress       float64                `json:"progress"`
-	Status         string                 `json:"status"`
-	StartTime      time.Time              `json:"start_time"`
-	EndTime        *time.Time             `json:"end_time,omitempty"`
-	Duration       time.Duration          `json:"duration"`
-	ErrorMessage   string                 `json:"error_message,omitempty"`
-	Metadata       map[string]interface{} `json:"metadata,omitempty"`
-	FailedNodeDetails []*FailedNodeDetail `json:"failed_node_details,omitempty"`
+	DocID             string                      `json:"doc_id"`
+	InputFile         string                      `json:"input_file"`
+	OutputFile        string                      `json:"output_file"`
+	TotalNodes        int                         `json:"total_nodes"`
+	CompletedNodes    int                         `json:"completed_nodes"`
+	FailedNodes       int                         `json:"failed_nodes"`
+	Progress          float64                     `json:"progress"`
+	Status            string                      `json:"status"`
+	StartTime         time.Time                   `json:"start_time"`
+	EndTime           *time.Time                  `json:"end_time,omitempty"`
+	Duration          time.Duration               `json:"duration"`
+	ErrorMessage      string                      `json:"error_message,omitempty"`
+	Metadata          map[string]interface{}      `json:"metadata,omitempty"`
+	FailedNodeDetails []*FailedNodeDetail         `json:"failed_node_details,omitempty"`
 	DetailedSummary   *DetailedTranslationSummary `json:"detailed_summary,omitempty"`
 }
 
 // TranslationCoordinator 翻译协调器，只负责文档解析、组装和工作流协调
 type TranslationCoordinator struct {
-	coordinatorConfig  CoordinatorConfig   // Coordinator专用配置
-	translationService translation.Service // 翻译服务实例
-	translator         Translator                     // 节点翻译管理器实例
-	progressTracker    *progress.Tracker
-	progressReporter   *progress.Tracker
-	formatManager      *formatter.Manager
-	formatFixRegistry  *formatfix.FixerRegistry
-	postProcessor      *TranslationPostProcessor
-	statsDB            *stats.Database
-	providerStatsManager *providerStats.StatsManager  // Provider性能统计管理器
-	logger             *zap.Logger
+	coordinatorConfig    CoordinatorConfig   // Coordinator专用配置
+	translationService   translation.Service // 翻译服务实例
+	translator           Translator          // 节点翻译管理器实例
+	progressTracker      *progress.Tracker
+	progressReporter     *progress.Tracker
+	formatManager        *formatter.Manager
+	formatFixRegistry    *formatfix.FixerRegistry
+	postProcessor        *TranslationPostProcessor
+	statsDB              *stats.Database
+	providerStatsManager *providerStats.StatsManager // Provider性能统计管理器
+	logger               *zap.Logger
 }
 
 // NewTranslationCoordinator 创建翻译协调器
@@ -225,16 +225,16 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 			providerStatsDBPath = filepath.Join(cfg.CacheDir, "provider_stats.json")
 		}
 		providerStatsManager = providerStats.NewStatsManager(providerStatsDBPath, logger)
-		
+
 		// 加载已有统计数据
 		if err := providerStatsManager.LoadFromDB(); err != nil {
 			logger.Warn("failed to load provider stats from database", zap.Error(err))
 		}
-		
-		logger.Info("provider statistics manager initialized", 
+
+		logger.Info("provider statistics manager initialized",
 			zap.String("db_path", providerStatsDBPath),
 			zap.Int("save_interval_seconds", cfg.StatsSaveInterval))
-		
+
 		// 启动自动保存協程
 		if cfg.StatsSaveInterval > 0 {
 			go providerStatsManager.AutoSaveRoutine(context.Background(), time.Duration(cfg.StatsSaveInterval)*time.Second)
@@ -251,7 +251,7 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 			// 使用默认缓存目录
 			cacheDir = filepath.Join(progressPath, "translation_cache")
 		}
-		
+
 		// 如果需要刷新缓存，先清空缓存目录
 		if cfg.RefreshCache {
 			logger.Info("refreshing translation cache",
@@ -265,7 +265,7 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 					zap.String("cache_dir", cacheDir))
 			}
 		}
-		
+
 		cache = translation.NewCache(cfg.UseCache, cacheDir)
 		logger.Info("translation cache initialized",
 			zap.Bool("enabled", cfg.UseCache),
@@ -282,7 +282,7 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 	if cache != nil {
 		translationServiceOptions = append(translationServiceOptions, translation.WithCache(cache))
 	}
-	
+
 	translationService, err := translation.New(translationConfig, translationServiceOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create translation service: %w", err)
@@ -412,13 +412,13 @@ func (c *TranslationCoordinator) TranslateFile(ctx context.Context, inputPath, o
 			if message != "" {
 				progressBar.SetDescription(fmt.Sprintf("翻译 %s - %s", inputPath, message))
 			}
-			
+
 			// 只有在有实际进度时才更新进度条数值
 			if completed > 0 && total > 0 {
 				// 根据完成的节点数量估算已处理的字符数
 				avgCharsPerNode := float64(totalChars) / float64(len(nodes))
 				processedChars := int64(float64(completed) * avgCharsPerNode)
-				
+
 				// 更新进度条（但不超过总字符数）
 				if processedChars <= totalChars {
 					// 使用SetCurrent直接设置当前进度，避免累积误差
@@ -821,24 +821,24 @@ func clearCacheDirectory(cacheDir string) error {
 	if cacheDir == "" {
 		return fmt.Errorf("cache directory is empty")
 	}
-	
+
 	// 检查目录是否存在
 	if _, err := os.Stat(cacheDir); os.IsNotExist(err) {
 		// 目录不存在，直接返回成功
 		return nil
 	}
-	
+
 	// 清空目录内容（保留目录本身）
 	return filepath.Walk(cacheDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		
+
 		// 跳过根目录本身
 		if path == cacheDir {
 			return nil
 		}
-		
+
 		// 删除文件或目录
 		return os.RemoveAll(path)
 	})
@@ -851,22 +851,22 @@ func (c *TranslationCoordinator) PrintDetailedTranslationSummary(result *Transla
 		c.PrintFailedNodesSummary(result)
 		return
 	}
-	
+
 	summary := result.DetailedSummary
-	
+
 	fmt.Printf("\n📊 详细翻译汇总报告\n")
 	fmt.Println(strings.Repeat("=", 80))
-	
+
 	// 总体统计
 	fmt.Printf("📈 总体统计:\n")
 	fmt.Printf("  📋 总节点数: %d\n", summary.TotalNodes)
-	fmt.Printf("  ✅ 最终成功: %d (%.1f%%)\n", summary.FinalSuccess, 
+	fmt.Printf("  ✅ 最终成功: %d (%.1f%%)\n", summary.FinalSuccess,
 		float64(summary.FinalSuccess)/float64(summary.TotalNodes)*100)
 	fmt.Printf("  ❌ 最终失败: %d (%.1f%%)\n", summary.FinalFailed,
 		float64(summary.FinalFailed)/float64(summary.TotalNodes)*100)
 	fmt.Printf("  🔄 翻译轮次: %d\n", summary.TotalRounds)
 	fmt.Println()
-	
+
 	// 每轮翻译详情
 	fmt.Printf("🔄 每轮翻译详情:\n")
 	for i, round := range summary.Rounds {
@@ -883,7 +883,7 @@ func (c *TranslationCoordinator) PrintDetailedTranslationSummary(result *Transla
 		}
 		fmt.Println()
 		fmt.Printf("  ⏱️  耗时: %v\n", round.Duration)
-		
+
 		// 如果是最后一轮或有失败，显示错误类型统计
 		if round.FailedCount > 0 && (i == len(summary.Rounds)-1 || round.RoundType == "retry") {
 			errorTypes := make(map[string]int)
@@ -898,23 +898,23 @@ func (c *TranslationCoordinator) PrintDetailedTranslationSummary(result *Transla
 			}
 		}
 	}
-	
+
 	// 最终失败节点详情
 	if len(summary.FinalFailedNodes) > 0 {
 		fmt.Printf("\n❌ 最终失败节点详情 (%d个):\n", len(summary.FinalFailedNodes))
-		
+
 		maxDisplay := 5 // 只显示前5个最终失败的节点
 		if len(summary.FinalFailedNodes) < maxDisplay {
 			maxDisplay = len(summary.FinalFailedNodes)
 		}
-		
+
 		for i := 0; i < maxDisplay; i++ {
 			detail := summary.FinalFailedNodes[i]
 			fmt.Printf("\n失败节点 #%d (ID: %d):\n", i+1, detail.NodeID)
 			fmt.Printf("  📍 路径: %s\n", detail.Path)
 			fmt.Printf("  🔄 重试次数: %d\n", detail.RetryCount)
 			fmt.Printf("  ⚠️  错误类型: %s\n", getErrorTypeDisplayName(detail.ErrorType))
-			
+
 			// 显示失败的翻译步骤信息
 			if detail.Step != "" {
 				stepName := getStepDisplayName(detail.Step)
@@ -924,16 +924,16 @@ func (c *TranslationCoordinator) PrintDetailedTranslationSummary(result *Transla
 				}
 				fmt.Printf("\n")
 			}
-			
+
 			fmt.Printf("  💬 错误信息: %s\n", detail.ErrorMessage)
 			fmt.Printf("  📝 原文预览: %s\n", detail.OriginalText)
 		}
-		
+
 		if len(summary.FinalFailedNodes) > maxDisplay {
 			fmt.Printf("\n... 还有 %d 个失败节点未显示\n", len(summary.FinalFailedNodes)-maxDisplay)
 		}
 	}
-	
+
 	fmt.Println(strings.Repeat("=", 80))
 }
 
@@ -942,29 +942,29 @@ func (c *TranslationCoordinator) PrintFailedNodesSummary(result *TranslationResu
 	if len(result.FailedNodeDetails) == 0 {
 		return
 	}
-	
+
 	fmt.Printf("\n❌ 失败节点详细信息 (%d个):\n", len(result.FailedNodeDetails))
 	fmt.Println(strings.Repeat("=", 80))
-	
+
 	// 按错误类型分组统计
 	errorTypeCount := make(map[string]int)
 	for _, detail := range result.FailedNodeDetails {
 		errorTypeCount[detail.ErrorType]++
 	}
-	
+
 	// 显示错误类型统计
 	fmt.Println("错误类型统计:")
 	for errorType, count := range errorTypeCount {
 		fmt.Printf("  - %s: %d个\n", getErrorTypeDisplayName(errorType), count)
 	}
 	fmt.Println()
-	
+
 	// 显示前10个失败节点的详细信息
 	maxDisplay := 10
 	if len(result.FailedNodeDetails) < maxDisplay {
 		maxDisplay = len(result.FailedNodeDetails)
 	}
-	
+
 	fmt.Printf("前 %d 个失败节点详情:\n", maxDisplay)
 	for i := 0; i < maxDisplay; i++ {
 		detail := result.FailedNodeDetails[i]
@@ -976,11 +976,11 @@ func (c *TranslationCoordinator) PrintFailedNodesSummary(result *TranslationResu
 		fmt.Printf("  📝 原文预览: %s\n", detail.OriginalText)
 		fmt.Printf("  ⏰ 失败时间: %s\n", detail.FailureTime.Format("2006-01-02 15:04:05"))
 	}
-	
+
 	if len(result.FailedNodeDetails) > maxDisplay {
 		fmt.Printf("\n... 还有 %d 个失败节点未显示\n", len(result.FailedNodeDetails)-maxDisplay)
 	}
-	
+
 	fmt.Println(strings.Repeat("=", 80))
 }
 

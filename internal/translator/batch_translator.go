@@ -23,13 +23,13 @@ type BatchTranslator struct {
 	preserveManager    *translation.PreserveManager
 	smartSplitter      *translation.SmartNodeSplitter // 智能节点分割器
 	statsManager       *stats.StatsManager            // 统计管理器
-	
+
 	// 详细翻译过程跟踪
-	translationRounds  []*TranslationRoundResult      // 每轮翻译的详细结果
-	mu                 sync.Mutex                     // 保护translationRounds的并发访问
-	
+	translationRounds []*TranslationRoundResult // 每轮翻译的详细结果
+	mu                sync.Mutex                // 保护translationRounds的并发访问
+
 	// 进度回调
-	progressCallback   ProgressCallback               // 进度回调函数
+	progressCallback ProgressCallback // 进度回调函数
 }
 
 // NewBatchTranslator 创建批量翻译器
@@ -57,7 +57,7 @@ func (bt *BatchTranslator) callProgressCallback(completed, total int, message st
 	bt.mu.Lock()
 	callback := bt.progressCallback
 	bt.mu.Unlock()
-	
+
 	if callback != nil {
 		callback(completed, total, message)
 	}
@@ -69,7 +69,7 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 	bt.mu.Lock()
 	bt.translationRounds = make([]*TranslationRoundResult, 0)
 	bt.mu.Unlock()
-	
+
 	// 批量翻译所有节点
 	bt.logger.Info("starting batch translation", zap.Int("totalNodes", len(nodes)))
 
@@ -84,7 +84,7 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 	bt.callProgressCallback(0, len(nodes), "第1轮：初始翻译")
 	bt.processGroups(ctx, groups)
 	initialRoundDuration := time.Since(initialRoundStart)
-	
+
 	// 统计第一轮成功的节点数
 	successCount := 0
 	for _, node := range nodes {
@@ -93,7 +93,7 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 		}
 	}
 	bt.callProgressCallback(successCount, len(nodes), fmt.Sprintf("第1轮完成：成功 %d/%d", successCount, len(nodes)))
-	
+
 	// 记录第一轮翻译结果
 	bt.recordTranslationRound(1, "initial", len(nodes), nodes, initialRoundDuration)
 
@@ -206,7 +206,7 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 			zap.Int("retryRound", retry),
 			zap.Int("maxRetries", maxRetries),
 			zap.Int("failedNodes", len(failedNodes)))
-		
+
 		// 通知开始重试
 		bt.callProgressCallback(0, len(failedNodes), fmt.Sprintf("第%d轮：重试 %d 个失败节点", retry+1, len(failedNodes)))
 
@@ -261,7 +261,7 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 			zap.Int("originalFailedNodes", len(failedNodes)),
 			zap.Int("nowSuccessful", retrySuccessCount),
 			zap.Int("stillFailed", retryFailedCount))
-		
+
 		// 更新进度：计算总的成功节点数
 		totalSuccessCount := 0
 		for _, node := range nodes {
@@ -269,7 +269,7 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 				totalSuccessCount++
 			}
 		}
-		bt.callProgressCallback(totalSuccessCount, len(nodes), 
+		bt.callProgressCallback(totalSuccessCount, len(nodes),
 			fmt.Sprintf("第%d轮完成：本轮成功 %d，总成功 %d/%d", retry+1, retrySuccessCount, totalSuccessCount, len(nodes)))
 
 		// 更新已处理节点集合
@@ -355,11 +355,11 @@ func (bt *BatchTranslator) processGroups(ctx context.Context, groups []*document
 			processedGroups++
 			processedNodes += completedInGroup
 			progress := float64(processedGroups) / float64(len(groups)) * 100
-			
+
 			// 调用进度回调
-			bt.callProgressCallback(processedNodes, totalNodes, 
+			bt.callProgressCallback(processedNodes, totalNodes,
 				fmt.Sprintf("处理中：%d/%d 组，%d/%d 节点", processedGroups, len(groups), processedNodes, totalNodes))
-			
+
 			bt.logger.Debug("translation progress",
 				zap.Int("completed_groups", processedGroups),
 				zap.Int("total_groups", len(groups)),
@@ -455,27 +455,43 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 			builder.WriteString(node.TranslatedText)
 			builder.WriteString(fmt.Sprintf("\n@@NODE_END_%d@@", node.ID))
 		} else {
-			// 需要翻译的节点
-			needsTranslation = true
-
 			// 保护内容
 			protectedText := bt.protectContent(node.OriginalText, preserveManager)
 			protectedTexts[node.ID] = protectedText
 
-			// 在详细模式下记录保护信息
-			if bt.config.Verbose && protectedText != node.OriginalText {
-				bt.logger.Debug("content protection applied",
+			// 检查是否是纯保护内容
+			if bt.isOnlyProtectedContent(protectedText, preserveManager) {
+				// 纯保护内容节点，直接标记为成功并使用原文
+				node.Status = document.NodeStatusSuccess
+				node.TranslatedText = node.OriginalText
+				
+				bt.logger.Debug("skipping protected-only node",
 					zap.Int("nodeID", node.ID),
-					zap.String("originalLength", fmt.Sprintf("%d chars", len(node.OriginalText))),
-					zap.String("protectedLength", fmt.Sprintf("%d chars", len(protectedText))),
-					zap.String("originalSample", truncateText(node.OriginalText, 100)),
-					zap.String("protectedSample", truncateText(protectedText, 100)))
-			}
+					zap.String("content", truncateText(node.OriginalText, 100)))
+				
+				// 添加节点标记（使用原文）
+				builder.WriteString(fmt.Sprintf("@@NODE_START_%d@@\n", node.ID))
+				builder.WriteString(node.OriginalText)
+				builder.WriteString(fmt.Sprintf("\n@@NODE_END_%d@@", node.ID))
+			} else {
+				// 需要翻译的节点
+				needsTranslation = true
 
-			// 添加节点标记
-			builder.WriteString(fmt.Sprintf("@@NODE_START_%d@@\n", node.ID))
-			builder.WriteString(protectedText)
-			builder.WriteString(fmt.Sprintf("\n@@NODE_END_%d@@", node.ID))
+				// 在详细模式下记录保护信息
+				if bt.config.Verbose && protectedText != node.OriginalText {
+					bt.logger.Debug("content protection applied",
+						zap.Int("nodeID", node.ID),
+						zap.String("originalLength", fmt.Sprintf("%d chars", len(node.OriginalText))),
+						zap.String("protectedLength", fmt.Sprintf("%d chars", len(protectedText))),
+						zap.String("originalSample", truncateText(node.OriginalText, 100)),
+						zap.String("protectedSample", truncateText(protectedText, 100)))
+				}
+
+				// 添加节点标记
+				builder.WriteString(fmt.Sprintf("@@NODE_START_%d@@\n", node.ID))
+				builder.WriteString(protectedText)
+				builder.WriteString(fmt.Sprintf("\n@@NODE_END_%d@@", node.ID))
+			}
 		}
 
 		if i < len(group.Nodes)-1 {
@@ -562,7 +578,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 	// 检查响应是否包含节点标记
 	hasStartMarkers := strings.Contains(translatedText, "@@NODE_START_")
 	hasEndMarkers := strings.Contains(translatedText, "@@NODE_END_")
-	
+
 	// 根据节点标记存在情况选择日志级别
 	if !hasStartMarkers || !hasEndMarkers {
 		bt.logger.Warn("response format check - missing node markers",
@@ -751,12 +767,12 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 
 	// 计算解析成功率
 	successRate := float64(len(foundNodeIDs)) / float64(len(inputNodeIDs)) * 100
-	
+
 	// 根据结果选择合适的日志级别
 	if len(missingNodeIDs) > 0 {
 		bt.logger.Warn("batch translation parsing results",
 			zap.Ints("inputNodeIDs", inputNodeIDs),
-			zap.Ints("foundNodeIDs", foundNodeIDs), 
+			zap.Ints("foundNodeIDs", foundNodeIDs),
 			zap.Ints("missingNodeIDs", missingNodeIDs),
 			zap.Int("inputCount", len(inputNodeIDs)),
 			zap.Int("foundCount", len(foundNodeIDs)),
@@ -808,25 +824,25 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 
 			// 还原保护的内容
 			restoredText := preserveManager.Restore(translatedContent)
-			
+
 			// 检查翻译质量 - 去掉保护符号后比较原文和译文
 			cleanOriginal := preserveManager.RemoveProtectionMarkers(node.OriginalText)
 			cleanTranslated := preserveManager.RemoveProtectionMarkers(restoredText)
-			
+
 			// 如果去掉保护符号后内容太短，跳过相似度检查
 			cleanOriginalLen := len(strings.TrimSpace(cleanOriginal))
 			cleanTranslatedLen := len(strings.TrimSpace(cleanTranslated))
 			minLengthForCheck := 20 // 少于20字符的内容不检查相似度
-			
+
 			shouldCheckSimilarity := cleanOriginalLen >= minLengthForCheck && cleanTranslatedLen >= minLengthForCheck
-			
+
 			var similarity float64
 			if shouldCheckSimilarity {
 				similarity = bt.calculateSimilarity(cleanOriginal, cleanTranslated)
 			} else {
 				similarity = 0.0 // 短内容默认通过检查
 			}
-			
+
 			// 相似度阈值 - 对于学术论文等包含大量术语的文本，使用较高的阈值
 			similarityThreshold := 0.95 // 只有几乎完全一样时才认为失败
 
@@ -1041,9 +1057,9 @@ func (bt *BatchTranslator) protectContent(text string, pm *translation.PreserveM
 	text = pm.ProtectPattern(text, `\.{1,2}/(?:[^/\s]+/)*[^/\s]+(?:\.[a-zA-Z0-9]+)?`)
 
 	// Markdown 图片和链接
-	text = pm.ProtectPattern(text, `!\[[^\]]*\]\([^)]+\)`)  // ![alt text](image url)
-	text = pm.ProtectPattern(text, `\[[^\]]+\]\([^)]+\)`)   // [link text](url)
-	text = pm.ProtectPattern(text, `\[[^\]]+\]\[[^\]]*\]`)  // [link text][ref]
+	text = pm.ProtectPattern(text, `!\[[^\]]*\]\([^)]+\)`)      // ![alt text](image url)
+	text = pm.ProtectPattern(text, `\[[^\]]+\]\([^)]+\)`)       // [link text](url)
+	text = pm.ProtectPattern(text, `\[[^\]]+\]\[[^\]]*\]`)      // [link text][ref]
 	text = pm.ProtectPattern(text, `(?m)^\s*\[[^\]]+\]:\s*.+$`) // [ref]: url (引用定义，多行模式)
 
 	// 引用标记
@@ -1429,13 +1445,13 @@ func (bt *BatchTranslator) recordTranslationRound(roundNumber int, roundType str
 	var successNodes []int
 	var failedNodes []int
 	var failedDetails []*FailedNodeDetail
-	
+
 	for _, node := range nodes {
 		if node.Status == document.NodeStatusSuccess {
 			successNodes = append(successNodes, node.ID)
 		} else {
 			failedNodes = append(failedNodes, node.ID)
-			
+
 			// 收集失败节点详情，包括步骤信息
 			errorType, step, stepIndex := extractErrorDetails(node.Error)
 			detail := &FailedNodeDetail{
@@ -1449,15 +1465,15 @@ func (bt *BatchTranslator) recordTranslationRound(roundNumber int, roundType str
 					}
 					return "unknown error"
 				}(),
-				Step:         step,
-				StepIndex:    stepIndex,
-				RetryCount:   node.RetryCount,
-				FailureTime:  time.Now(),
+				Step:        step,
+				StepIndex:   stepIndex,
+				RetryCount:  node.RetryCount,
+				FailureTime: time.Now(),
 			}
 			failedDetails = append(failedDetails, detail)
 		}
 	}
-	
+
 	roundResult := &TranslationRoundResult{
 		RoundNumber:   roundNumber,
 		RoundType:     roundType,
@@ -1469,11 +1485,11 @@ func (bt *BatchTranslator) recordTranslationRound(roundNumber int, roundType str
 		Duration:      duration,
 		FailedDetails: failedDetails,
 	}
-	
+
 	bt.mu.Lock()
 	bt.translationRounds = append(bt.translationRounds, roundResult)
 	bt.mu.Unlock()
-	
+
 	bt.logger.Info("recorded translation round",
 		zap.Int("roundNumber", roundNumber),
 		zap.String("roundType", roundType),
@@ -1487,12 +1503,12 @@ func (bt *BatchTranslator) recordTranslationRound(roundNumber int, roundType str
 func (bt *BatchTranslator) GetDetailedTranslationSummary(nodes []*document.NodeInfo) *DetailedTranslationSummary {
 	bt.mu.Lock()
 	defer bt.mu.Unlock()
-	
+
 	// 统计最终结果
 	finalSuccess := 0
 	finalFailed := 0
 	var finalFailedNodes []*FailedNodeDetail
-	
+
 	for _, node := range nodes {
 		if node.Status == document.NodeStatusSuccess {
 			finalSuccess++
@@ -1510,15 +1526,15 @@ func (bt *BatchTranslator) GetDetailedTranslationSummary(nodes []*document.NodeI
 					}
 					return "unknown error"
 				}(),
-				Step:         step,
-				StepIndex:    stepIndex,
-				RetryCount:   node.RetryCount,
-				FailureTime:  time.Now(),
+				Step:        step,
+				StepIndex:   stepIndex,
+				RetryCount:  node.RetryCount,
+				FailureTime: time.Now(),
 			}
 			finalFailedNodes = append(finalFailedNodes, detail)
 		}
 	}
-	
+
 	return &DetailedTranslationSummary{
 		TotalNodes:       len(nodes),
 		FinalSuccess:     finalSuccess,
@@ -1527,4 +1543,14 @@ func (bt *BatchTranslator) GetDetailedTranslationSummary(nodes []*document.NodeI
 		Rounds:           bt.translationRounds,
 		FinalFailedNodes: finalFailedNodes,
 	}
+}
+
+// isOnlyProtectedContent 检查文本是否只包含保护标记和空白字符
+func (bt *BatchTranslator) isOnlyProtectedContent(text string, preserveManager *translation.PreserveManager) bool {
+	// 移除所有保护标记
+	cleanedText := preserveManager.RemoveProtectionMarkers(text)
+	
+	// 如果移除保护标记后只剩下空白字符，则认为是纯保护内容
+	trimmedText := strings.TrimSpace(cleanedText)
+	return trimmedText == ""
 }

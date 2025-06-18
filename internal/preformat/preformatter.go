@@ -68,7 +68,7 @@ func (pf *PreFormatter) applyAllRules(content string) string {
 	content = pf.convertHTMLTables(content)
 	content = pf.convertBareLinks(content)
 	content = pf.separateReferences(content)
-	
+
 	return content
 }
 
@@ -76,13 +76,13 @@ func (pf *PreFormatter) applyAllRules(content string) string {
 func (pf *PreFormatter) separateImages(content string) string {
 	// 匹配图片模式：![...](...)，后面可能跟着标题
 	imagePattern := regexp.MustCompile(`(!\[[^\]]*\]\([^)]+\))\s*([^.\n]*\.?)`)
-	
+
 	result := imagePattern.ReplaceAllStringFunc(content, func(match string) string {
 		parts := imagePattern.FindStringSubmatch(match)
 		if len(parts) >= 3 {
 			imageLink := parts[1]
 			caption := strings.TrimSpace(parts[2])
-			
+
 			// 确保图片前后有空行
 			replacement := fmt.Sprintf("\n\n%s\n\n", imageLink)
 			if caption != "" && caption != "." {
@@ -101,13 +101,13 @@ func (pf *PreFormatter) separateImages(content string) string {
 func (pf *PreFormatter) standardizeFormulas(content string) string {
 	// 匹配 $$ ... $$ 模式，可能跨多行
 	formulaPattern := regexp.MustCompile(`\$\$\s*([^$]+?)\s*\$\$`)
-	
+
 	result := formulaPattern.ReplaceAllStringFunc(content, func(match string) string {
 		// 提取公式内容
 		parts := formulaPattern.FindStringSubmatch(match)
 		if len(parts) >= 2 {
 			formulaContent := strings.TrimSpace(parts[1])
-			
+
 			// 标准化格式：前后空行，公式内容单独行
 			return fmt.Sprintf("\n\n$$\n%s\n$$\n\n", formulaContent)
 		}
@@ -122,7 +122,7 @@ func (pf *PreFormatter) standardizeFormulas(content string) string {
 func (pf *PreFormatter) convertHTMLTables(content string) string {
 	// 检查是否包含HTML表格
 	htmlTablePattern := regexp.MustCompile(`<html><body><table>.*?</table></body></html>`)
-	
+
 	result := htmlTablePattern.ReplaceAllStringFunc(content, func(match string) string {
 		markdown := pf.htmlTableToMarkdown(match)
 		if markdown != "" {
@@ -146,7 +146,7 @@ func (pf *PreFormatter) htmlTableToMarkdown(htmlTable string) string {
 	}
 
 	var rows [][]string
-	
+
 	doc.Find("tr").Each(func(i int, tr *goquery.Selection) {
 		var row []string
 		tr.Find("td, th").Each(func(j int, cell *goquery.Selection) {
@@ -167,20 +167,20 @@ func (pf *PreFormatter) htmlTableToMarkdown(htmlTable string) string {
 
 	// 生成Markdown表格
 	var markdown strings.Builder
-	
+
 	// 第一行作为表头
 	if len(rows) > 0 {
 		markdown.WriteString("| ")
 		markdown.WriteString(strings.Join(rows[0], " | "))
 		markdown.WriteString(" |\n")
-		
+
 		// 分隔线
 		markdown.WriteString("|")
 		for range rows[0] {
 			markdown.WriteString(" --- |")
 		}
 		markdown.WriteString("\n")
-		
+
 		// 数据行
 		for i := 1; i < len(rows); i++ {
 			markdown.WriteString("| ")
@@ -196,9 +196,9 @@ func (pf *PreFormatter) htmlTableToMarkdown(htmlTable string) string {
 func (pf *PreFormatter) convertBareLinks(content string) string {
 	// 匹配各种URL模式
 	urlPatterns := []*regexp.Regexp{
-		regexp.MustCompile(`\bhttps?://[^\s\[\]()]+`),     // HTTP(S) URLs
-		regexp.MustCompile(`\bdoi:[^\s\[\]()]+`),          // DOI links
-		regexp.MustCompile(`\barXiv:[^\s\[\]()]+`),        // arXiv links
+		regexp.MustCompile(`\bhttps?://[^\s\[\]()]+`), // HTTP(S) URLs
+		regexp.MustCompile(`\bdoi:[^\s\[\]()]+`),      // DOI links
+		regexp.MustCompile(`\barXiv:[^\s\[\]()]+`),    // arXiv links
 	}
 
 	result := content
@@ -207,14 +207,14 @@ func (pf *PreFormatter) convertBareLinks(content string) string {
 	for _, pattern := range urlPatterns {
 		matches := pattern.FindAllString(result, -1)
 		totalMatches += len(matches)
-		
+
 		result = pattern.ReplaceAllStringFunc(result, func(url string) string {
 			// 检查是否已经在Markdown链接中
-			if strings.Contains(content, fmt.Sprintf("(%s)", url)) || 
-			   strings.Contains(content, fmt.Sprintf("[%s]", url)) {
+			if strings.Contains(content, fmt.Sprintf("(%s)", url)) ||
+				strings.Contains(content, fmt.Sprintf("[%s]", url)) {
 				return url // 已经是链接格式，不处理
 			}
-			
+
 			// 转换为Markdown链接格式并保护
 			return fmt.Sprintf("[%s](%s)", url, url)
 		})
@@ -228,15 +228,15 @@ func (pf *PreFormatter) convertBareLinks(content string) string {
 func (pf *PreFormatter) separateReferences(content string) string {
 	// 查找REFERENCES部分 - 使用更灵活的匹配
 	refPattern := regexp.MustCompile(`(?is)#\s*REFERENCES\s*\n(.*?)(?:\n*$)`)
-	
+
 	result := refPattern.ReplaceAllStringFunc(content, func(match string) string {
 		parts := refPattern.FindStringSubmatch(match)
 		if len(parts) >= 2 {
 			referencesContent := parts[1]
-			
+
 			// 分离各个文献
 			separated := pf.separateIndividualReferences(referencesContent)
-			
+
 			// 保护整个引用部分
 			return fmt.Sprintf("# REFERENCES\n\n<!-- REFERENCES_PROTECTED -->\n%s\n<!-- /REFERENCES_PROTECTED -->\n", separated)
 		}
@@ -252,23 +252,23 @@ func (pf *PreFormatter) separateIndividualReferences(references string) string {
 	// 使用简单的分割方法来处理文献
 	// 先按 [数字] 模式分割
 	refItemPattern := regexp.MustCompile(`\[(\d+)\]`)
-	
+
 	// 找到所有编号位置
 	matches := refItemPattern.FindAllStringSubmatchIndex(references, -1)
 	if len(matches) == 0 {
 		// 如果没有匹配到编号，直接返回原内容
 		return strings.TrimSpace(references)
 	}
-	
+
 	var separated strings.Builder
-	
+
 	for i, match := range matches {
 		if len(match) >= 4 {
 			// 提取文献编号
 			refNumStart := match[2]
 			refNumEnd := match[3]
 			refNum := references[refNumStart:refNumEnd]
-			
+
 			// 确定文献内容的开始和结束位置
 			contentStart := match[1] // ] 之后的位置
 			var contentEnd int
@@ -279,11 +279,11 @@ func (pf *PreFormatter) separateIndividualReferences(references string) string {
 				// 最后一个文献，到字符串结尾
 				contentEnd = len(references)
 			}
-			
+
 			// 提取并清理文献内容
 			refContent := strings.TrimSpace(references[contentStart:contentEnd])
 			refContent = regexp.MustCompile(`\s+`).ReplaceAllString(refContent, " ")
-			
+
 			// 如果文献内容不为空，添加到结果中
 			if refContent != "" {
 				separated.WriteString(fmt.Sprintf("[%s] %s\n\n", refNum, refContent))
@@ -296,7 +296,7 @@ func (pf *PreFormatter) separateIndividualReferences(references string) string {
 		// 如果处理后没有内容，返回原始内容
 		return strings.TrimSpace(references)
 	}
-	
+
 	return result
 }
 
@@ -322,10 +322,10 @@ func (pf *PreFormatter) createTempFile(originalPath string) (string, error) {
 	base := filepath.Base(originalPath)
 	ext := filepath.Ext(originalPath)
 	name := strings.TrimSuffix(base, ext)
-	
+
 	tempName := fmt.Sprintf("%s_preformatted%s", name, ext)
 	tempPath := filepath.Join(dir, tempName)
-	
+
 	return tempPath, nil
 }
 

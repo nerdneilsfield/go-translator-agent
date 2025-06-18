@@ -75,7 +75,7 @@ func (p *Provider) Configure(config interface{}) error {
 func (p *Provider) Translate(ctx context.Context, req *providers.ProviderRequest) (*providers.ProviderResponse, error) {
 	// 检查是否有预构建的完整提示词（优先使用）
 	var messages []Message
-	
+
 	// 如果Text看起来像是完整的提示词（包含系统指令），直接使用
 	if contains, systemPart, userPart := p.parseFullPrompt(req.Text); contains {
 		messages = []Message{
@@ -84,7 +84,7 @@ func (p *Provider) Translate(ctx context.Context, req *providers.ProviderRequest
 				Content: systemPart,
 			},
 			{
-				Role:    "user", 
+				Role:    "user",
 				Content: userPart,
 			},
 		}
@@ -247,16 +247,16 @@ func (p *Provider) chat(ctx context.Context, req ChatRequest) (*ChatResponse, er
 // parseFullPrompt 解析完整提示词，分离系统指令和用户内容
 func (p *Provider) parseFullPrompt(text string) (bool, string, string) {
 	// 检查是否包含系统指令和翻译指令的关键标识
-	if strings.Contains(text, "You are a professional translator") && 
-	   strings.Contains(text, "🚨 CRITICAL INSTRUCTION") {
-		
+	if strings.Contains(text, "You are a professional translator") &&
+		strings.Contains(text, "🚨 CRITICAL INSTRUCTION") {
+
 		// 按双换行分割系统指令和用户内容
 		parts := strings.SplitN(text, "\n\n", 2)
 		if len(parts) == 2 {
 			return true, parts[0], parts[1]
 		}
 	}
-	
+
 	return false, "", ""
 }
 

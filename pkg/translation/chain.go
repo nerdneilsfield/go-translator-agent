@@ -370,7 +370,7 @@ func (s *step) executeWithProvider(ctx context.Context, input StepInput) (*StepO
 
 	// 移除推理标记（总是尝试，如果没有推理标记则无副作用）
 	cleanedText := RemoveReasoningMarkers(resp.Text)
-	
+
 	output := &StepOutput{
 		Text:      cleanedText,
 		Model:     model,
@@ -438,7 +438,7 @@ func (s *step) executeWithLLM(ctx context.Context, input StepInput) (*StepOutput
 
 	// 移除推理标记（总是尝试，如果没有推理标记则无副作用）
 	cleanedText := RemoveReasoningMarkers(resp.Message.Content)
-	
+
 	output := &StepOutput{
 		Text:      cleanedText,
 		Model:     resp.Model,
