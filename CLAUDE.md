@@ -108,6 +108,9 @@ just clean
 - **重试机制修复**: Fixed critical bug where retry rounds had 0% success rate due to node reference issues
   - Root cause: `groupFailedNodesWithContext` was creating new NodeInfo objects instead of reusing original references
   - Fix: Use original node references so status updates are reflected in the main nodes array
+- **上下文节点优化**: Optimized retry context strategy to reduce unnecessary overhead
+  - Changed from max 2 nodes before/after (4 total) to max 1 node before/after (2 total)
+  - Provides essential context while improving retry efficiency and reducing costs
 - **错误分类增强**: Completely rewrote error classification system to properly handle TranslationError structures:
   - Support structured error codes (LLM_ERROR, NETWORK_ERROR, etc.) instead of only string matching
   - Recursive error unwrapping to extract nested error information

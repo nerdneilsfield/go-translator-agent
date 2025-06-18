@@ -1261,26 +1261,22 @@ func (bt *BatchTranslator) groupFailedNodesWithContext(allNodes []*document.Node
 		// 添加失败节点本身
 		includeSet[failed.ID] = true
 
-		// 添加前面的上下文节点（最多2个）
-		contextBefore := 0
-		for i := idx - 1; i >= 0 && contextBefore < 2; i-- {
-			nodeID := allNodes[i].ID
+		// 添加前面的上下文节点（最多1个）
+		if idx > 0 {
+			prevNodeID := allNodes[idx-1].ID
 			// 只添加已成功翻译的节点作为上下文
-			if !includeSet[nodeID] && processedNodes[nodeID] {
-				includeSet[nodeID] = true
-				contextBefore++
+			if !includeSet[prevNodeID] && processedNodes[prevNodeID] {
+				includeSet[prevNodeID] = true
 				contextNodeCount++
 			}
 		}
 
-		// 添加后面的上下文节点（最多2个）
-		contextAfter := 0
-		for i := idx + 1; i < len(allNodes) && contextAfter < 2; i++ {
-			nodeID := allNodes[i].ID
+		// 添加后面的上下文节点（最多1个）
+		if idx < len(allNodes)-1 {
+			nextNodeID := allNodes[idx+1].ID
 			// 只添加已成功翻译的节点作为上下文
-			if !includeSet[nodeID] && processedNodes[nodeID] {
-				includeSet[nodeID] = true
-				contextAfter++
+			if !includeSet[nextNodeID] && processedNodes[nextNodeID] {
+				includeSet[nextNodeID] = true
 				contextNodeCount++
 			}
 		}
