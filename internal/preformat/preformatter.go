@@ -68,14 +68,23 @@ func (pf *PreFormatter) applyAllRules(content string) string {
 	content = pf.convertHTMLTables(content)
 	content = pf.convertBareLinks(content)
 	content = pf.separateReferences(content)
+	content = pf.removeMultipleNewlines(content)
+	return content
+}
 
+func (pf *PreFormatter) removeMultipleNewlines(content string) string {
+	pattern := regexp.MustCompile(`\n{3,}`)
+	content = pattern.ReplaceAllString(content, "\n\n")
+	pattern = regexp.MustCompile(`\n\s+\n`)
+	content = pattern.ReplaceAllString(content, "\n\n")
 	return content
 }
 
 // separateImages 分离图片，使其单独成段
 func (pf *PreFormatter) separateImages(content string) string {
-	// 匹配图片模式：![...](...)，后面可能跟着标题
-	imagePattern := regexp.MustCompile(`(!\[[^\]]*\]\([^)]+\))\s*([^.\n]*\.?)`)
+	// 匹配图片模式：![...](...)，后面同一行可能跟着标题
+	// 使用非贪婪匹配直到行尾，避免在标题中的句点导致截断
+	imagePattern := regexp.MustCompile(`(!\[[^\]]*\]\([^)]*\))\s*([^\n]*)`)
 
 	result := imagePattern.ReplaceAllStringFunc(content, func(match string) string {
 		parts := imagePattern.FindStringSubmatch(match)
@@ -83,10 +92,12 @@ func (pf *PreFormatter) separateImages(content string) string {
 			imageLink := parts[1]
 			caption := strings.TrimSpace(parts[2])
 
-			// 确保图片前后有空行
+			// 构造替换文本：图片单独成段，标题（若存在且非空）紧随其后单独成段
 			replacement := fmt.Sprintf("\n\n%s\n\n", imageLink)
-			if caption != "" && caption != "." {
-				replacement += fmt.Sprintf("%s\n\n", caption)
+			// 过滤纯标点或空字符串
+			captionClean := strings.TrimSpace(caption)
+			if captionClean != "" && captionClean != "." {
+				replacement += fmt.Sprintf("%s\n\n", captionClean)
 			}
 			return replacement
 		}
