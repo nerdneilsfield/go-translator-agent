@@ -183,6 +183,19 @@ just clean
   - Final failure details with error categorization and node previews
   - Performance metrics (duration per round, error distribution)
 
+### Comprehensive Document Pre-Processing System (2025-06-18)
+
+- **OCR Content Optimization**: Implemented comprehensive pre-processing pipeline to handle OCR-generated markdown issues:
+  - **Image Separation**: Automatically separates inline images into standalone paragraphs with proper spacing
+  - **Mathematical Formula Standardization**: Converts inline math formulas to multi-line format with proper spacing
+  - **HTML Table Conversion**: Converts `<html><body><table>` structures to clean Markdown table format with protection markers
+  - **Bare Link Wrapping**: Automatically converts bare URLs (http/https, DOI, arXiv) to proper Markdown link format
+  - **Reference Citation Separation**: Processes reference sections with individual citation formatting and protection markers
+- **Content Protection**: All processed elements are wrapped with protection markers to prevent translation interference
+- **Intelligent Processing**: Only processes valid structures and skips malformed content appropriately
+- **Temporary File Management**: Creates temporary pre-processed files with automatic cleanup
+- **Comprehensive Logging**: Detailed debug logging for each processing step with match counts and statistics
+
 ### Key File Locations for Recent Changes
 
 - **`internal/translator/progress_bar.go`**: Progress bar throttling optimization (100ms → 50ms)
@@ -190,7 +203,8 @@ just clean
 - **`internal/translator/coordinator.go`**: Progress callback integration, cache refresh functionality, and detailed summary reporting
 - **`pkg/providers/provider.go`**: Network timeout configuration (30s → 5min)
 - **`pkg/translation/chain.go`**: Reasoning marker removal in Provider and LLM execution paths  
-- **`internal/cli/root.go`**: Cache refresh flag handling and detailed output display
+- **`internal/cli/root.go`**: Cache refresh flag handling, detailed output display, and preformat integration
+- **`internal/preformat/preformatter.go`**: Comprehensive document pre-processing system for OCR-generated content
 
 ## Development Notes
 
