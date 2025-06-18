@@ -275,10 +275,10 @@ func NewDefaultConfig() *Config {
 		ChunkSize:               2000, // 默认分块大小2000字符
 
 		// 统计配置默认值
-		EnableStats:       true,                      // 默认启用统计
-		StatsDBPath:       "stats/provider_stats.json", // 默认统计数据库路径
-		StatsSaveInterval: 300,                       // 默认5分钟保存一次
-		ShowStatsTable:    true,                      // 默认显示统计表格
+		EnableStats:       true,                                                // 默认启用统计
+		StatsDBPath:       filepath.Join(cacheDir, "provider_stats.json"), // 使用cache目录
+		StatsSaveInterval: 300,                                                 // 默认5分钟保存一次
+		ShowStatsTable:    true,                                                // 默认显示统计表格
 		RetryAttempts:           3,    // 默认重试3次
 		Metadata:                make(map[string]interface{}),
 

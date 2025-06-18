@@ -182,7 +182,8 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 	if cfg.EnableStats {
 		providerStatsDBPath := cfg.StatsDBPath
 		if providerStatsDBPath == "" {
-			providerStatsDBPath = filepath.Join(progressPath, "provider_stats.json")
+			// 使用cache目录作为默认路径
+			providerStatsDBPath = filepath.Join(cfg.CacheDir, "provider_stats.json")
 		}
 		providerStatsManager = providerStats.NewStatsManager(providerStatsDBPath, logger)
 		

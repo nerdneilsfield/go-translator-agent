@@ -67,7 +67,7 @@ type ProviderStats struct {
 - 智能错误分类和质量检测
 
 **3. 数据持久化**:
-- JSON数据库存储: `stats/provider_stats.json`
+- JSON数据库存储: `{cache_dir}/provider_stats.json` (使用全局cache目录)
 - 自动保存机制: 默认5分钟保存一次
 - 跨会话数据积累: 启动时自动加载历史数据
 
@@ -75,7 +75,7 @@ type ProviderStats struct {
 ```yaml
 # 统计配置
 enable_stats: true                          # 是否启用Provider性能统计
-stats_db_path: "stats/provider_stats.json"   # 统计数据库路径
+stats_db_path: ""                            # 统计数据库路径（空表示使用cache目录）
 stats_save_interval: 300                    # 自动保存间隔（秒）
 show_stats_table: true                      # 翻译完成后显示统计表格
 ```
