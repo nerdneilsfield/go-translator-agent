@@ -403,6 +403,31 @@ func (c *TranslationCoordinator) TranslateFile(ctx context.Context, inputPath, o
 	progressBar := NewProgressBar(totalChars, fmt.Sprintf("翻译 %s", inputPath))
 	defer progressBar.Finish()
 
+	// 为BatchTranslator设置进度回调
+	if batchTranslator, ok := c.translator.(*BatchTranslator); ok {
+		batchTranslator.SetProgressCallback(func(completed, total int, message string) {
+			// 更新描述信息（即使completed=0也要更新）
+			if message != "" {
+				progressBar.SetDescription(fmt.Sprintf("翻译 %s - %s", inputPath, message))
+			}
+			
+			// 只有在有实际进度时才更新进度条数值
+			if completed > 0 && total > 0 {
+				// 根据完成的节点数量估算已处理的字符数
+				avgCharsPerNode := float64(totalChars) / float64(len(nodes))
+				processedChars := int64(float64(completed) * avgCharsPerNode)
+				
+				// 更新进度条（但不超过总字符数）
+				if processedChars <= totalChars {
+					// 使用SetCurrent直接设置当前进度，避免累积误差
+					progressBar.bar.ChangeMax64(totalChars)
+					progressBar.bar.Set64(processedChars)
+					progressBar.processedChars = processedChars
+				}
+			}
+		})
+	}
+
 	// 使用Translator进行节点分组和并行翻译
 	err = c.translator.TranslateNodes(ctx, nodes)
 	if err != nil {

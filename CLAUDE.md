@@ -101,6 +101,45 @@ just clean
 - Tests are organized by functionality (translator_tests/, html/, etc.)
 - Use `make test` to run all tests with coverage reporting
 
+## Recent Updates
+
+### Progress Bar Optimization & Enhanced Debugging (2025-06-18)
+
+- **进度条更新频率优化**: Improved progress bar update frequency from 100ms to 50ms throttling for better visibility with increased logging
+- **实时进度回调**: Implemented comprehensive progress callback system with real-time updates during translation rounds:
+  - Group-level progress tracking during concurrent translation processing
+  - Round-by-round progress updates (initial translation, retry rounds)
+  - Node-level completion tracking with detailed status messages
+- **改进的进度显示**: Enhanced progress display with contextual messages showing current operation status
+- **线程安全的进度更新**: Thread-safe progress callback mechanism for concurrent translation operations
+
+### Translation Failure Debugging & Cache Management (2025-06-18)
+
+- **Network Timeout Fix**: Increased default provider timeout from 30 seconds to 5 minutes to support long-running LLM requests
+- **Reasoning Marker Removal**: Enhanced `<think>` tag removal in translation chain execution paths with safer processing
+- **Markdown Protection**: Added comprehensive protection for Markdown images (`![alt](url)`) and links (`[text](url)`) during translation
+- **Cache Refresh**: Implemented `--refresh-cache` functionality to clear translation cache before starting new translations
+
+### Detailed Translation Round Tracking (2025-06-18)
+
+- **Multi-Round Statistics**: Track and display detailed statistics for each translation round (initial + retries)
+- **Node-Level Tracking**: Record which specific nodes succeed/fail in each round with node IDs
+- **Failure Analysis**: Comprehensive error type classification (timeout, network, auth, rate limit, etc.)
+- **Visual Reporting**: Rich console output with emoji icons and structured failure reports showing:
+  - Document-level statistics (total nodes, success rate, total rounds)
+  - Round-by-round breakdown (which nodes succeeded/failed in each attempt)
+  - Final failure details with error categorization and node previews
+  - Performance metrics (duration per round, error distribution)
+
+### Key File Locations for Recent Changes
+
+- **`internal/translator/progress_bar.go`**: Progress bar throttling optimization (100ms → 50ms)
+- **`internal/translator/batch_translator.go`**: Progress callback system, group-level progress tracking, and detailed round tracking
+- **`internal/translator/coordinator.go`**: Progress callback integration, cache refresh functionality, and detailed summary reporting
+- **`pkg/providers/provider.go`**: Network timeout configuration (30s → 5min)
+- **`pkg/translation/chain.go`**: Reasoning marker removal in Provider and LLM execution paths  
+- **`internal/cli/root.go`**: Cache refresh flag handling and detailed output display
+
 ## Development Notes
 
 - The project uses Go modules with toolchain 1.23.4

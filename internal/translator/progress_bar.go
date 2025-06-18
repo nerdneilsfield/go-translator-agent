@@ -25,7 +25,7 @@ func NewProgressBar(totalChars int64, description string) *ProgressBar {
 		progressbar.OptionShowBytes(true),
 		progressbar.OptionShowCount(),
 		progressbar.OptionSetWidth(50),
-		progressbar.OptionThrottle(100*time.Millisecond),
+		progressbar.OptionThrottle(50*time.Millisecond),
 		progressbar.OptionSetPredictTime(true),
 		progressbar.OptionFullWidth(),
 		progressbar.OptionSetRenderBlankState(true),

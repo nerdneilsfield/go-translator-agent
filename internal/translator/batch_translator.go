@@ -27,6 +27,9 @@ type BatchTranslator struct {
 	// 详细翻译过程跟踪
 	translationRounds  []*TranslationRoundResult      // 每轮翻译的详细结果
 	mu                 sync.Mutex                     // 保护translationRounds的并发访问
+	
+	// 进度回调
+	progressCallback   ProgressCallback               // 进度回调函数
 }
 
 // NewBatchTranslator 创建批量翻译器
@@ -39,6 +42,24 @@ func NewBatchTranslator(cfg TranslatorConfig, service translation.Service, logge
 		smartSplitter:      translation.NewSmartNodeSplitter(cfg.SmartSplitter, logger),
 		statsManager:       statsManager,
 		translationRounds:  make([]*TranslationRoundResult, 0),
+	}
+}
+
+// SetProgressCallback 设置进度回调函数
+func (bt *BatchTranslator) SetProgressCallback(callback ProgressCallback) {
+	bt.mu.Lock()
+	defer bt.mu.Unlock()
+	bt.progressCallback = callback
+}
+
+// callProgressCallback 安全地调用进度回调
+func (bt *BatchTranslator) callProgressCallback(completed, total int, message string) {
+	bt.mu.Lock()
+	callback := bt.progressCallback
+	bt.mu.Unlock()
+	
+	if callback != nil {
+		callback(completed, total, message)
 	}
 }
 
@@ -60,8 +81,18 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 
 	// 并行处理第一轮翻译
 	initialRoundStart := time.Now()
+	bt.callProgressCallback(0, len(nodes), "第1轮：初始翻译")
 	bt.processGroups(ctx, groups)
 	initialRoundDuration := time.Since(initialRoundStart)
+	
+	// 统计第一轮成功的节点数
+	successCount := 0
+	for _, node := range nodes {
+		if node.Status == document.NodeStatusSuccess {
+			successCount++
+		}
+	}
+	bt.callProgressCallback(successCount, len(nodes), fmt.Sprintf("第1轮完成：成功 %d/%d", successCount, len(nodes)))
 	
 	// 记录第一轮翻译结果
 	bt.recordTranslationRound(1, "initial", len(nodes), nodes, initialRoundDuration)
@@ -175,6 +206,9 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 			zap.Int("retryRound", retry),
 			zap.Int("maxRetries", maxRetries),
 			zap.Int("failedNodes", len(failedNodes)))
+		
+		// 通知开始重试
+		bt.callProgressCallback(0, len(failedNodes), fmt.Sprintf("第%d轮：重试 %d 个失败节点", retry+1, len(failedNodes)))
 
 		bt.logger.Debug("collecting failed nodes for retry details",
 			zap.Int("retryRound", retry),
@@ -227,6 +261,16 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 			zap.Int("originalFailedNodes", len(failedNodes)),
 			zap.Int("nowSuccessful", retrySuccessCount),
 			zap.Int("stillFailed", retryFailedCount))
+		
+		// 更新进度：计算总的成功节点数
+		totalSuccessCount := 0
+		for _, node := range nodes {
+			if node.Status == document.NodeStatusSuccess {
+				totalSuccessCount++
+			}
+		}
+		bt.callProgressCallback(totalSuccessCount, len(nodes), 
+			fmt.Sprintf("第%d轮完成：本轮成功 %d，总成功 %d/%d", retry+1, retrySuccessCount, totalSuccessCount, len(nodes)))
 
 		// 更新已处理节点集合
 		for _, node := range nodes {
@@ -237,7 +281,7 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 	}
 
 	// 记录最终统计
-	successCount := 0
+	successCount = 0
 	failedCount := 0
 	for _, node := range nodes {
 		if node.Status == document.NodeStatusSuccess {
@@ -249,6 +293,13 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 
 	// 计算进度百分比
 	progressPercent := float64(successCount) / float64(len(nodes)) * 100
+
+	// 最终进度更新
+	if failedCount == 0 {
+		bt.callProgressCallback(successCount, len(nodes), "翻译完成：全部成功")
+	} else {
+		bt.callProgressCallback(successCount, len(nodes), fmt.Sprintf("翻译完成：%d 成功，%d 失败", successCount, failedCount))
+	}
 
 	// 使用 INFO 级别显示翻译完成信息（包含重试信息）
 	bt.logger.Info("translation completed",
@@ -298,14 +349,23 @@ func (bt *BatchTranslator) processGroups(ctx context.Context, groups []*document
 
 	// 启动进度监控 goroutine
 	processedGroups := 0
+	processedNodes := 0
 	go func() {
-		for completed := range progressChan {
+		for completedInGroup := range progressChan {
 			processedGroups++
+			processedNodes += completedInGroup
 			progress := float64(processedGroups) / float64(len(groups)) * 100
-			bt.logger.Info("translation progress",
+			
+			// 调用进度回调
+			bt.callProgressCallback(processedNodes, totalNodes, 
+				fmt.Sprintf("处理中：%d/%d 组，%d/%d 节点", processedGroups, len(groups), processedNodes, totalNodes))
+			
+			bt.logger.Debug("translation progress",
 				zap.Int("completed_groups", processedGroups),
 				zap.Int("total_groups", len(groups)),
-				zap.Int("nodes_in_group", completed),
+				zap.Int("completed_nodes", processedNodes),
+				zap.Int("total_nodes", totalNodes),
+				zap.Int("nodes_in_current_group", completedInGroup),
 				zap.Float64("progress", progress))
 		}
 	}()
