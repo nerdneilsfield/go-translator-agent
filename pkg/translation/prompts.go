@@ -282,7 +282,7 @@ func ExtractTranslationFromResponse(response string) string {
 	return strings.TrimSpace(result)
 }
 
-// RemoveReasoningMarkers 移除推理模型的思考标记和内容（使用内置全部常见标记）
+// RemoveReasoningMarkers 移除推理模型的思考标记和内容（只处理开头的推理标记，避免误删翻译内容）
 func RemoveReasoningMarkers(text string) string {
 	// 内置所有常见的推理标记对
 	commonReasoningTags := []struct{
@@ -307,34 +307,49 @@ func RemoveReasoningMarkers(text string) string {
 		{"<output>", "</output>", true}, // output标记保留内容
 	}
 
-	result := text
+	result := strings.TrimSpace(text)
 
-	// 处理所有标记对
+	// 只处理出现在文本开头的推理标记（只移除一次，避免误删翻译内容中的相似标记）
 	for _, tag := range commonReasoningTags {
-		if tag.preserveContent {
-			// 保留内容，只移除标记
-			pattern := fmt.Sprintf(`(?s)%s(.*?)%s`, regexp.QuoteMeta(tag.start), regexp.QuoteMeta(tag.end))
-			re := regexp.MustCompile(pattern)
-			if matches := re.FindStringSubmatch(result); len(matches) > 1 {
-				result = re.ReplaceAllString(result, matches[1])
+		// 检查是否以该标记开头
+		if strings.HasPrefix(result, tag.start) {
+			if tag.preserveContent {
+				// 保留内容，只移除标记 - 只处理开头的第一个匹配
+				pattern := fmt.Sprintf(`^%s(.*?)%s`, regexp.QuoteMeta(tag.start), regexp.QuoteMeta(tag.end))
+				re := regexp.MustCompile(fmt.Sprintf(`(?s)%s`, pattern))
+				if matches := re.FindStringSubmatch(result); len(matches) > 1 {
+					// 只替换第一个匹配，保留内容，清理开头的空白
+					result = strings.TrimSpace(matches[1])
+					break // 找到并处理了一个，停止处理其他标记
+				}
+			} else {
+				// 移除整个标记和内容 - 只处理开头的第一个匹配
+				pattern := fmt.Sprintf(`^%s.*?%s`, regexp.QuoteMeta(tag.start), regexp.QuoteMeta(tag.end))
+				re := regexp.MustCompile(fmt.Sprintf(`(?s)%s`, pattern))
+				if re.MatchString(result) {
+					// 只替换第一个匹配（开头的）
+					result = re.ReplaceAllString(result, "")
+					result = strings.TrimSpace(result)
+					break // 找到并处理了一个，停止处理其他标记
+				}
 			}
-		} else {
-			// 移除整个标记和内容
-			pattern := fmt.Sprintf(`(?s)%s.*?%s`, regexp.QuoteMeta(tag.start), regexp.QuoteMeta(tag.end))
-			re := regexp.MustCompile(pattern)
-			result = re.ReplaceAllString(result, "")
 		}
 	}
 
-	// 处理截断的思考标记（只有开始没有结束）
+	// 处理截断的思考标记（只有开始没有结束，且在开头）
 	truncatedPatterns := []string{"<think>", "<thinking>", "<thought>", "<reasoning>", "<reflection>"}
 	for _, pattern := range truncatedPatterns {
-		if strings.HasPrefix(strings.TrimSpace(result), pattern) && !strings.Contains(result, strings.Replace(pattern, "<", "</", 1)) {
-			// 移除从开始标记到文末的所有内容
-			escapedPattern := regexp.QuoteMeta(pattern)
-			re := regexp.MustCompile(fmt.Sprintf(`(?s)^%s.*`, escapedPattern))
-			result = re.ReplaceAllString(result, "")
-			break
+		if strings.HasPrefix(result, pattern) {
+			// 检查是否有对应的结束标记
+			endPattern := strings.Replace(pattern, "<", "</", 1)
+			if !strings.Contains(result, endPattern) {
+				// 移除从开始标记到文末的所有内容
+				escapedPattern := regexp.QuoteMeta(pattern)
+				re := regexp.MustCompile(fmt.Sprintf(`(?s)^%s.*`, escapedPattern))
+				result = re.ReplaceAllString(result, "")
+				result = strings.TrimSpace(result)
+				break
+			}
 		}
 	}
 

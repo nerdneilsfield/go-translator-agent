@@ -26,7 +26,7 @@ type BaseConfig struct {
 // DefaultConfig 返回默认配置
 func DefaultConfig() BaseConfig {
 	return BaseConfig{
-		Timeout:    30 * time.Second,
+		Timeout:    5 * time.Minute, // 增加到5分钟，支持长时间的LLM请求
 		MaxRetries: 3,
 		RetryDelay: time.Second,
 		Headers:    make(map[string]string),

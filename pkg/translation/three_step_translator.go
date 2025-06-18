@@ -143,10 +143,8 @@ func (t *ThreeStepTranslator) translateDirect(ctx context.Context, text string) 
 	// 提取翻译结果
 	translation := ExtractTranslationFromResponse(response.Text)
 
-	// 如果是推理模型，移除推理标记
-	if isReasoning := t.isReasoningModel(t.stepSet.Initial.Provider, t.stepSet.Initial.Model); isReasoning {
-		translation = RemoveReasoningMarkers(translation)
-	}
+	// 总是尝试移除推理标记（如果没有推理标记，此操作无副作用）
+	translation = RemoveReasoningMarkers(translation)
 
 	// 缓存结果
 	if t.cache != nil {
@@ -236,10 +234,8 @@ func (t *ThreeStepTranslator) initialTranslation(ctx context.Context, text strin
 
 	translation := ExtractTranslationFromResponse(response.Text)
 
-	// 如果是推理模型，移除推理标记
-	if isReasoning := t.isReasoningModel(t.stepSet.Initial.Provider, t.stepSet.Initial.Model); isReasoning {
-		translation = RemoveReasoningMarkers(translation)
-	}
+	// 总是尝试移除推理标记（如果没有推理标记，此操作无副作用）
+	translation = RemoveReasoningMarkers(translation)
 
 	// 缓存结果
 	if t.cache != nil {
@@ -299,10 +295,8 @@ func (t *ThreeStepTranslator) reflection(ctx context.Context, sourceText, transl
 
 	reflection := response.Text
 
-	// 如果是推理模型，移除推理标记
-	if isReasoning := t.isReasoningModel(t.stepSet.Reflection.Provider, t.stepSet.Reflection.Model); isReasoning {
-		reflection = RemoveReasoningMarkers(reflection)
-	}
+	// 总是尝试移除推理标记（如果没有推理标记，此操作无副作用）
+	reflection = RemoveReasoningMarkers(reflection)
 
 	// 缓存结果
 	if t.cache != nil {
@@ -363,10 +357,8 @@ func (t *ThreeStepTranslator) improvement(ctx context.Context, sourceText, trans
 
 	improvedTranslation := ExtractTranslationFromResponse(response.Text)
 
-	// 如果是推理模型，移除推理标记
-	if isReasoning := t.isReasoningModel(t.stepSet.Improvement.Provider, t.stepSet.Improvement.Model); isReasoning {
-		improvedTranslation = RemoveReasoningMarkers(improvedTranslation)
-	}
+	// 总是尝试移除推理标记（如果没有推理标记，此操作无副作用）
+	improvedTranslation = RemoveReasoningMarkers(improvedTranslation)
 
 	// 缓存结果
 	if t.cache != nil {
