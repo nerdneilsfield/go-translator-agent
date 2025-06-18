@@ -204,16 +204,39 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 		logger.Info("provider statistics disabled")
 	}
 
+	// 创建翻译缓存
+	var cache translation.Cache
+	if cfg.UseCache {
+		cacheDir := cfg.CacheDir
+		if cacheDir == "" {
+			// 使用默认缓存目录
+			cacheDir = filepath.Join(progressPath, "translation_cache")
+		}
+		cache = translation.NewCache(cfg.UseCache, cacheDir)
+		logger.Info("translation cache initialized",
+			zap.Bool("enabled", cfg.UseCache),
+			zap.String("cache_dir", cacheDir))
+	} else {
+		logger.Info("translation cache disabled")
+	}
+
 	// 创建翻译服务（内部自己管理providers）
 	translationConfig := translation.NewConfigFromGlobal(cfg)
-	translationService, err := translation.New(translationConfig, translation.WithLogger(logger))
+	var translationServiceOptions []translation.Option
+	translationServiceOptions = append(translationServiceOptions, translation.WithLogger(logger))
+	if cache != nil {
+		translationServiceOptions = append(translationServiceOptions, translation.WithCache(cache))
+	}
+	
+	translationService, err := translation.New(translationConfig, translationServiceOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create translation service: %w", err)
 	}
 	logger.Info("translation service initialized successfully",
 		zap.String("source_lang", cfg.SourceLang),
 		zap.String("target_lang", cfg.TargetLang),
-		zap.String("active_step_set", cfg.ActiveStepSet))
+		zap.String("active_step_set", cfg.ActiveStepSet),
+		zap.Bool("cache_enabled", cache != nil))
 
 	// 创建节点翻译管理器
 	translatorConfig := NewTranslatorConfig(cfg)

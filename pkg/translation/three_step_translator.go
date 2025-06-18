@@ -98,6 +98,23 @@ func (t *ThreeStepTranslator) TranslateText(ctx context.Context, text string) (s
 
 // translateDirect 直接翻译（快速模式）
 func (t *ThreeStepTranslator) translateDirect(ctx context.Context, text string) (string, error) {
+	// 检查缓存
+	cacheKey := GenerateCacheKey(CacheKeyComponents{
+		Step:        "direct",
+		Provider:    t.stepSet.Initial.Provider,
+		Model:       t.stepSet.Initial.Model,
+		SourceLang:  t.config.SourceLanguage,
+		TargetLang:  t.config.TargetLanguage,
+		Text:        text,
+		Temperature: t.stepSet.Initial.Temperature,
+		MaxTokens:   t.stepSet.Initial.MaxTokens,
+	})
+	if t.cache != nil {
+		if cached, ok := t.cache.Get(cacheKey); ok {
+			return cached, nil
+		}
+	}
+
 	// 获取初始翻译的提供者
 	provider, ok := t.providers[t.stepSet.Initial.Provider]
 	if !ok {
@@ -129,6 +146,11 @@ func (t *ThreeStepTranslator) translateDirect(ctx context.Context, text string) 
 	// 如果是推理模型，移除推理标记
 	if isReasoning := t.isReasoningModel(t.stepSet.Initial.Provider, t.stepSet.Initial.Model); isReasoning {
 		translation = RemoveReasoningMarkers(translation)
+	}
+
+	// 缓存结果
+	if t.cache != nil {
+		_ = t.cache.Set(cacheKey, translation)
 	}
 
 	return translation, nil
@@ -168,7 +190,16 @@ func (t *ThreeStepTranslator) translateThreeStep(ctx context.Context, text strin
 // initialTranslation 执行初始翻译
 func (t *ThreeStepTranslator) initialTranslation(ctx context.Context, text string) (string, error) {
 	// 检查缓存
-	cacheKey := fmt.Sprintf("initial:%s:%s:%s", t.config.SourceLanguage, t.config.TargetLanguage, text)
+	cacheKey := GenerateCacheKey(CacheKeyComponents{
+		Step:        "initial",
+		Provider:    t.stepSet.Initial.Provider,
+		Model:       t.stepSet.Initial.Model,
+		SourceLang:  t.config.SourceLanguage,
+		TargetLang:  t.config.TargetLanguage,
+		Text:        text,
+		Temperature: t.stepSet.Initial.Temperature,
+		MaxTokens:   t.stepSet.Initial.MaxTokens,
+	})
 	if t.cache != nil {
 		if cached, ok := t.cache.Get(cacheKey); ok {
 			return cached, nil
@@ -221,7 +252,17 @@ func (t *ThreeStepTranslator) initialTranslation(ctx context.Context, text strin
 // reflection 执行反思步骤
 func (t *ThreeStepTranslator) reflection(ctx context.Context, sourceText, translation string) (string, error) {
 	// 检查缓存
-	cacheKey := fmt.Sprintf("reflection:%s:%s:%s:%s", t.config.SourceLanguage, t.config.TargetLanguage, sourceText, translation)
+	cacheKey := GenerateCacheKey(CacheKeyComponents{
+		Step:        "reflection",
+		Provider:    t.stepSet.Reflection.Provider,
+		Model:       t.stepSet.Reflection.Model,
+		SourceLang:  t.config.SourceLanguage,
+		TargetLang:  t.config.TargetLanguage,
+		Text:        sourceText,
+		Context:     translation, // 初始翻译作为上下文
+		Temperature: t.stepSet.Reflection.Temperature,
+		MaxTokens:   t.stepSet.Reflection.MaxTokens,
+	})
 	if t.cache != nil {
 		if cached, ok := t.cache.Get(cacheKey); ok {
 			return cached, nil
@@ -273,8 +314,19 @@ func (t *ThreeStepTranslator) reflection(ctx context.Context, sourceText, transl
 
 // improvement 执行改进步骤
 func (t *ThreeStepTranslator) improvement(ctx context.Context, sourceText, translation, reflection string) (string, error) {
-	// 检查缓存
-	cacheKey := fmt.Sprintf("improvement:%s:%s:%s:%s:%s", t.config.SourceLanguage, t.config.TargetLanguage, sourceText, translation, reflection)
+	// 检查缓存 - 使用完整的context包含初始翻译和反思结果
+	contextData := fmt.Sprintf("translation:%s|reflection:%s", translation, reflection)
+	cacheKey := GenerateCacheKey(CacheKeyComponents{
+		Step:        "improvement",
+		Provider:    t.stepSet.Improvement.Provider,
+		Model:       t.stepSet.Improvement.Model,
+		SourceLang:  t.config.SourceLanguage,
+		TargetLang:  t.config.TargetLanguage,
+		Text:        sourceText,
+		Context:     contextData, // 包含初始翻译和反思结果
+		Temperature: t.stepSet.Improvement.Temperature,
+		MaxTokens:   t.stepSet.Improvement.MaxTokens,
+	})
 	if t.cache != nil {
 		if cached, ok := t.cache.Get(cacheKey); ok {
 			return cached, nil
