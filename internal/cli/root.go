@@ -401,6 +401,9 @@ func updateConfigFromFlags(cmd *cobra.Command, cfg *config.Config) {
 	if cmd.Flags().Changed("cache-dir") {
 		cfg.CacheDir = cacheDir
 	}
+	if cmd.Flags().Changed("refresh-cache") {
+		cfg.RefreshCache = forceCacheRefresh
+	}
 	if cmd.Flags().Changed("debug") {
 		cfg.Debug = debugMode
 	}

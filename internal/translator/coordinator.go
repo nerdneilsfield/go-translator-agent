@@ -3,6 +3,7 @@ package translator
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -212,10 +213,26 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 			// 使用默认缓存目录
 			cacheDir = filepath.Join(progressPath, "translation_cache")
 		}
+		
+		// 如果需要刷新缓存，先清空缓存目录
+		if cfg.RefreshCache {
+			logger.Info("refreshing translation cache",
+				zap.String("cache_dir", cacheDir))
+			if err := clearCacheDirectory(cacheDir); err != nil {
+				logger.Warn("failed to clear cache directory",
+					zap.String("cache_dir", cacheDir),
+					zap.Error(err))
+			} else {
+				logger.Info("cache directory cleared successfully",
+					zap.String("cache_dir", cacheDir))
+			}
+		}
+		
 		cache = translation.NewCache(cfg.UseCache, cacheDir)
 		logger.Info("translation cache initialized",
 			zap.Bool("enabled", cfg.UseCache),
-			zap.String("cache_dir", cacheDir))
+			zap.String("cache_dir", cacheDir),
+			zap.Bool("refreshed", cfg.RefreshCache))
 	} else {
 		logger.Info("translation cache disabled")
 	}
@@ -734,4 +751,32 @@ func (c *TranslationCoordinator) postTranslationFormatFix(ctx context.Context, f
 	}
 
 	return fixedContent, nil
+}
+
+// clearCacheDirectory 清空缓存目录
+func clearCacheDirectory(cacheDir string) error {
+	if cacheDir == "" {
+		return fmt.Errorf("cache directory is empty")
+	}
+	
+	// 检查目录是否存在
+	if _, err := os.Stat(cacheDir); os.IsNotExist(err) {
+		// 目录不存在，直接返回成功
+		return nil
+	}
+	
+	// 清空目录内容（保留目录本身）
+	return filepath.Walk(cacheDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		
+		// 跳过根目录本身
+		if path == cacheDir {
+			return nil
+		}
+		
+		// 删除文件或目录
+		return os.RemoveAll(path)
+	})
 }

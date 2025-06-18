@@ -67,6 +67,7 @@ type Config struct {
 	MaxTokensPerChunk int                        `mapstructure:"max_tokens_per_chunk"`
 	CacheDir          string                     `mapstructure:"cache_dir"`
 	UseCache          bool                       `mapstructure:"use_cache"`
+	RefreshCache      bool                       `mapstructure:"refresh_cache"` // 强制刷新缓存
 	Debug             bool                       `mapstructure:"debug"`
 	Verbose           bool                       `mapstructure:"verbose"` // 详细模式，显示翻译片段
 
