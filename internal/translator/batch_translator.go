@@ -507,6 +507,13 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 
 	combinedText := builder.String()
 
+	// 检查最终的组合文本是否为空（所有节点都被跳过了）
+	if strings.TrimSpace(combinedText) == "" {
+		bt.logger.Debug("skipping group - final combinedText is empty after selective filtering",
+			zap.Int("groupSize", len(group.Nodes)),
+			zap.Bool("needsTranslation", needsTranslation))
+		return nil
+	}
 
 	// 统计需要翻译的节点数
 	nodesToTranslate := 0
