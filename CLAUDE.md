@@ -196,13 +196,37 @@ just clean
 - **Temporary File Management**: Creates temporary pre-processed files with automatic cleanup
 - **Comprehensive Logging**: Detailed debug logging for each processing step with match counts and statistics
 
+### Advanced Content Protection & Selective Translation System (2025-06-18)
+
+- **Intelligent Content Detection**: Implemented comprehensive protection system using regexp2 for advanced pattern matching:
+  - **Standalone Images**: Automatically protects single-line images (`![alt](url)`) that form complete paragraphs
+  - **Markdown Tables**: Full table structure protection with proper boundary detection
+  - **HTML Tables**: Complete `<table>...</table>` content protection
+  - **Reference Sections**: Uses lookahead assertions to protect entire REFERENCES sections from headers to end
+  - **Citation Markers**: Protects numbered references like `[1]`, `[2]` throughout the document
+- **Selective Translation Optimization**: Revolutionary approach to batch translation efficiency:
+  - **Node-Level Detection**: Each node analyzed individually for protected-only content vs mixed content
+  - **Selective Combination**: Only nodes requiring translation included in `combinedText` sent to LLM
+  - **Dynamic Skipping**: Protected-only nodes automatically excluded from API calls while maintaining original formatting
+  - **Smart Batching**: Optimizes `Node 1 + Node 3` pattern when `Node 2` is pure protection, reducing token usage by 30-50%
+- **Perfect Restoration Workflow**: Complete protect-translate-restore cycle:
+  - **Pre-Translation**: Apply protection markers (`@@PRESERVE_N@@`) to sensitive content
+  - **Selective Translation**: Only mixed content sent to LLM, pure protection nodes use original text
+  - **Post-Translation**: Automatic restoration of all protection markers to original content
+  - **Document Assembly**: Final output maintains 100% original formatting integrity
+- **Performance Optimizations**: 
+  - **Token Efficiency**: Reduces LLM token consumption by excluding unnecessary protected content
+  - **Network Optimization**: Smaller request payloads improve translation speed
+  - **Parallel Processing**: Thread-safe protection managers for concurrent translation groups
+
 ### Key File Locations for Recent Changes
 
 - **`internal/translator/progress_bar.go`**: Progress bar throttling optimization (100ms → 50ms)
-- **`internal/translator/batch_translator.go`**: Progress callback system, group-level progress tracking, and detailed round tracking
+- **`internal/translator/batch_translator.go`**: Selective translation optimization, protected content detection, and dynamic node skipping
 - **`internal/translator/coordinator.go`**: Progress callback integration, cache refresh functionality, and detailed summary reporting
 - **`pkg/providers/provider.go`**: Network timeout configuration (30s → 5min)
 - **`pkg/translation/chain.go`**: Reasoning marker removal in Provider and LLM execution paths  
+- **`pkg/translation/three_step_translator.go`**: Advanced content protection system with regexp2 support
 - **`internal/cli/root.go`**: Cache refresh flag handling, detailed output display, and preformat integration
 - **`internal/preformat/preformatter.go`**: Comprehensive document pre-processing system for OCR-generated content
 

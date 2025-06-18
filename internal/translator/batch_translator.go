@@ -439,7 +439,7 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 	var builder strings.Builder
 	needsTranslation := false
 
-	for i, node := range group.Nodes {
+	for _, node := range group.Nodes {
 		// 检查是否是上下文节点（已经翻译过的）
 		isContext := false
 		if node.Metadata != nil {
@@ -451,6 +451,9 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		// 如果是上下文节点且已成功，使用已翻译的文本
 		if isContext && node.Status == document.NodeStatusSuccess {
 			// 添加节点标记
+			if builder.Len() > 0 {
+				builder.WriteString("\n\n")
+			}
 			builder.WriteString(fmt.Sprintf("@@NODE_START_%d@@\n", node.ID))
 			builder.WriteString(node.TranslatedText)
 			builder.WriteString(fmt.Sprintf("\n@@NODE_END_%d@@", node.ID))
@@ -465,14 +468,11 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 				node.Status = document.NodeStatusSuccess
 				node.TranslatedText = node.OriginalText
 				
-				bt.logger.Debug("skipping protected-only node",
+				bt.logger.Debug("skipping protected-only node - not included in translation request",
 					zap.Int("nodeID", node.ID),
 					zap.String("content", truncateText(node.OriginalText, 100)))
 				
-				// 添加节点标记（使用原文）
-				builder.WriteString(fmt.Sprintf("@@NODE_START_%d@@\n", node.ID))
-				builder.WriteString(node.OriginalText)
-				builder.WriteString(fmt.Sprintf("\n@@NODE_END_%d@@", node.ID))
+				// 不添加到 combinedText 中，完全跳过
 			} else {
 				// 需要翻译的节点
 				needsTranslation = true
@@ -487,26 +487,26 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 						zap.String("protectedSample", truncateText(protectedText, 100)))
 				}
 
-				// 添加节点标记
+				// 只有需要翻译的节点才添加到 combinedText
+				if builder.Len() > 0 {
+					builder.WriteString("\n\n")
+				}
 				builder.WriteString(fmt.Sprintf("@@NODE_START_%d@@\n", node.ID))
 				builder.WriteString(protectedText)
 				builder.WriteString(fmt.Sprintf("\n@@NODE_END_%d@@", node.ID))
 			}
 		}
-
-		if i < len(group.Nodes)-1 {
-			builder.WriteString("\n\n")
-		}
 	}
 
-	// 如果所有节点都是上下文节点，跳过翻译
+	// 如果所有节点都是上下文节点或保护内容，跳过翻译
 	if !needsTranslation {
-		bt.logger.Debug("skipping group with only context nodes",
+		bt.logger.Debug("skipping group - all nodes are context or protected-only",
 			zap.Int("groupSize", len(group.Nodes)))
 		return nil
 	}
 
 	combinedText := builder.String()
+
 
 	// 统计需要翻译的节点数
 	nodesToTranslate := 0
