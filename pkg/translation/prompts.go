@@ -285,8 +285,8 @@ func ExtractTranslationFromResponse(response string) string {
 // RemoveReasoningMarkers 移除推理模型的思考标记和内容（只处理开头的推理标记，避免误删翻译内容）
 func RemoveReasoningMarkers(text string) string {
 	// 内置所有常见的推理标记对
-	commonReasoningTags := []struct{
-		start, end string
+	commonReasoningTags := []struct {
+		start, end      string
 		preserveContent bool // 是否保留标记内的内容
 	}{
 		{"<think>", "</think>", false},
@@ -375,12 +375,12 @@ func RemoveReasoningProcess(text string, userTags []string) string {
 		if i+1 < len(userTags) {
 			startTag := userTags[i]
 			endTag := userTags[i+1]
-			
+
 			// 特殊处理：保留 answer/result/output 标记的内容
-			preserveContent := strings.Contains(startTag, "answer") || 
-								 strings.Contains(startTag, "result") || 
-								 strings.Contains(startTag, "output")
-			
+			preserveContent := strings.Contains(startTag, "answer") ||
+				strings.Contains(startTag, "result") ||
+				strings.Contains(startTag, "output")
+
 			if preserveContent {
 				// 保留内容，只移除标记
 				pattern := fmt.Sprintf(`(?s)%s(.*?)%s`, regexp.QuoteMeta(startTag), regexp.QuoteMeta(endTag))
