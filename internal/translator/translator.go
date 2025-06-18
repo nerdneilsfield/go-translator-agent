@@ -45,6 +45,7 @@ func NewTranslatorConfig(cfg *config.Config) TranslatorConfig {
 		SourceLang:     cfg.SourceLang,
 		TargetLang:     cfg.TargetLang,
 		Verbose:        cfg.Verbose,
+		ShowStatsTable: cfg.ShowStatsTable,
 	}
 }
 
@@ -68,6 +69,7 @@ type TranslatorConfig struct {
 	TargetLang string // 目标语言
 
 	// 进度和调试配置
-	Verbose    bool             // 详细模式
-	OnProgress ProgressCallback // 进度回调
+	Verbose        bool             // 详细模式
+	OnProgress     ProgressCallback // 进度回调
+	ShowStatsTable bool             // 是否显示统计表格
 }

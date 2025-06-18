@@ -2,6 +2,92 @@
 
 这个文档记录了 Claude 在项目中完成的主要工作和贡献。
 
+## 2025-06-18 09:00 (GMT+8)
+
+### 📊 **新增功能: 全面Provider性能统计系统**
+
+#### 🎯 **用户需求**
+- **性能追踪**: 追踪Provider的性能表现，包括指令遵循性能、错误率等
+- **统计表格**: 翻译完成后显示详细的性能统计表格
+- **数据持久化**: 全局数据库存储统计信息，跨会话积累
+
+#### 🔧 **核心统计指标**
+
+**1. 基础性能指标**
+- **请求统计**: 总请求数、成功/失败数、成功率
+- **延迟统计**: 平均/最小/最大延迟，性能趋势分析
+- **Token效率**: 输入/输出Token统计，成本效率分析
+
+**2. 指令遵循性能**
+- **节点标记保持率**: `@@NODE_START_X@@`/`@@NODE_END_X@@`标记保持成功率
+- **格式保护率**: Markdown/LaTeX/HTML格式保持成功率
+- **推理标记处理**: 检测和统计推理模型标记处理问题
+
+**3. 质量指标**
+- **相似度失败率**: 翻译结果与原文相似度过高的情况
+- **重试率**: 翻译失败重试的频率统计
+- **错误分类**: 按错误类型详细分类统计
+
+#### 📊 **统计表格显示**
+```
+📊 Provider Performance Statistics
+======================================================================================
+Provider             Model           Requests Success% Error% NodeMark% Format% AvgLatency Tokens    Cost Retry%
+--------------------------------------------------------------------------------------
+openai               gpt-4o               156    98.7%   1.3%     95.2%   98.1%      850ms     45623  $12.45   2.1%
+ollama               qwen3:0.6b            89    92.1%   7.9%     87.6%   94.3%     1200ms     23451   $0.00   8.9%
+deepseek             deepseek-r1           67    96.3%   3.7%     91.2%   97.8%      920ms     18234   $3.21   4.5%
+======================================================================================
+```
+
+#### 🔧 **技术实现**
+
+**1. 统计数据结构** (`pkg/providers/stats/stats.go`):
+```go
+type ProviderStats struct {
+    // 基础统计
+    TotalRequests      int64
+    SuccessfulRequests int64
+    FailedRequests     int64
+    
+    // 指令遵循性能
+    NodeMarkerSuccess  int64  // 节点标记保持成功
+    NodeMarkerFailed   int64  // 节点标记丢失
+    FormatPreserved    int64  // 格式保持成功
+    
+    // 性能指标
+    AverageLatency     time.Duration
+    ErrorTypes         map[string]int64
+}
+```
+
+**2. 统计中间件** (`pkg/providers/stats/middleware.go`):
+- 自动拦截所有Provider调用
+- 分析请求特征和响应结果
+- 智能错误分类和质量检测
+
+**3. 数据持久化**:
+- JSON数据库存储: `stats/provider_stats.json`
+- 自动保存机制: 默认5分钟保存一次
+- 跨会话数据积累: 启动时自动加载历史数据
+
+#### 💼 **配置选项**
+```yaml
+# 统计配置
+enable_stats: true                          # 是否启用Provider性能统计
+stats_db_path: "stats/provider_stats.json"   # 统计数据库路径
+stats_save_interval: 300                    # 自动保存间隔（秒）
+show_stats_table: true                      # 翻译完成后显示统计表格
+```
+
+#### 📊 **价值体现**
+- **性能监控**: 实时追踪不同Provider的性能表现
+- **质量保证**: 监控指令遵循和格式保持情况
+- **成本优化**: 分析Token效率和成本效益比
+- **决策支持**: 基于数据选择最优Provider配置
+
+---
+
 ## 2025-06-18 08:15 (GMT+8)
 
 ### 🧠 **关键修复: 推理模型流式传输和思考标记处理优化**

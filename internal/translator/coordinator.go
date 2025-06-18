@@ -14,6 +14,7 @@ import (
 	"github.com/nerdneilsfield/go-translator-agent/internal/formatter"
 	"github.com/nerdneilsfield/go-translator-agent/internal/progress"
 	"github.com/nerdneilsfield/go-translator-agent/internal/stats"
+	providerStats "github.com/nerdneilsfield/go-translator-agent/pkg/providers/stats"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
 	"go.uber.org/zap"
 )
@@ -97,13 +98,14 @@ type TranslationResult struct {
 type TranslationCoordinator struct {
 	coordinatorConfig  CoordinatorConfig   // Coordinator专用配置
 	translationService translation.Service // 翻译服务实例
-	translator         Translator          // 节点翻译管理器实例
+	translator         Translator                     // 节点翻译管理器实例
 	progressTracker    *progress.Tracker
 	progressReporter   *progress.Tracker
 	formatManager      *formatter.Manager
 	formatFixRegistry  *formatfix.FixerRegistry
 	postProcessor      *TranslationPostProcessor
 	statsDB            *stats.Database
+	providerStatsManager *providerStats.StatsManager  // Provider性能统计管理器
 	logger             *zap.Logger
 }
 
@@ -175,6 +177,32 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 		statsDB = nil
 	}
 
+	// 创建 Provider 性能统计管理器
+	var providerStatsManager *providerStats.StatsManager
+	if cfg.EnableStats {
+		providerStatsDBPath := cfg.StatsDBPath
+		if providerStatsDBPath == "" {
+			providerStatsDBPath = filepath.Join(progressPath, "provider_stats.json")
+		}
+		providerStatsManager = providerStats.NewStatsManager(providerStatsDBPath, logger)
+		
+		// 加载已有统计数据
+		if err := providerStatsManager.LoadFromDB(); err != nil {
+			logger.Warn("failed to load provider stats from database", zap.Error(err))
+		}
+		
+		logger.Info("provider statistics manager initialized", 
+			zap.String("db_path", providerStatsDBPath),
+			zap.Int("save_interval_seconds", cfg.StatsSaveInterval))
+		
+		// 启动自动保存協程
+		if cfg.StatsSaveInterval > 0 {
+			go providerStatsManager.AutoSaveRoutine(context.Background(), time.Duration(cfg.StatsSaveInterval)*time.Second)
+		}
+	} else {
+		logger.Info("provider statistics disabled")
+	}
+
 	// 创建翻译服务（内部自己管理providers）
 	translationConfig := translation.NewConfigFromGlobal(cfg)
 	translationService, err := translation.New(translationConfig, translation.WithLogger(logger))
@@ -188,11 +216,12 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 
 	// 创建节点翻译管理器
 	translatorConfig := NewTranslatorConfig(cfg)
-	translator := NewBatchTranslator(translatorConfig, translationService, logger)
+	translator := NewBatchTranslator(translatorConfig, translationService, logger, providerStatsManager)
 	logger.Info("translator initialized",
 		zap.Int("chunk_size", translatorConfig.ChunkSize),
 		zap.Int("concurrency", translatorConfig.Concurrency),
-		zap.Int("max_retries", translatorConfig.MaxRetries))
+		zap.Int("max_retries", translatorConfig.MaxRetries),
+		zap.Bool("stats_enabled", cfg.EnableStats))
 
 	// 创建翻译后处理器
 	var postProcessor *TranslationPostProcessor
@@ -205,16 +234,17 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 	}
 
 	return &TranslationCoordinator{
-		coordinatorConfig:  coordinatorConfig,
-		translationService: translationService,
-		translator:         translator,
-		progressTracker:    progressTracker,
-		progressReporter:   progressReporter,
-		formatManager:      formatManager,
-		formatFixRegistry:  formatFixRegistry,
-		postProcessor:      postProcessor,
-		statsDB:            statsDB,
-		logger:             logger,
+		coordinatorConfig:    coordinatorConfig,
+		translationService:   translationService,
+		translator:           translator,
+		progressTracker:      progressTracker,
+		progressReporter:     progressReporter,
+		formatManager:        formatManager,
+		formatFixRegistry:    formatFixRegistry,
+		postProcessor:        postProcessor,
+		statsDB:              statsDB,
+		providerStatsManager: providerStatsManager,
+		logger:               logger,
 	}, nil
 }
 

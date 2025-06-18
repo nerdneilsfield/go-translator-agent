@@ -6,9 +6,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dlclark/regexp2"
 	"github.com/nerdneilsfield/go-translator-agent/internal/document"
+	"github.com/nerdneilsfield/go-translator-agent/pkg/providers/stats"
 	"github.com/nerdneilsfield/go-translator-agent/pkg/translation"
 	"go.uber.org/zap"
 )
@@ -20,16 +22,18 @@ type BatchTranslator struct {
 	logger             *zap.Logger
 	preserveManager    *translation.PreserveManager
 	smartSplitter      *translation.SmartNodeSplitter // 智能节点分割器
+	statsManager       *stats.StatsManager            // 统计管理器
 }
 
 // NewBatchTranslator 创建批量翻译器
-func NewBatchTranslator(cfg TranslatorConfig, service translation.Service, logger *zap.Logger) *BatchTranslator {
+func NewBatchTranslator(cfg TranslatorConfig, service translation.Service, logger *zap.Logger, statsManager *stats.StatsManager) *BatchTranslator {
 	return &BatchTranslator{
 		config:             cfg,
 		translationService: service,
 		logger:             logger,
 		preserveManager:    translation.NewPreserveManager(translation.DefaultPreserveConfig),
 		smartSplitter:      translation.NewSmartNodeSplitter(cfg.SmartSplitter, logger),
+		statsManager:       statsManager,
 	}
 }
 
@@ -240,6 +244,11 @@ func (bt *BatchTranslator) TranslateNodes(ctx context.Context, nodes []*document
 			return "all retries successful"
 		}()))
 
+	// 显示统计表格（如果配置了统计管理器）
+	if bt.statsManager != nil && bt.config.ShowStatsTable {
+		bt.statsManager.PrintStatsTable()
+	}
+
 	return nil
 }
 
@@ -447,7 +456,9 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 	}
 
 	// 执行翻译 - 使用简化的接口，无分块
+	startTime := time.Now()
 	translatedText, err := bt.translationService.TranslateText(ctx, combinedText)
+	latency := time.Since(startTime)
 	if err != nil {
 		bt.logger.Error("translation service error",
 			zap.Error(err),
@@ -801,7 +812,113 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 		}
 	}
 
+	// 记录Provider性能统计
+	if bt.statsManager != nil {
+		bt.recordGroupStats(ctx, group, nodeIDsToTranslate, err, latency)
+	}
+
 	return nil
+}
+
+// recordGroupStats 记录组翻译统计信息
+func (bt *BatchTranslator) recordGroupStats(ctx context.Context, group *document.NodeGroup, nodeIDsToTranslate []int, translationErr error, latency time.Duration) {
+	if bt.statsManager == nil {
+		return
+	}
+
+	// 默认使用通用Provider名称（实际应用中可以从配置或service中获取）
+	providerName := "unknown"
+	modelName := "unknown"
+
+	// 计算节点标记统计
+	expectedMarkers := len(nodeIDsToTranslate)
+	actualMarkers := 0
+	lostMarkers := 0
+
+	// 计算成功和失败节点
+	successfulNodes := 0
+	failedNodes := 0
+	hasSimilarityIssues := false
+	hasFormatIssues := false
+	hasReasoningTags := false
+
+	for _, node := range group.Nodes {
+		if node.Status == document.NodeStatusSuccess {
+			successfulNodes++
+			// 检查节点标记
+			if strings.Contains(node.TranslatedText, fmt.Sprintf("@@NODE_START_%d@@", node.ID)) {
+				actualMarkers++
+			}
+			// 检查是否有推理标记
+			if translation.HasReasoningTags(node.TranslatedText) {
+				hasReasoningTags = true
+			}
+		} else {
+			failedNodes++
+			// 检查失败原因
+			if node.Error != nil {
+				errorStr := strings.ToLower(node.Error.Error())
+				if strings.Contains(errorStr, "similarity") {
+					hasSimilarityIssues = true
+				}
+			}
+		}
+	}
+
+	lostMarkers = expectedMarkers - actualMarkers
+
+	// 创建统计结果
+	result := stats.RequestResult{
+		Success:           translationErr == nil && failedNodes == 0,
+		Latency:           latency,
+		NodeMarkersFound:  actualMarkers,
+		NodeMarkersLost:   lostMarkers,
+		HasFormatIssues:   hasFormatIssues,
+		HasReasoningTags:  hasReasoningTags,
+		SimilarityTooHigh: hasSimilarityIssues,
+		IsRetry:           false, // TODO: 可以从上下文中获取
+	}
+
+	if translationErr != nil {
+		result.ErrorType = bt.classifyTranslationError(translationErr)
+	}
+
+	// 记录统计
+	bt.statsManager.RecordRequest(providerName, modelName, result)
+
+	bt.logger.Debug("recorded translation statistics",
+		zap.String("provider", providerName),
+		zap.String("model", modelName),
+		zap.Bool("success", result.Success),
+		zap.Duration("latency", latency),
+		zap.Int("expectedMarkers", expectedMarkers),
+		zap.Int("actualMarkers", actualMarkers),
+		zap.Int("lostMarkers", lostMarkers))
+}
+
+// classifyTranslationError 分类翻译错误
+func (bt *BatchTranslator) classifyTranslationError(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	errorStr := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(errorStr, "timeout"):
+		return "timeout"
+	case strings.Contains(errorStr, "rate limit"):
+		return "rate_limit"
+	case strings.Contains(errorStr, "context"):
+		return "context_error"
+	case strings.Contains(errorStr, "network"):
+		return "network_error"
+	case strings.Contains(errorStr, "auth"):
+		return "auth_error"
+	case strings.Contains(errorStr, "quota"):
+		return "quota_exceeded"
+	default:
+		return "unknown_error"
+	}
 }
 
 // protectContent 保护不需要翻译的内容
