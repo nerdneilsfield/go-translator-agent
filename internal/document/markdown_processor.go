@@ -313,6 +313,13 @@ func (p *MarkdownProcessor) splitIntoBlocks(text string) []markdownBlock {
 			continue
 		}
 
+		// 检查是否是保护块的开始
+		if strings.Contains(line, "<!-- REFERENCES_PROTECTED -->") || strings.Contains(line, "<!-- TABLE_PROTECTED -->") {
+			block := p.parseProtectedBlock(lines, &i)
+			blocks = append(blocks, block)
+			continue
+		}
+
 		// 水平线
 		if match := regexp.MustCompile(`^(\*{3,}|-{3,}|_{3,})$`).FindString(strings.TrimSpace(line)); match != "" {
 			blocks = append(blocks, markdownBlock{
@@ -428,6 +435,51 @@ func (p *MarkdownProcessor) parseTable(lines []string, i *int) markdownBlock {
 		blockType:    "table",
 		content:      content.String(),
 		translatable: true,
+	}
+}
+
+// parseProtectedBlock 解析保护块
+func (p *MarkdownProcessor) parseProtectedBlock(lines []string, i *int) markdownBlock {
+	var content strings.Builder
+	startMarker := ""
+	endMarker := ""
+	
+	// 确定开始和结束标记
+	if strings.Contains(lines[*i], "<!-- REFERENCES_PROTECTED -->") {
+		startMarker = "<!-- REFERENCES_PROTECTED -->"
+		endMarker = "<!-- /REFERENCES_PROTECTED -->"
+	} else if strings.Contains(lines[*i], "<!-- TABLE_PROTECTED -->") {
+		startMarker = "<!-- TABLE_PROTECTED -->"
+		endMarker = "<!-- /TABLE_PROTECTED -->"
+	}
+	
+	// 收集整个保护块
+	foundEnd := false
+	for *i < len(lines) {
+		if content.Len() > 0 {
+			content.WriteString("\n")
+		}
+		content.WriteString(lines[*i])
+		
+		if strings.Contains(lines[*i], endMarker) {
+			foundEnd = true
+			*i++
+			break
+		}
+		*i++
+	}
+	
+	// 如果没有找到结束标记，记录警告
+	if !foundEnd && p.logger != nil {
+		p.logger.Warn("protected block without end marker",
+			zap.String("startMarker", startMarker),
+			zap.String("content", content.String()))
+	}
+	
+	return markdownBlock{
+		blockType:    "protected",
+		content:      content.String(),
+		translatable: false, // 保护块不需要翻译
 	}
 }
 
