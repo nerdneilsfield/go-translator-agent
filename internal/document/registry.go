@@ -183,6 +183,11 @@ func init() {
 		return NewTextPackProcessor(opts, logger)
 	})
 
+	Register(FormatDOCX, func(opts ProcessorOptions) (Processor, error) {
+		logger := getLoggerFromOptions(opts)
+		return NewDocxProcessor(opts, logger)
+	})
+
 	// Markdown
 	RegisterExtension(".md", FormatMarkdown)
 	RegisterExtension(".markdown", FormatMarkdown)
