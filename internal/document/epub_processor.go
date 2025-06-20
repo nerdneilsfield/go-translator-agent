@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	pkgdoc "github.com/nerdneilsfield/go-translator-agent/pkg/document"
 	"go.uber.org/zap"
 )
 
@@ -21,6 +22,7 @@ type EPUBProcessor struct {
 	nodeTranslator *NodeInfoTranslator
 	mode           HTMLProcessingMode
 	htmlProcessor  *HTMLProcessor
+	protector      pkgdoc.ContentProtector
 }
 
 // NewEPUBProcessor 创建EPUB处理器
@@ -44,12 +46,16 @@ func NewEPUBProcessor(opts ProcessorOptions, logger *zap.Logger, mode HTMLProces
 		return nil, fmt.Errorf("failed to create HTML processor: %w", err)
 	}
 
+	// 创建EPUB格式保护器（复用HTML保护器）
+	protector := pkgdoc.GetProtectorForFormat("epub")
+
 	return &EPUBProcessor{
 		opts:           opts,
 		logger:         logger,
 		nodeTranslator: nodeTranslator,
 		mode:           mode,
 		htmlProcessor:  htmlProcessor,
+		protector:      protector,
 	}, nil
 }
 
@@ -539,4 +545,16 @@ func (p *EPUBProcessor) getResourceType(mediaType string) ResourceType {
 	default:
 		return ResourceTypeOther
 	}
+}
+
+// ProtectContent 保护EPUB内容，使用格式特定的保护器
+func (p *EPUBProcessor) ProtectContent(text string, patternProtector interface{}) string {
+	pp, ok := patternProtector.(pkgdoc.PatternProtector)
+	if !ok {
+		p.logger.Warn("invalid pattern protector type, skipping protection")
+		return text
+	}
+
+	// 使用EPUB特定的保护器（复用HTML保护器）
+	return p.protector.ProtectContent(text, pp)
 }

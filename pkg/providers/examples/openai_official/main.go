@@ -57,7 +57,6 @@ func basicTranslation(config openai.ConfigV2) {
 
 	fmt.Printf("Original: %s\n", req.Text)
 	fmt.Printf("Translated: %s\n", resp.Text)
-	fmt.Printf("Model: %s\n", resp.Model)
 	fmt.Printf("Tokens: %d in, %d out\n", resp.TokensIn, resp.TokensOut)
 }
 
@@ -95,8 +94,8 @@ func streamingTranslation(config openai.ConfigV2) {
 
 // threeStepTranslation 三步翻译流程示例
 func threeStepTranslation(config openai.ConfigV2) {
-	// 创建LLM客户端
-	llmClient := openai.NewLLMClientV2(config)
+	// 使用provider作为翻译提供商
+	provider := openai.NewV2(config)
 
 	// 创建翻译配置
 	translationConfig := &translation.Config{
@@ -107,58 +106,37 @@ func threeStepTranslation(config openai.ConfigV2) {
 		Steps: []translation.StepConfig{
 			{
 				Name:        "initial_translation",
+				Provider:    "openai",
 				Model:       "gpt-4",
 				Temperature: 0.3,
 				MaxTokens:   2048,
-				Prompt: `Translate the following English text to Japanese. 
-Maintain the original meaning, tone, and style as much as possible.
-
-Text to translate:
-{{text}}`,
-				SystemRole: "You are a professional translator specializing in English to Japanese translation.",
+				AdditionalNotes: "You are a professional translator specializing in English to Japanese translation. Maintain the original meaning, tone, and style as much as possible.",
+				IsLLM:      true,
 			},
 			{
 				Name:        "reflection",
+				Provider:    "openai",
 				Model:       "gpt-4",
 				Temperature: 0.1,
 				MaxTokens:   1024,
-				Prompt: `Review the following translation from English to Japanese.
-Identify any issues with accuracy, fluency, cultural appropriateness, or natural expression.
-
-Original text:
-{{original_text}}
-
-Translation:
-{{translation}}
-
-Please provide specific feedback on what could be improved.`,
-				SystemRole: "You are a Japanese language expert and translation quality reviewer.",
+				AdditionalNotes: "You are a Japanese language expert and translation quality reviewer. Identify any issues with accuracy, fluency, cultural appropriateness, or natural expression.",
+				IsLLM:      true,
 			},
 			{
 				Name:        "improvement",
+				Provider:    "openai",
 				Model:       "gpt-4",
 				Temperature: 0.3,
 				MaxTokens:   2048,
-				Prompt: `Based on the feedback provided, improve the following translation from English to Japanese.
-
-Original text:
-{{original_text}}
-
-Current translation:
-{{translation}}
-
-Feedback:
-{{feedback}}
-
-Please provide an improved translation that addresses the feedback.`,
-				SystemRole: "You are a professional translator focusing on creating natural, accurate Japanese translations.",
+				AdditionalNotes: "You are a professional translator focusing on creating natural, accurate Japanese translations. Provide an improved translation that addresses the feedback.",
+				IsLLM:      true,
 			},
 		},
 	}
 
 	// 创建翻译服务
 	translator, err := translation.New(translationConfig,
-		translation.WithLLMClient(llmClient),
+		translation.WithSingleProvider("openai", provider),
 	)
 	if err != nil {
 		log.Fatalf("Failed to create translator: %v", err)
@@ -166,26 +144,16 @@ Please provide an improved translation that addresses the feedback.`,
 
 	// 执行翻译
 	text := "Life is like riding a bicycle. To keep your balance, you must keep moving."
-	req := &translation.Request{
-		Text: text,
-	}
 
 	fmt.Printf("Original text: %s\n\n", text)
 
-	resp, err := translator.Translate(context.Background(), req)
+	result, err := translator.TranslateText(context.Background(), text)
 	if err != nil {
 		log.Printf("Translation failed: %v", err)
 		return
 	}
 
-	// 显示每个步骤的结果
-	for i, step := range resp.Steps {
-		fmt.Printf("Step %d - %s:\n", i+1, step.Name)
-		fmt.Printf("Output: %s\n", step.Output)
-		fmt.Printf("Duration: %v\n\n", step.Duration)
-	}
-
-	fmt.Printf("Final Translation: %s\n", resp.Text)
+	fmt.Printf("Final Translation: %s\n", result)
 }
 
 // customConfiguration 自定义配置示例
@@ -217,7 +185,7 @@ func customConfiguration() {
 		Text:           "Quantum computing represents a fundamental shift in how we process information.",
 		SourceLanguage: "English",
 		TargetLanguage: "French",
-		Options: map[string]string{
+		Metadata: map[string]interface{}{
 			"instruction": "Please use formal language suitable for academic publications.",
 		},
 	}
@@ -230,5 +198,4 @@ func customConfiguration() {
 
 	fmt.Printf("Original: %s\n", req.Text)
 	fmt.Printf("Translated (formal): %s\n", resp.Text)
-	fmt.Printf("Model used: %s\n", resp.Model)
 }

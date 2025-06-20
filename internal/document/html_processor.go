@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	pkgdoc "github.com/nerdneilsfield/go-translator-agent/pkg/document"
 	"go.uber.org/zap"
 	"golang.org/x/net/html"
 )
@@ -18,6 +20,11 @@ type HTMLProcessor struct {
 	logger         *zap.Logger
 	nodeTranslator *NodeInfoTranslator
 	mode           HTMLProcessingMode
+	protector      pkgdoc.ContentProtector
+	// 增强功能组件
+	smartExtractor      *HTMLSmartExtractor
+	attributeTranslator *HTMLAttributeTranslator
+	placeholderManager  *HTMLPlaceholderManager
 }
 
 // HTMLProcessingMode HTML处理模式
@@ -45,11 +52,30 @@ func NewHTMLProcessor(opts ProcessorOptions, logger *zap.Logger, mode HTMLProces
 	maxRetries := 3
 	nodeTranslator := NewNodeInfoTranslator(opts.ChunkSize, contextDistance, maxRetries)
 
+	// 创建HTML格式保护器
+	protector := pkgdoc.GetProtectorForFormat("html")
+
+	// 创建增强功能组件
+	var smartExtractor *HTMLSmartExtractor
+	var attributeTranslator *HTMLAttributeTranslator
+	var placeholderManager *HTMLPlaceholderManager
+
+	if mode == HTMLModeNative {
+		// 只为native模式创建增强组件
+		smartExtractor = NewHTMLSmartExtractor(logger, DefaultSmartExtractorOptions())
+		attributeTranslator = NewHTMLAttributeTranslator(logger, DefaultAttributeTranslationConfig())
+		placeholderManager = NewHTMLPlaceholderManager()
+	}
+
 	return &HTMLProcessor{
-		opts:           opts,
-		logger:         logger,
-		nodeTranslator: nodeTranslator,
-		mode:           mode,
+		opts:                opts,
+		logger:              logger,
+		nodeTranslator:      nodeTranslator,
+		mode:                mode,
+		protector:           protector,
+		smartExtractor:      smartExtractor,
+		attributeTranslator: attributeTranslator,
+		placeholderManager:  placeholderManager,
 	}, nil
 }
 
@@ -138,6 +164,10 @@ func (p *HTMLProcessor) parseAsMarkdown(ctx context.Context, htmlStr string, doc
 
 // parseNative 原生解析HTML
 func (p *HTMLProcessor) parseNative(ctx context.Context, htmlStr string, doc *Document) (*Document, error) {
+	// 提取XML声明和DOCTYPE
+	xmlDeclaration := p.extractXMLDeclaration(htmlStr)
+	doctype := p.extractDOCTYPE(htmlStr)
+	
 	// 使用 goquery 解析 HTML
 	reader := strings.NewReader(htmlStr)
 	gqDoc, err := goquery.NewDocumentFromReader(reader)
@@ -145,13 +175,21 @@ func (p *HTMLProcessor) parseNative(ctx context.Context, htmlStr string, doc *Do
 		return nil, fmt.Errorf("failed to parse HTML: %w", err)
 	}
 
-	// 保存原始HTML
+	// 保存原始HTML和文档声明
 	doc.Metadata.CustomFields = map[string]interface{}{
-		"originalHTML": htmlStr,
-		"mode":         "native",
+		"originalHTML":    htmlStr,
+		"mode":            "native",
+		"xmlDeclaration":  xmlDeclaration,
+		"doctype":         doctype,
+		"gqDoc":           gqDoc, // 保存goquery文档用于后续处理
 	}
 
-	// 收集所有文本节点
+	// 使用增强功能或传统方式收集节点
+	if p.smartExtractor != nil && p.attributeTranslator != nil {
+		return p.parseNativeEnhanced(ctx, gqDoc, doc)
+	}
+
+	// 传统方式：收集所有文本节点
 	nodeID := 1
 	var collectNodes func(*goquery.Selection, string)
 	collectNodes = func(sel *goquery.Selection, path string) {
@@ -168,6 +206,213 @@ func (p *HTMLProcessor) parseNative(ctx context.Context, htmlStr string, doc *Do
 						block := &BaseBlock{
 							Type:         BlockTypeCustom,
 							Content:      node.Data, // 保留原始空白
+							Translatable: true,
+							Metadata: BlockMetadata{
+								Attributes: map[string]interface{}{
+									"nodeType": "text",
+									"path":     currentPath,
+								},
+							},
+						}
+						doc.Blocks = append(doc.Blocks, block)
+
+						// 创建 NodeInfo
+						nodeInfo := &NodeInfo{
+							ID:           nodeID,
+							BlockID:      fmt.Sprintf("text-node-%d", nodeID),
+							OriginalText: text,
+							Status:       NodeStatusPending,
+							Path:         currentPath,
+							Metadata: map[string]interface{}{
+								"originalData":  node.Data,
+								"leadingSpace":  getLeadingSpace(node.Data),
+								"trailingSpace": getTrailingSpace(node.Data),
+								"selection":     s,
+								"parentTag":     s.Parent().Nodes[0].Data,
+							},
+						}
+						p.nodeTranslator.collection.Add(nodeInfo)
+						nodeID++
+					}
+				} else if node.Type == html.ElementNode {
+					// 递归处理子元素
+					collectNodes(s, currentPath)
+				}
+			}
+		})
+
+		// 处理属性中的文本
+		if sel.Nodes != nil && len(sel.Nodes) > 0 && sel.Nodes[0].Type == html.ElementNode {
+			// 检查需要翻译的属性
+			translatableAttrs := []string{"alt", "title", "placeholder", "aria-label"}
+			for _, attr := range translatableAttrs {
+				if val, exists := sel.Attr(attr); exists && val != "" {
+					// 创建属性块
+					block := &BaseBlock{
+						Type:         BlockTypeCustom,
+						Content:      val,
+						Translatable: true,
+						Metadata: BlockMetadata{
+							Attributes: map[string]interface{}{
+								"nodeType":      "attribute",
+								"attributeName": attr,
+								"path":          path,
+							},
+						},
+					}
+					doc.Blocks = append(doc.Blocks, block)
+
+					// 创建 NodeInfo
+					nodeInfo := &NodeInfo{
+						ID:           nodeID,
+						BlockID:      fmt.Sprintf("attr-%d", nodeID),
+						OriginalText: val,
+						Status:       NodeStatusPending,
+						Path:         fmt.Sprintf("%s/@%s", path, attr),
+						Metadata: map[string]interface{}{
+							"isAttribute":   true,
+							"attributeName": attr,
+							"selection":     sel,
+						},
+					}
+					p.nodeTranslator.collection.Add(nodeInfo)
+					nodeID++
+				}
+			}
+		}
+	}
+
+	// 从根元素开始收集
+	collectNodes(gqDoc.Selection, "")
+
+	return doc, nil
+}
+
+// parseNativeEnhanced 使用增强功能解析HTML
+func (p *HTMLProcessor) parseNativeEnhanced(ctx context.Context, gqDoc *goquery.Document, doc *Document) (*Document, error) {
+	p.logger.Debug("using enhanced HTML parsing")
+
+	// 提取可翻译节点
+	extractedNodes, err := p.smartExtractor.ExtractTranslatableNodes(gqDoc)
+	if err != nil {
+		p.logger.Warn("smart extraction failed, falling back to traditional method", zap.Error(err))
+		return p.parseNativeTraditional(ctx, gqDoc, doc)
+	}
+
+	// 提取可翻译属性
+	extractedAttrs, err := p.attributeTranslator.ExtractTranslatableAttributes(gqDoc)
+	if err != nil {
+		p.logger.Warn("attribute extraction failed", zap.Error(err))
+		// 继续处理，只是没有属性翻译
+	}
+
+	// 转换为传统NodeInfo格式以兼容现有翻译流程
+	nodeID := 1
+	for _, node := range extractedNodes {
+		if node.CanTranslate && !node.IsAttribute {
+			// 创建块
+			block := &BaseBlock{
+				Type:         BlockTypeCustom,
+				Content:      node.Text,
+				Translatable: true,
+				Metadata: BlockMetadata{
+					Attributes: map[string]interface{}{
+						"nodeType":     "enhanced_text",
+						"path":         node.Path,
+						"parentTag":    node.ParentTag,
+						"canTranslate": node.CanTranslate,
+					},
+				},
+			}
+			doc.Blocks = append(doc.Blocks, block)
+
+			// 创建NodeInfo
+			nodeInfo := &NodeInfo{
+				ID:           nodeID,
+				BlockID:      fmt.Sprintf("enhanced-text-node-%d", nodeID),
+				OriginalText: node.Text,
+				Status:       NodeStatusPending,
+				Path:         node.Path,
+				Metadata: map[string]interface{}{
+					"extractableNode":    node,
+					"leadingSpace":       node.Context.LeadingWhitespace,
+					"trailingSpace":      node.Context.TrailingWhitespace,
+					"selection":          node.Selection,
+					"parentTag":          node.ParentTag,
+					"enhanced":           true,
+				},
+			}
+			p.nodeTranslator.collection.Add(nodeInfo)
+			nodeID++
+		}
+	}
+
+	// 处理属性
+	for _, attr := range extractedAttrs {
+		if attr.CanTranslate {
+			// 创建属性块
+			block := &BaseBlock{
+				Type:         BlockTypeCustom,
+				Content:      attr.OriginalValue,
+				Translatable: true,
+				Metadata: BlockMetadata{
+					Attributes: map[string]interface{}{
+						"nodeType":      "enhanced_attribute",
+						"attributeName": attr.AttributeName,
+						"path":          attr.Path,
+						"elementTag":    attr.ElementTag,
+					},
+				},
+			}
+			doc.Blocks = append(doc.Blocks, block)
+
+			// 创建NodeInfo
+			nodeInfo := &NodeInfo{
+				ID:           nodeID,
+				BlockID:      fmt.Sprintf("enhanced-attr-%d", nodeID),
+				OriginalText: attr.OriginalValue,
+				Status:       NodeStatusPending,
+				Path:         fmt.Sprintf("%s/@%s", attr.Path, attr.AttributeName),
+				Metadata: map[string]interface{}{
+					"isAttribute":       true,
+					"attributeInfo":     attr,
+					"attributeName":     attr.AttributeName,
+					"element":           attr.Element,
+					"enhanced":          true,
+				},
+			}
+			p.nodeTranslator.collection.Add(nodeInfo)
+			nodeID++
+		}
+	}
+
+	p.logger.Info("enhanced HTML parsing completed",
+		zap.Int("textNodes", len(extractedNodes)),
+		zap.Int("attributes", len(extractedAttrs)),
+		zap.Int("totalNodes", nodeID-1))
+
+	return doc, nil
+}
+
+// parseNativeTraditional 传统方式解析（fallback）
+func (p *HTMLProcessor) parseNativeTraditional(ctx context.Context, gqDoc *goquery.Document, doc *Document) (*Document, error) {
+	// 使用原来的collectNodes逻辑
+	nodeID := 1
+	var collectNodes func(*goquery.Selection, string)
+	collectNodes = func(sel *goquery.Selection, path string) {
+		sel.Contents().Each(func(i int, s *goquery.Selection) {
+			currentPath := fmt.Sprintf("%s[%d]", path, i+1)
+
+			// 检查是否是文本节点
+			if s.Nodes != nil && len(s.Nodes) > 0 {
+				node := s.Nodes[0]
+				if node.Type == html.TextNode {
+					text := strings.TrimSpace(node.Data)
+					if text != "" {
+						// 创建块
+						block := &BaseBlock{
+							Type:         BlockTypeCustom,
+							Content:      node.Data,
 							Translatable: true,
 							Metadata: BlockMetadata{
 								Attributes: map[string]interface{}{
@@ -385,11 +630,58 @@ func (p *HTMLProcessor) renderFromMarkdown(ctx context.Context, doc *Document, o
 
 // renderNative 原生渲染HTML
 func (p *HTMLProcessor) renderNative(ctx context.Context, doc *Document, output io.Writer) error {
+	// 优先使用保存的goquery文档
+	if gqDoc, ok := doc.Metadata.CustomFields["gqDoc"].(*goquery.Document); ok {
+		return p.renderNativeFromGqDoc(ctx, doc, gqDoc, output)
+	}
+
+	// fallback到传统方式
+	return p.renderNativeTraditional(ctx, doc, output)
+}
+
+// renderNativeFromGqDoc 从保存的goquery文档渲染
+func (p *HTMLProcessor) renderNativeFromGqDoc(ctx context.Context, doc *Document, gqDoc *goquery.Document, output io.Writer) error {
+	// 应用翻译（增强模式优先）
+	nodes := p.nodeTranslator.collection.GetAll()
+	for _, node := range nodes {
+		if !node.IsTranslated() {
+			continue
+		}
+
+		// 检查是否是增强模式
+		if enhanced, _ := node.Metadata["enhanced"].(bool); enhanced {
+			p.applyEnhancedTranslation(node)
+		} else {
+			p.applyTraditionalTranslation(node)
+		}
+	}
+
+	// 输出HTML
+	htmlStr, err := gqDoc.Html()
+	if err != nil {
+		return fmt.Errorf("failed to render HTML: %w", err)
+	}
+
+	// 重新添加声明
+	xmlDeclaration, _ := doc.Metadata.CustomFields["xmlDeclaration"].(string)
+	doctype, _ := doc.Metadata.CustomFields["doctype"].(string)
+	finalHTML := p.reconstructHTML(xmlDeclaration, doctype, htmlStr)
+
+	_, err = output.Write([]byte(finalHTML))
+	return err
+}
+
+// renderNativeTraditional 传统方式渲染
+func (p *HTMLProcessor) renderNativeTraditional(ctx context.Context, doc *Document, output io.Writer) error {
 	// 获取原始HTML
 	originalHTML, _ := doc.Metadata.CustomFields["originalHTML"].(string)
 	if originalHTML == "" {
 		return fmt.Errorf("no original HTML found")
 	}
+
+	// 获取保存的声明
+	xmlDeclaration, _ := doc.Metadata.CustomFields["xmlDeclaration"].(string)
+	doctype, _ := doc.Metadata.CustomFields["doctype"].(string)
 
 	// 解析HTML
 	reader := strings.NewReader(originalHTML)
@@ -404,27 +696,7 @@ func (p *HTMLProcessor) renderNative(ctx context.Context, doc *Document, output 
 		if !node.IsTranslated() {
 			continue
 		}
-
-		// 获取selection
-		if sel, ok := node.Metadata["selection"].(*goquery.Selection); ok {
-			if isAttr, _ := node.Metadata["isAttribute"].(bool); isAttr {
-				// 更新属性
-				if attrName, _ := node.Metadata["attributeName"].(string); attrName != "" {
-					sel.SetAttr(attrName, node.TranslatedText)
-				}
-			} else {
-				// 更新文本节点
-				if sel.Nodes != nil && len(sel.Nodes) > 0 {
-					htmlNode := sel.Nodes[0]
-					if htmlNode.Type == html.TextNode {
-						// 保留原始空白
-						leading, _ := node.Metadata["leadingSpace"].(string)
-						trailing, _ := node.Metadata["trailingSpace"].(string)
-						htmlNode.Data = leading + node.TranslatedText + trailing
-					}
-				}
-			}
-		}
+		p.applyTraditionalTranslation(node)
 	}
 
 	// 输出HTML
@@ -433,8 +705,55 @@ func (p *HTMLProcessor) renderNative(ctx context.Context, doc *Document, output 
 		return fmt.Errorf("failed to render HTML: %w", err)
 	}
 
-	_, err = output.Write([]byte(htmlStr))
+	// 重新添加XML声明和DOCTYPE
+	finalHTML := p.reconstructHTML(xmlDeclaration, doctype, htmlStr)
+
+	_, err = output.Write([]byte(finalHTML))
 	return err
+}
+
+// applyEnhancedTranslation 应用增强模式的翻译
+func (p *HTMLProcessor) applyEnhancedTranslation(node *NodeInfo) {
+	if isAttr, _ := node.Metadata["isAttribute"].(bool); isAttr {
+		// 增强属性翻译
+		if attrInfo, ok := node.Metadata["attributeInfo"].(*AttributeTranslationInfo); ok {
+			attrInfo.Element.SetAttr(attrInfo.AttributeName, node.TranslatedText)
+			attrInfo.TranslatedValue = node.TranslatedText
+		}
+	} else {
+		// 增强文本节点翻译
+		if extractableNode, ok := node.Metadata["extractableNode"].(*ExtractableNode); ok {
+			if extractableNode.Selection.Nodes != nil && len(extractableNode.Selection.Nodes) > 0 {
+				htmlNode := extractableNode.Selection.Nodes[0]
+				finalText := extractableNode.Context.LeadingWhitespace + node.TranslatedText + extractableNode.Context.TrailingWhitespace
+				htmlNode.Data = finalText
+			}
+		}
+	}
+}
+
+// applyTraditionalTranslation 应用传统模式的翻译
+func (p *HTMLProcessor) applyTraditionalTranslation(node *NodeInfo) {
+	// 获取selection
+	if sel, ok := node.Metadata["selection"].(*goquery.Selection); ok {
+		if isAttr, _ := node.Metadata["isAttribute"].(bool); isAttr {
+			// 更新属性
+			if attrName, _ := node.Metadata["attributeName"].(string); attrName != "" {
+				sel.SetAttr(attrName, node.TranslatedText)
+			}
+		} else {
+			// 更新文本节点
+			if sel.Nodes != nil && len(sel.Nodes) > 0 {
+				htmlNode := sel.Nodes[0]
+				if htmlNode.Type == html.TextNode {
+					// 保留原始空白
+					leading, _ := node.Metadata["leadingSpace"].(string)
+					trailing, _ := node.Metadata["trailingSpace"].(string)
+					htmlNode.Data = leading + node.TranslatedText + trailing
+				}
+			}
+		}
+	}
 }
 
 // GetFormat 返回支持的格式
@@ -760,4 +1079,94 @@ func getOuterHTML(sel *goquery.Selection) string {
 		}
 	}
 	return html
+}
+
+// ProtectContent 保护HTML内容，使用标准保护器
+func (p *HTMLProcessor) ProtectContent(text string, patternProtector interface{}) string {
+	pp, ok := patternProtector.(pkgdoc.PatternProtector)
+	if !ok {
+		p.logger.Warn("invalid pattern protector type, skipping protection")
+		return text
+	}
+
+	// 使用HTML特定的保护器（与markdown/text保护器一致的接口）
+	return p.protector.ProtectContent(text, pp)
+}
+
+// RestoreContent 恢复HTML内容，确保结构有效
+func (p *HTMLProcessor) RestoreContent(text string, patternProtector interface{}) string {
+	pp, ok := patternProtector.(pkgdoc.PatternProtector)
+	if !ok {
+		p.logger.Warn("invalid pattern protector type, skipping restoration")
+		return text
+	}
+
+	// 使用HTML保护器进行恢复
+	restoredText := p.protector.RestoreContent(text, pp)
+
+	// HTML特有的恢复后验证（可选）
+	// TODO: 可以添加HTML结构验证
+	// if p.opts.ValidateHTML {
+	// 	return p.validateHTMLStructure(restoredText)
+	// }
+
+	return restoredText
+}
+
+// extractXMLDeclaration 提取XML声明
+func (p *HTMLProcessor) extractXMLDeclaration(htmlStr string) string {
+	// 匹配XML声明：<?xml version="1.0" encoding="UTF-8"?>
+	xmlPattern := regexp.MustCompile(`(?i)^\s*<\?xml[^>]*\?>`)
+	match := xmlPattern.FindString(htmlStr)
+	return strings.TrimSpace(match)
+}
+
+// extractDOCTYPE 提取DOCTYPE声明
+func (p *HTMLProcessor) extractDOCTYPE(htmlStr string) string {
+	// 匹配DOCTYPE声明，支持多种格式
+	doctypePatterns := []*regexp.Regexp{
+		// HTML5: <!DOCTYPE html>
+		regexp.MustCompile(`(?i)<!DOCTYPE\s+html\s*>`),
+		// XHTML 1.0 Strict
+		regexp.MustCompile(`(?i)<!DOCTYPE\s+html\s+PUBLIC\s+"-//W3C//DTD\s+XHTML\s+1\.0\s+Strict//EN"\s+"[^"]*">`),
+		// XHTML 1.0 Transitional
+		regexp.MustCompile(`(?i)<!DOCTYPE\s+html\s+PUBLIC\s+"-//W3C//DTD\s+XHTML\s+1\.0\s+Transitional//EN"\s+"[^"]*">`),
+		// XHTML 1.1
+		regexp.MustCompile(`(?i)<!DOCTYPE\s+html\s+PUBLIC\s+"-//W3C//DTD\s+XHTML\s+1\.1//EN"\s+"[^"]*">`),
+		// HTML 4.01 Strict
+		regexp.MustCompile(`(?i)<!DOCTYPE\s+html\s+PUBLIC\s+"-//W3C//DTD\s+HTML\s+4\.01//EN"\s+"[^"]*">`),
+		// HTML 4.01 Transitional
+		regexp.MustCompile(`(?i)<!DOCTYPE\s+html\s+PUBLIC\s+"-//W3C//DTD\s+HTML\s+4\.01\s+Transitional//EN"\s+"[^"]*">`),
+		// 通用DOCTYPE模式
+		regexp.MustCompile(`(?i)<!DOCTYPE[^>]*>`),
+	}
+
+	for _, pattern := range doctypePatterns {
+		if match := pattern.FindString(htmlStr); match != "" {
+			return strings.TrimSpace(match)
+		}
+	}
+	return ""
+}
+
+// reconstructHTML 重构HTML，添加声明
+func (p *HTMLProcessor) reconstructHTML(xmlDeclaration, doctype, htmlContent string) string {
+	var builder strings.Builder
+
+	// 添加XML声明（如果存在）
+	if xmlDeclaration != "" {
+		builder.WriteString(xmlDeclaration)
+		builder.WriteString("\n")
+	}
+
+	// 添加DOCTYPE（如果存在）
+	if doctype != "" {
+		builder.WriteString(doctype)
+		builder.WriteString("\n")
+	}
+
+	// 添加HTML内容
+	builder.WriteString(htmlContent)
+
+	return builder.String()
 }

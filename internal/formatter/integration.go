@@ -180,6 +180,11 @@ func (p *ProcessorWithFormatter) GetFormat() document.Format {
 	return p.processor.GetFormat()
 }
 
+// ProtectContent 保护文档内容（委托给底层处理器）
+func (p *ProcessorWithFormatter) ProtectContent(text string, patternProtector interface{}) string {
+	return p.processor.ProtectContent(text, patternProtector)
+}
+
 // formatInput 格式化输入流
 func (p *ProcessorWithFormatter) formatInput(input io.Reader) (io.Reader, error) {
 	// 读取内容

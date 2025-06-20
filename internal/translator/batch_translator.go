@@ -23,6 +23,7 @@ type BatchTranslator struct {
 	preserveManager    *translation.PreserveManager
 	smartSplitter      *translation.SmartNodeSplitter // 智能节点分割器
 	statsManager       *stats.StatsManager            // 统计管理器
+	documentProcessor  document.Processor             // 文档处理器，用于格式特定的内容保护
 
 	// 详细翻译过程跟踪
 	translationRounds []*TranslationRoundResult // 每轮翻译的详细结果
@@ -33,7 +34,7 @@ type BatchTranslator struct {
 }
 
 // NewBatchTranslator 创建批量翻译器
-func NewBatchTranslator(cfg TranslatorConfig, service translation.Service, logger *zap.Logger, statsManager *stats.StatsManager) *BatchTranslator {
+func NewBatchTranslator(cfg TranslatorConfig, service translation.Service, logger *zap.Logger, statsManager *stats.StatsManager, docProcessor document.Processor) *BatchTranslator {
 	return &BatchTranslator{
 		config:             cfg,
 		translationService: service,
@@ -41,6 +42,7 @@ func NewBatchTranslator(cfg TranslatorConfig, service translation.Service, logge
 		preserveManager:    translation.NewPreserveManager(translation.DefaultPreserveConfig),
 		smartSplitter:      translation.NewSmartNodeSplitter(cfg.SmartSplitter, logger),
 		statsManager:       statsManager,
+		documentProcessor:  docProcessor,
 		translationRounds:  make([]*TranslationRoundResult, 0),
 	}
 }
@@ -50,6 +52,11 @@ func (bt *BatchTranslator) SetProgressCallback(callback ProgressCallback) {
 	bt.mu.Lock()
 	defer bt.mu.Unlock()
 	bt.progressCallback = callback
+}
+
+// SetDocumentProcessor 设置文档处理器，用于格式特定的内容保护
+func (bt *BatchTranslator) SetDocumentProcessor(processor document.Processor) {
+	bt.documentProcessor = processor
 }
 
 // callProgressCallback 安全地调用进度回调
@@ -458,8 +465,15 @@ func (bt *BatchTranslator) translateGroup(ctx context.Context, group *document.N
 			builder.WriteString(node.TranslatedText)
 			builder.WriteString(fmt.Sprintf("\n@@NODE_END_%d@@", node.ID))
 		} else {
-			// 保护内容
-			protectedText := bt.protectContent(node.OriginalText, preserveManager)
+			// 保护内容，使用文档处理器的格式特定保护
+			var protectedText string
+			if bt.documentProcessor != nil {
+				protectedText = bt.documentProcessor.ProtectContent(node.OriginalText, preserveManager)
+			} else {
+				// 如果没有文档处理器，使用原文（向后兼容）
+				bt.logger.Warn("no document processor available for content protection")
+				protectedText = node.OriginalText
+			}
 			protectedTexts[node.ID] = protectedText
 
 			// 检查是否是纯保护内容
@@ -1037,87 +1051,6 @@ func (bt *BatchTranslator) classifyTranslationError(err error) string {
 	}
 }
 
-// protectContent 保护不需要翻译的内容
-func (bt *BatchTranslator) protectContent(text string, pm *translation.PreserveManager) string {
-	// LaTeX 公式 - 使用更精确的正则表达式
-	text = pm.ProtectPattern(text, `\$[^$\n]+\$`)      // 行内公式 (不包含换行)
-	text = pm.ProtectPattern(text, `\$\$[\s\S]*?\$\$`) // 行间公式 (非贪婪匹配)
-	text = pm.ProtectPattern(text, `\\\([\s\S]*?\\\)`) // \(...\) (非贪婪匹配)
-	text = pm.ProtectPattern(text, `\\\[[\s\S]*?\\\]`) // \[...\] (非贪婪匹配)
-
-	// 代码块
-	text = pm.ProtectPattern(text, "`[^`]+`") // 行内代码
-	text = protectCodeBlocks(text, pm)        // 多行代码块
-
-	// HTML 标签
-	text = pm.ProtectPattern(text, `<[^>]+>`)     // HTML 标签
-	text = pm.ProtectPattern(text, `&[a-zA-Z]+;`) // HTML 实体
-	text = pm.ProtectPattern(text, `&#\d+;`)      // 数字实体
-
-	// URL
-	text = pm.ProtectPattern(text, `(?i)(https?|ftp|file)://[^\s\)]+`)
-	text = pm.ProtectPattern(text, `(?i)www\.[^\s\)]+`)
-
-	// 文件路径
-	text = pm.ProtectPattern(text, `(?:^|[\s(])/(?:[^/\s]+/)*[^/\s]+(?:\.[a-zA-Z0-9]+)?`)
-	text = pm.ProtectPattern(text, `[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]+`)
-	text = pm.ProtectPattern(text, `\.{1,2}/(?:[^/\s]+/)*[^/\s]+(?:\.[a-zA-Z0-9]+)?`)
-
-	// Markdown 图片和链接
-	text = pm.ProtectPattern(text, `!\[[^\]]*\]\([^)]+\)`)      // ![alt text](image url)
-	text = pm.ProtectPattern(text, `\[[^\]]+\]\([^)]+\)`)       // [link text](url)
-	text = pm.ProtectPattern(text, `\[[^\]]+\]\[[^\]]*\]`)      // [link text][ref]
-	text = pm.ProtectPattern(text, `(?m)^\s*\[[^\]]+\]:\s*.+$`) // [ref]: url (引用定义，多行模式)
-
-	// 引用标记
-	text = pm.ProtectPattern(text, `\[\d+\]`)                                 // [1], [2]
-	text = pm.ProtectPattern(text, `\[[A-Za-z]+(?:\s+et\s+al\.)?,\s*\d{4}\]`) // [Author, Year]
-	text = pm.ProtectPattern(text, `\\cite\{[^}]+\}`)                         // \cite{}
-	text = pm.ProtectPattern(text, `\\ref\{[^}]+\}`)                          // \ref{}
-	text = pm.ProtectPattern(text, `\\label\{[^}]+\}`)                        // \label{}
-
-	// 其他
-	text = pm.ProtectPattern(text, `\{\{[^}]+\}\}`)                                  // {{variable}}
-	text = pm.ProtectPattern(text, `<%[^%]+%>`)                                      // <% %>
-	text = pm.ProtectPattern(text, `<!--[\s\S]*?-->`)                                // <!-- -->
-	text = pm.ProtectPattern(text, `[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`) // 邮箱
-
-	return text
-}
-
-// protectCodeBlocks 保护多行代码块
-func protectCodeBlocks(text string, pm *translation.PreserveManager) string {
-	lines := strings.Split(text, "\n")
-	inCodeBlock := false
-	codeBlockContent := []string{}
-	result := []string{}
-
-	for _, line := range lines {
-		if strings.HasPrefix(line, "```") {
-			if !inCodeBlock {
-				inCodeBlock = true
-				codeBlockContent = []string{line}
-			} else {
-				codeBlockContent = append(codeBlockContent, line)
-				codeBlock := strings.Join(codeBlockContent, "\n")
-				placeholder := pm.Protect(codeBlock)
-				result = append(result, placeholder)
-				inCodeBlock = false
-				codeBlockContent = []string{}
-			}
-		} else if inCodeBlock {
-			codeBlockContent = append(codeBlockContent, line)
-		} else {
-			result = append(result, line)
-		}
-	}
-
-	if inCodeBlock {
-		result = append(result, codeBlockContent...)
-	}
-
-	return strings.Join(result, "\n")
-}
 
 // groupNodes 将节点分组（支持智能分割）
 func (bt *BatchTranslator) groupNodes(nodes []*document.NodeInfo) []*document.NodeGroup {

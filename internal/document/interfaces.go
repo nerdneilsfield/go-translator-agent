@@ -21,6 +21,9 @@ type Processor interface {
 
 	// GetFormat 返回处理器支持的格式
 	GetFormat() Format
+
+	// ProtectContent 保护文档内容，使用格式特定的保护器
+	ProtectContent(text string, patternProtector interface{}) string
 }
 
 // Parser 文档解析器接口

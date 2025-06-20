@@ -295,7 +295,7 @@ func NewTranslationCoordinator(cfg *config.Config, logger *zap.Logger, progressP
 
 	// 创建节点翻译管理器
 	translatorConfig := NewTranslatorConfig(cfg)
-	translator := NewBatchTranslator(translatorConfig, translationService, logger, providerStatsManager)
+	translator := NewBatchTranslator(translatorConfig, translationService, logger, providerStatsManager, nil)
 	logger.Info("translator initialized",
 		zap.Int("chunk_size", translatorConfig.ChunkSize),
 		zap.Int("concurrency", translatorConfig.Concurrency),
@@ -345,14 +345,26 @@ func (c *TranslationCoordinator) TranslateFile(ctx context.Context, inputPath, o
 		return nil, fmt.Errorf("failed to read input file: %w", err)
 	}
 
-	// 预翻译格式修复
-	contentBytes, err := c.preTranslationFormatFix(ctx, inputPath, []byte(contentStr))
+	// Check if input is a directory (e.g., TextBundle)
+	fileInfo, err := os.Stat(inputPath)
 	if err != nil {
-		c.logger.Warn("pre-translation format fix failed", zap.Error(err))
-		// 不让格式修复失败阻止翻译过程
-		contentBytes = []byte(contentStr)
+		return nil, fmt.Errorf("failed to stat input file: %w", err)
 	}
-	content := string(contentBytes)
+
+	var content string
+	if fileInfo.IsDir() {
+		// For directories, use the path directly (no format fixing needed)
+		content = contentStr
+	} else {
+		// 预翻译格式修复 (only for regular files)
+		contentBytes, err := c.preTranslationFormatFix(ctx, inputPath, []byte(contentStr))
+		if err != nil {
+			c.logger.Warn("pre-translation format fix failed", zap.Error(err))
+			// 不让格式修复失败阻止翻译过程
+			contentBytes = []byte(contentStr)
+		}
+		content = string(contentBytes)
+	}
 
 	// 使用完善的document processor替代简化解析
 	processorOpts := document.ProcessorOptions{
@@ -375,6 +387,11 @@ func (c *TranslationCoordinator) TranslateFile(ctx context.Context, inputPath, o
 	c.logger.Info("using document processor",
 		zap.String("format", string(processor.GetFormat())),
 		zap.Int("chunk_size", processorOpts.ChunkSize))
+
+	// 为BatchTranslator设置文档处理器以支持格式特定的内容保护
+	if batchTranslator, ok := c.translator.(*BatchTranslator); ok {
+		batchTranslator.SetDocumentProcessor(processor)
+	}
 
 	// 解析文档
 	parseCtx := context.Background()

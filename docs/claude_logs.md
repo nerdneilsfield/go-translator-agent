@@ -1191,14 +1191,110 @@ INFO  enhanced prompt retry successful - node markers found
 
 ---
 
+## 2025-06-20 TextBundle 和 TextPack 格式支持实现
+
+### 📋 **实现概述**
+
+为 go-translator-agent 添加了对 TextBundle 和 TextPack 格式的完整支持，这两种格式是用于在应用程序之间交换 Markdown 文件及其资源的标准格式。
+
+### 🔧 **技术实现**
+
+#### 1. 格式定义与注册
+
+**新增格式类型** (`internal/document/types.go`):
+```go
+FormatTextBundle Format = "textbundle"
+FormatTextPack   Format = "textpack"
+```
+
+**处理器注册** (`internal/document/registry.go`):
+- 注册 `.textbundle` 扩展名 → TextBundle 处理器
+- 注册 `.textpack` 扩展名 → TextPack 处理器
+
+#### 2. 核心组件实现
+
+**A. Bundle 元数据处理** (`internal/document/bundle_metadata.go`)
+- `BundleInfo` 结构体：处理 info.json 文件
+- 自定义 JSON 序列化/反序列化以保留扩展数据
+- 支持标准字段和应用特定扩展字段
+
+**B. TextBundle 处理器** (`internal/document/textbundle_processor.go`)
+- 解析 .textbundle 目录结构
+- 资产引用保护机制（防止翻译 `assets/` 路径）
+- 复用 MarkdownProcessor 进行实际翻译
+- 保持目录结构和资产文件完整性
+
+**C. TextPack 处理器** (`internal/document/textpack_processor.go`)
+- ZIP 文件解压和压缩处理
+- 临时目录管理和自动清理
+- 委托给 TextBundleProcessor 处理实际内容
+
+#### 3. I/O 增强
+
+**目录输入支持** (`internal/translator/coordinator_helpers.go`):
+```go
+// 检测输入是否为目录
+fileInfo, err := os.Stat(filePath)
+if fileInfo.IsDir() {
+    // 对于目录格式，返回路径本身
+    return filePath, nil
+}
+```
+
+**目录输出处理** (`internal/translator/coordinator_helpers.go`):
+```go
+// TextBundle 输出特殊处理
+if strings.HasSuffix(filePath, ".textbundle") {
+    // 从标记中提取实际路径并移动到目标位置
+}
+```
+
+#### 4. 资产保护系统
+
+**AssetProtector 实现**:
+- 使用占位符替换资产引用：`![](assets/image.png)` → `@@ASSET_1@@`
+- 翻译后恢复原始引用
+- 支持图片和链接的资产引用
+
+### 🐛 **修复的问题**
+
+#### 1. 翻译示例 API 更新
+
+修复了所有翻译示例代码以使用最新 API：
+- `ProviderResponse` 不再有 `Model` 字段
+- `StepConfig` 使用 `AdditionalNotes` 替代 `Prompt` 和 `SystemRole`
+- `Translation Service` 使用 `TranslateText` 方法
+- `Cache` 接口方法不再需要 context 参数
+- `ProviderRequest` 使用 `Metadata` 替代 `Options`
+
+### 📊 **实现成果**
+
+- ✅ 完整的 TextBundle 目录格式支持
+- ✅ TextPack ZIP 压缩格式支持
+- ✅ info.json 元数据保留和扩展
+- ✅ 资产文件完整性保护
+- ✅ 资产引用翻译保护
+- ✅ 与现有 Markdown 处理器的无缝集成
+- ✅ 目录和文件 I/O 的智能处理
+
+### 🔍 **技术亮点**
+
+1. **代码复用**：TextBundle/TextPack 处理器内部复用 MarkdownProcessor，避免重复代码
+2. **智能 I/O**：自动检测输入是文件还是目录，相应调整处理逻辑
+3. **资产保护**：创新的占位符机制确保资产引用在翻译过程中不被破坏
+4. **扩展性**：元数据处理保留未知字段，确保与其他应用的兼容性
+
+---
+
 ## 贡献统计
 
-- **代码行数**: ~3950+ 行（新增/修改）
-- **文件创建**: 22+ 个新文件
+- **代码行数**: ~4800+ 行（新增/修改）
+- **文件创建**: 28+ 个新文件
 - **测试用例**: 77+ 个测试用例（包含网络重试功能测试）
 - **配置示例**: 11个配置文件
 - **文档更新**: 多个 README 和配置指南
-- **Bug 修复**: 9+ 个关键问题修复（包含节点标记丢失修复）
+- **Bug 修复**: 10+ 个关键问题修复（包含节点标记丢失修复、翻译示例 API 更新）
+- **新增功能**: TextBundle/TextPack 格式支持
 
 ---
 

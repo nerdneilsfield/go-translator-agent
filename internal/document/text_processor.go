@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	pkgdoc "github.com/nerdneilsfield/go-translator-agent/pkg/document"
 	"go.uber.org/zap"
 )
 
@@ -15,6 +16,7 @@ type TextProcessor struct {
 	opts           ProcessorOptions
 	logger         *zap.Logger
 	nodeTranslator *NodeInfoTranslator
+	protector      pkgdoc.ContentProtector
 }
 
 // NewTextProcessor 创建文本处理器
@@ -32,10 +34,14 @@ func NewTextProcessor(opts ProcessorOptions, logger *zap.Logger) (*TextProcessor
 	maxRetries := 3
 	nodeTranslator := NewNodeInfoTranslator(opts.ChunkSize, contextDistance, maxRetries)
 
+	// 创建文本格式保护器
+	protector := pkgdoc.GetProtectorForFormat("text")
+
 	return &TextProcessor{
 		opts:           opts,
 		logger:         logger,
 		nodeTranslator: nodeTranslator,
+		protector:      protector,
 	}, nil
 }
 
@@ -354,4 +360,16 @@ func (p *TextProcessor) parseMarkedText(markedText string, nodes []*NodeInfo) er
 	}
 
 	return nil
+}
+
+// ProtectContent 保护文本内容，使用格式特定的保护器
+func (p *TextProcessor) ProtectContent(text string, patternProtector interface{}) string {
+	pp, ok := patternProtector.(pkgdoc.PatternProtector)
+	if !ok {
+		p.logger.Warn("invalid pattern protector type, skipping protection")
+		return text
+	}
+
+	// 使用文本特定的保护器
+	return p.protector.ProtectContent(text, pp)
 }

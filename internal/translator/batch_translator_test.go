@@ -183,7 +183,7 @@ func TestBatchTranslatorWithSimilarityCheck(t *testing.T) {
 			TargetLanguage: "zh",
 		},
 	}
-	bt := NewBatchTranslator(cfg, service, logger)
+	bt := NewBatchTranslator(cfg, service, logger, nil, nil)
 
 	// 创建测试节点
 	nodes := []*document.NodeInfo{

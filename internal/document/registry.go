@@ -173,6 +173,16 @@ func init() {
 		return NewEPUBProcessor(opts, logger, mode)
 	})
 
+	Register(FormatTextBundle, func(opts ProcessorOptions) (Processor, error) {
+		logger := getLoggerFromOptions(opts)
+		return NewTextBundleProcessor(opts, logger)
+	})
+
+	Register(FormatTextPack, func(opts ProcessorOptions) (Processor, error) {
+		logger := getLoggerFromOptions(opts)
+		return NewTextPackProcessor(opts, logger)
+	})
+
 	// Markdown
 	RegisterExtension(".md", FormatMarkdown)
 	RegisterExtension(".markdown", FormatMarkdown)
@@ -202,4 +212,10 @@ func init() {
 	// DOCX
 	RegisterExtension(".docx", FormatDOCX)
 	RegisterExtension(".doc", FormatDOCX)
+
+	// TextBundle
+	RegisterExtension(".textbundle", FormatTextBundle)
+
+	// TextPack
+	RegisterExtension(".textpack", FormatTextPack)
 }

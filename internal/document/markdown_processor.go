@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	pkgdoc "github.com/nerdneilsfield/go-translator-agent/pkg/document"
 	"go.uber.org/zap"
 )
 
@@ -16,6 +17,7 @@ type MarkdownProcessor struct {
 	opts           ProcessorOptions
 	logger         *zap.Logger
 	nodeTranslator *NodeInfoTranslator
+	protector      pkgdoc.ContentProtector
 }
 
 // NewMarkdownProcessor 创建Markdown处理器
@@ -33,10 +35,14 @@ func NewMarkdownProcessor(opts ProcessorOptions, logger *zap.Logger) (*MarkdownP
 	maxRetries := 3
 	nodeTranslator := NewNodeInfoTranslator(opts.ChunkSize, contextDistance, maxRetries)
 
+	// 创建Markdown格式保护器
+	protector := pkgdoc.GetProtectorForFormat("markdown")
+
 	return &MarkdownProcessor{
 		opts:           opts,
 		logger:         logger,
 		nodeTranslator: nodeTranslator,
+		protector:      protector,
 	}, nil
 }
 
@@ -781,4 +787,16 @@ func (p *MarkdownProcessor) parseMarkedText(markedText string, nodes []*NodeInfo
 	}
 
 	return nil
+}
+
+// ProtectContent 保护Markdown内容，使用格式特定的保护器
+func (p *MarkdownProcessor) ProtectContent(text string, patternProtector interface{}) string {
+	pp, ok := patternProtector.(pkgdoc.PatternProtector)
+	if !ok {
+		p.logger.Warn("invalid pattern protector type, skipping protection")
+		return text
+	}
+
+	// 使用Markdown特定的保护器
+	return p.protector.ProtectContent(text, pp)
 }

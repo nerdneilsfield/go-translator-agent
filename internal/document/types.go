@@ -8,14 +8,16 @@ import (
 type Format string
 
 const (
-	FormatMarkdown Format = "markdown"
-	FormatText     Format = "text"
-	FormatHTML     Format = "html"
-	FormatEPUB     Format = "epub"
-	FormatLaTeX    Format = "latex"
-	FormatPDF      Format = "pdf"
-	FormatDOCX     Format = "docx"
-	FormatUnknown  Format = "unknown"
+	FormatMarkdown   Format = "markdown"
+	FormatText       Format = "text"
+	FormatHTML       Format = "html"
+	FormatEPUB       Format = "epub"
+	FormatLaTeX      Format = "latex"
+	FormatPDF        Format = "pdf"
+	FormatDOCX       Format = "docx"
+	FormatTextBundle Format = "textbundle"
+	FormatTextPack   Format = "textpack"
+	FormatUnknown    Format = "unknown"
 )
 
 // Document 表示一个文档

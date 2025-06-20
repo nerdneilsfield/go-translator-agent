@@ -18,6 +18,20 @@ import (
 
 // readFile 读取文件内容
 func (c *TranslationCoordinator) readFile(filePath string) (string, error) {
+	// Check if the path is a directory (for TextBundle)
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to stat file %s: %w", filePath, err)
+	}
+
+	// If it's a directory (e.g., .textbundle), return the path itself
+	if fileInfo.IsDir() {
+		// For directory-based formats like TextBundle, we return the path
+		// The processor will handle reading the directory contents
+		return filePath, nil
+	}
+
+	// For regular files, read the content
 	file, err := os.Open(filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to open file %s: %w", filePath, err)
@@ -34,7 +48,26 @@ func (c *TranslationCoordinator) readFile(filePath string) (string, error) {
 
 // writeFile 写入文件内容
 func (c *TranslationCoordinator) writeFile(filePath, content string) error {
-	// 确保目录存在
+	// Check if output should be a directory (e.g., .textbundle)
+	if strings.HasSuffix(filePath, ".textbundle") {
+		// For TextBundle, content contains a marker with the actual output path
+		// Extract the path from marker like "[TextBundle saved to: /path/to/bundle]\n"
+		if strings.HasPrefix(content, "[TextBundle saved to: ") && strings.HasSuffix(content, "]\n") {
+			actualPath := content[len("[TextBundle saved to: ") : len(content)-2]
+			// Copy from temp to final destination
+			if actualPath != filePath {
+				// Remove existing directory if it exists
+				os.RemoveAll(filePath)
+				// Rename temp directory to final path
+				return os.Rename(actualPath, filePath)
+			}
+			return nil
+		}
+		// If no marker, this is an error
+		return fmt.Errorf("TextBundle rendering did not provide output path")
+	}
+
+	// For regular files, ensure directory exists
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)

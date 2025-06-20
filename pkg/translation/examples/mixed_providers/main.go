@@ -23,8 +23,7 @@ func (d *DeepLProvider) Translate(ctx context.Context, req *translation.Provider
 	)
 
 	return &translation.ProviderResponse{
-		Text:  translatedText,
-		Model: "deepl-pro",
+		Text: translatedText,
 	}, nil
 }
 
@@ -50,8 +49,7 @@ func (g *GoogleTranslateProvider) Translate(ctx context.Context, req *translatio
 	)
 
 	return &translation.ProviderResponse{
-		Text:  translatedText,
-		Model: "google-translate",
+		Text: translatedText,
 	}, nil
 }
 
@@ -73,7 +71,7 @@ func (o *OpenAIProvider) Translate(ctx context.Context, req *translation.Provide
 	var response string
 
 	// 根据请求中的选项判断是哪个步骤
-	if stepType, ok := req.Options["step_type"]; ok {
+	if stepType, ok := req.Metadata["step_type"]; ok {
 		switch stepType {
 		case "reflection":
 			response = "经过分析，翻译基本准确，但有以下改进建议：1. 某些专业术语可以更精确 2. 语气可以更自然"
@@ -88,7 +86,6 @@ func (o *OpenAIProvider) Translate(ctx context.Context, req *translation.Provide
 
 	return &translation.ProviderResponse{
 		Text:      response,
-		Model:     "gpt-4",
 		TokensIn:  100,
 		TokensOut: 150,
 	}, nil
@@ -118,13 +115,13 @@ func main() {
 			{
 				Name:     "initial_translation",
 				Provider: "deepl", // 使用 DeepL
-				Prompt:   "not used for deepl",
 			},
 			{
 				Name:     "reflection",
 				Provider: "openai", // 使用 OpenAI
 				Model:    "gpt-4",
-				Prompt:   "Review this translation and provide feedback:\n\nOriginal: {{original_text}}\nTranslation: {{translation}}",
+				AdditionalNotes: "Review this translation and provide feedback",
+				IsLLM:    true,
 				Variables: map[string]string{
 					"step_type": "reflection",
 				},
@@ -133,7 +130,8 @@ func main() {
 				Name:     "improvement",
 				Provider: "openai", // 使用 OpenAI
 				Model:    "gpt-4",
-				Prompt:   "Improve the translation based on feedback:\n\nOriginal: {{original_text}}\nCurrent: {{translation}}\nFeedback: {{feedback}}",
+				AdditionalNotes: "Improve the translation based on feedback",
+				IsLLM:    true,
 				Variables: map[string]string{
 					"step_type": "improvement",
 				},
@@ -151,17 +149,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	result1, err := translator1.Translate(context.Background(), &translation.Request{
-		Text: "Hello, world! This is a test of mixed translation providers.",
-	})
+	result1, err := translator1.TranslateText(context.Background(), "Hello, world! This is a test of mixed translation providers.")
 	if err != nil {
 		log.Printf("Translation error: %v", err)
 	} else {
-		fmt.Printf("最终翻译结果: %s\n", result1.Text)
-		fmt.Println("\n各步骤结果:")
-		for _, step := range result1.Steps {
-			fmt.Printf("- %s: %s\n", step.Name, step.Output)
-		}
+		fmt.Printf("最终翻译结果: %s\n", result1)
 	}
 
 	// 配置2：使用 Google Translate 进行快速翻译（单步骤）
@@ -185,13 +177,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	result2, err := translator2.Translate(context.Background(), &translation.Request{
-		Text: "Quick translation example.",
-	})
+	result2, err := translator2.TranslateText(context.Background(), "Quick translation example.")
 	if err != nil {
 		log.Printf("Translation error: %v", err)
 	} else {
-		fmt.Printf("翻译结果: %s\n", result2.Text)
+		fmt.Printf("翻译结果: %s\n", result2)
 	}
 
 	// 配置3：仅使用 LLM 的传统三步翻译
@@ -208,13 +198,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	result3, err := translator3.Translate(context.Background(), &translation.Request{
-		Text: "Traditional three-step translation.",
-	})
+	result3, err := translator3.TranslateText(context.Background(), "Traditional three-step translation.")
 	if err != nil {
 		log.Printf("Translation error: %v", err)
 	} else {
-		fmt.Printf("翻译结果: %s\n", result3.Text)
+		fmt.Printf("翻译结果: %s\n", result3)
 	}
 }
 
@@ -232,7 +220,7 @@ func (m *MockLLMClient) Complete(ctx context.Context, req *translation.Completio
 	}
 	return &translation.CompletionResponse{
 		Text:      resp.Text,
-		Model:     resp.Model,
+		Model:     m.provider.GetName(),
 		TokensIn:  resp.TokensIn,
 		TokensOut: resp.TokensOut,
 	}, nil
@@ -256,7 +244,7 @@ func (m *MockLLMClient) Chat(ctx context.Context, req *translation.ChatRequest) 
 			Role:    "assistant",
 			Content: resp.Text,
 		},
-		Model:     resp.Model,
+		Model:     m.provider.GetName(),
 		TokensIn:  resp.TokensIn,
 		TokensOut: resp.TokensOut,
 	}, nil

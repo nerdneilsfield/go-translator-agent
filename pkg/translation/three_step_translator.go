@@ -415,15 +415,15 @@ func (t *ThreeStepTranslator) applyProtection(text string) (string, error) {
 		return t.preserveManager.Protect(match)
 	})
 
-	// 保护 LaTeX 公式
+	// 保护 LaTeX 公式（改进版本）
 	// 块级公式
-	latexBlockRe := regexp.MustCompile("(?s)\\$\\$(.+?)\\$\\$|\\\\\\[(.+?)\\\\\\]")
+	latexBlockRe := regexp.MustCompile(`(?s)\$\$[^$]*?\$\$|\\\[[^\]]*?\\\]`)
 	protectedText = latexBlockRe.ReplaceAllStringFunc(protectedText, func(match string) string {
 		return t.preserveManager.Protect(match)
 	})
 
-	// 行内公式
-	latexInlineRe := regexp.MustCompile("\\$([^$\n]+?)\\$|\\\\\\((.+?)\\\\\\)")
+	// 行内公式（改进匹配复杂LaTeX语法）
+	latexInlineRe := regexp.MustCompile(`\$[^$\n]*?\$|\\\([^\)]*?\\\)`)
 	protectedText = latexInlineRe.ReplaceAllStringFunc(protectedText, func(match string) string {
 		return t.preserveManager.Protect(match)
 	})
@@ -469,6 +469,25 @@ func (t *ThreeStepTranslator) applyProtection(text string) (string, error) {
 			match, _ = referencesRe2.FindStringMatch(protectedText)
 		}
 	}
+
+	// 保护预处理标记的内容（重新添加）
+	// 保护 TABLE_PROTECTED 标记的内容
+	tableProtectedRe := regexp.MustCompile(`(?s)<!-- TABLE_PROTECTED -->.*?<!-- /TABLE_PROTECTED -->`)
+	protectedText = tableProtectedRe.ReplaceAllStringFunc(protectedText, func(match string) string {
+		return t.preserveManager.Protect(match)
+	})
+
+	// 保护 REFERENCES_PROTECTED 标记的内容
+	referencesProtectedRe := regexp.MustCompile(`(?s)<!-- REFERENCES_PROTECTED -->.*?<!-- /REFERENCES_PROTECTED -->`)
+	protectedText = referencesProtectedRe.ReplaceAllStringFunc(protectedText, func(match string) string {
+		return t.preserveManager.Protect(match)
+	})
+
+	// 保护其他自定义保护标记
+	customProtectedRe := regexp.MustCompile(`(?s)<!-- [A-Z_]+_PROTECTED -->.*?<!-- /[A-Z_]+_PROTECTED -->`)
+	protectedText = customProtectedRe.ReplaceAllStringFunc(protectedText, func(match string) string {
+		return t.preserveManager.Protect(match)
+	})
 
 	return protectedText, nil
 }

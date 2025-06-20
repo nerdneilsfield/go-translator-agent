@@ -172,9 +172,6 @@ func performSingleTranslation(provider translation.TranslationProvider, text, so
 
 	// 显示结果
 	fmt.Printf("Translated Text: %s\n", resp.Text)
-	if resp.Model != "" {
-		fmt.Printf("Model: %s\n", resp.Model)
-	}
 	if resp.TokensIn > 0 || resp.TokensOut > 0 {
 		fmt.Printf("Tokens: %d in, %d out\n", resp.TokensIn, resp.TokensOut)
 	}
@@ -201,10 +198,10 @@ func performThreeStepTranslation(text, sourceLang, targetLang string) {
 		log.Fatal("OPENAI_API_KEY environment variable not set")
 	}
 
-	// 创建OpenAI LLM客户端（使用官方 SDK）
+	// 创建OpenAI provider
 	config := openai.DefaultConfigV2()
 	config.APIKey = apiKey
-	llmClient := openai.NewLLMClientV2(config)
+	provider := openai.NewV2(config)
 
 	// 创建翻译配置
 	translationConfig := &translation.Config{
@@ -215,85 +212,49 @@ func performThreeStepTranslation(text, sourceLang, targetLang string) {
 		Steps: []translation.StepConfig{
 			{
 				Name:        "initial_translation",
+				Provider:    "openai",
 				Model:       "gpt-3.5-turbo",
 				Temperature: 0.3,
 				MaxTokens:   2048,
-				Prompt: fmt.Sprintf(`Translate the following %s text to %s. 
-Maintain the original meaning, tone, and style as much as possible.
-
-Text to translate:
-{{text}}`, sourceLang, targetLang),
-				SystemRole: "You are a professional translator.",
+				AdditionalNotes: "You are a professional translator. Maintain the original meaning, tone, and style as much as possible.",
+				IsLLM:      true,
 			},
 			{
 				Name:        "reflection",
+				Provider:    "openai",
 				Model:       "gpt-3.5-turbo",
 				Temperature: 0.1,
 				MaxTokens:   1024,
-				Prompt: fmt.Sprintf(`Review the following translation from %s to %s.
-Identify any issues with accuracy, fluency, cultural appropriateness, or style.
-
-Original text:
-{{original_text}}
-
-Translation:
-{{translation}}
-
-Please provide specific feedback on what could be improved.`, sourceLang, targetLang),
-				SystemRole: "You are a translation quality reviewer.",
+				AdditionalNotes: "You are a translation quality reviewer. Identify any issues with accuracy, fluency, cultural appropriateness, or style.",
+				IsLLM:      true,
 			},
 			{
 				Name:        "improvement",
+				Provider:    "openai",
 				Model:       "gpt-3.5-turbo",
 				Temperature: 0.3,
 				MaxTokens:   2048,
-				Prompt: fmt.Sprintf(`Based on the feedback provided, improve the following translation from %s to %s.
-
-Original text:
-{{original_text}}
-
-Current translation:
-{{translation}}
-
-Feedback:
-{{feedback}}
-
-Please provide an improved translation that addresses the feedback.`, sourceLang, targetLang),
-				SystemRole: "You are a professional translator focusing on quality improvement.",
+				AdditionalNotes: "You are a professional translator focusing on quality improvement. Provide an improved translation that addresses the feedback.",
+				IsLLM:      true,
 			},
 		},
 	}
 
 	// 创建翻译服务
 	translator, err := translation.New(translationConfig,
-		translation.WithLLMClient(llmClient),
+		translation.WithSingleProvider("openai", provider),
 	)
 	if err != nil {
 		log.Fatalf("Failed to create translator: %v", err)
 	}
 
 	// 执行翻译
-	req := &translation.Request{
-		Text: text,
-	}
-
-	resp, err := translator.Translate(ctx, req)
+	resp, err := translator.TranslateText(ctx, text)
 	if err != nil {
 		log.Fatalf("Translation failed: %v", err)
 	}
 
-	// 显示每个步骤的结果
-	for i, step := range resp.Steps {
-		fmt.Printf("Step %d - %s:\n", i+1, step.Name)
-		fmt.Printf("  Output: %s\n", step.Output)
-		if step.TokensIn > 0 || step.TokensOut > 0 {
-			fmt.Printf("  Tokens: %d in, %d out\n", step.TokensIn, step.TokensOut)
-		}
-		fmt.Printf("  Duration: %v\n\n", step.Duration)
-	}
-
-	fmt.Printf("Final Translation: %s\n", resp.Text)
-	fmt.Printf("Total Duration: %v\n", resp.Metrics.Duration)
+	fmt.Printf("Final Translation: %s\n", resp)
 }
 
 // showCapabilities 显示提供商能力
