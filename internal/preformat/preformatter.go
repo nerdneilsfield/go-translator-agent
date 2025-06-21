@@ -238,24 +238,62 @@ func (pf *PreFormatter) convertBareLinks(content string) string {
 // separateReferences 分离引用文献
 func (pf *PreFormatter) separateReferences(content string) string {
 	// 查找REFERENCES部分 - 使用更灵活的匹配
-	refPattern := regexp.MustCompile(`(?is)#\s*REFERENCES\s*\n(.*?)(?:\n*$)`)
-
-	result := refPattern.ReplaceAllStringFunc(content, func(match string) string {
-		parts := refPattern.FindStringSubmatch(match)
-		if len(parts) >= 2 {
-			referencesContent := parts[1]
-
-			// 分离各个文献
-			separated := pf.separateIndividualReferences(referencesContent)
-
-			// 保护整个引用部分
-			return fmt.Sprintf("# REFERENCES\n\n<!-- REFERENCES_PROTECTED -->\n%s\n<!-- /REFERENCES_PROTECTED -->\n", separated)
+	// 支持各种标题级别 (#, ##, ###等) 和不同的大小写/拼写变体
+	// 使用分步处理，因为Go的regexp不支持lookahead
+	lines := strings.Split(content, "\n")
+	inReferences := false
+	var result strings.Builder
+	var referencesContent strings.Builder
+	var referencesHeading string
+	
+	refHeadingPattern := regexp.MustCompile(`(?i)^(#+)\s*(references?|bibliography|参考文献)\s*$`)
+	nextHeadingPattern := regexp.MustCompile(`^#+\s`)
+	
+	for i, line := range lines {
+		if !inReferences {
+			// Check if this is a references heading
+			if matches := refHeadingPattern.FindStringSubmatch(line); matches != nil {
+				inReferences = true
+				referencesHeading = line
+				referencesContent.Reset()
+			} else {
+				result.WriteString(line)
+				if i < len(lines)-1 {
+					result.WriteString("\n")
+				}
+			}
+		} else {
+			// We're in references section
+			// Check if this is a new heading (end of references)
+			if nextHeadingPattern.MatchString(line) {
+				// End of references section, write protected content
+				separated := pf.separateIndividualReferences(referencesContent.String())
+				result.WriteString(fmt.Sprintf("%s\n\n<!-- REFERENCES_PROTECTED -->\n%s\n<!-- /REFERENCES_PROTECTED -->\n", referencesHeading, separated))
+				
+				// Write the current line (new section heading)
+				result.WriteString(line)
+				if i < len(lines)-1 {
+					result.WriteString("\n")
+				}
+				inReferences = false
+			} else {
+				// Still in references section
+				if referencesContent.Len() > 0 {
+					referencesContent.WriteString("\n")
+				}
+				referencesContent.WriteString(line)
+			}
 		}
-		return match
-	})
-
+	}
+	
+	// Handle case where references is the last section
+	if inReferences && referencesContent.Len() > 0 {
+		separated := pf.separateIndividualReferences(referencesContent.String())
+		result.WriteString(fmt.Sprintf("%s\n\n<!-- REFERENCES_PROTECTED -->\n%s\n<!-- /REFERENCES_PROTECTED -->", referencesHeading, separated))
+	}
+	
 	pf.logger.Debug("separated references")
-	return result
+	return result.String()
 }
 
 // separateIndividualReferences 分离单个文献条目
