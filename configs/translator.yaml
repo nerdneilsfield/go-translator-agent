@@ -1,0 +1,553 @@
+# Go Translator Agent 配置文件
+# 完全基于 internal/config/config.go 中的 Config 结构体
+
+# 基本语言设置
+source_lang: "English"
+target_lang: "Chinese"
+country: "China"
+
+# 日志设置
+log_level: "info"                      # 基础日志级别: trace/debug/info/warn/error
+enable_detailed_log: false             # 是否启用详细日志（包含完整输入输出）
+console_log_level: "info"              # 控制台日志级别
+normal_log_file: ""                    # 普通日志文件路径（空表示不输出到文件）
+detailed_log_file: "logs/detailed.log" # 详细日志文件路径
+
+# 网络重试设置（所有网络providers自动应用）
+# 注意：以下配置会被各个模型的具体重试配置覆盖
+# 双层重试机制：
+# 1. 网络错误快速重试（毫秒级，用于瞬时网络故障）
+# 2. 总体重试（秒级，用于持续性问题）
+network_retry:
+  max_retries: 3                       # 总体最大重试次数
+  network_max_retries: 5               # 网络错误专用最大重试次数
+  initial_delay: "1s"                  # 总体重试初始延迟
+  max_delay: "30s"                     # 总体重试最大延迟
+  backoff_factor: 2.0                  # 指数退避因子
+  network_initial_delay: "100ms"       # 网络重试初始延迟
+  network_max_delay: "5s"              # 网络重试最大延迟
+
+# 默认模型设置
+default_model_name: "gpt-3.5-turbo"
+
+# 活跃步骤集
+active_step_set: "professional"
+
+# 性能和并发设置
+max_tokens_per_chunk: 2000
+concurrency: 4
+html_concurrency: 2
+epub_concurrency: 5
+
+# 超时设置
+request_timeout: 300
+translation_timeout: 1800
+auto_save_interval: 300
+
+# 分块设置
+min_split_size: 100
+max_split_size: 1000
+chunk_size: 1000
+
+# 智能节点分割设置
+smart_node_splitting:
+  enable_smart_splitting: false        # 是否启用智能分割（默认关闭）
+  max_node_size_threshold: 1500        # 超过这个阈值才进行分割（字符数）
+  min_split_size: 500                  # 分割后每部分的最小大小
+  max_split_size: 1000                 # 分割后每部分的最大大小
+  preserve_paragraphs: true            # 是否保持段落完整性
+  preserve_sentences: true             # 是否保持句子完整性
+  overlap_ratio: 0.1                   # 重叠比例（0.0-0.3）
+
+# 重试设置
+retry_attempts: 3
+max_retries: 3
+retry_failed_parts: true
+
+# 缓存设置
+use_cache: true
+cache_dir: ""
+
+# 调试设置
+debug: false
+save_debug_info: false
+keep_intermediate_files: false
+filter_reasoning: true
+
+# 内容处理设置
+preserve_math: true
+translate_figure_captions: true
+
+# Markdown 后处理设置
+post_process_markdown: true
+fix_math_formulas: true
+fix_table_format: true
+fix_mixed_content: true
+fix_picture: true
+
+# 格式修复设置
+enable_format_fix: true
+format_fix_interactive: true
+pre_translation_fix: false
+post_translation_fix: false
+use_external_tools: true
+format_fix_markdown: true
+format_fix_text: true
+format_fix_html: true
+format_fix_epub: true
+
+# 翻译后处理设置
+enable_post_processing: true
+glossary_path: "configs/glossary_example.yaml"
+content_protection: true
+terminology_consistency: true
+mixed_language_spacing: true
+machine_translation_cleanup: true
+
+# 货币设置
+target_currency: "USD"
+usd_rmb_rate: 7.4
+
+# 统计配置
+enable_stats: true                          # 是否启用Provider性能统计
+stats_db_path: ""                            # 统计数据库路径（空表示使用cache目录默认路径）
+stats_save_interval: 300                    # 自动保存间隔（秒）
+show_stats_table: true                      # 翻译完成后显示统计表格
+
+# 元数据
+metadata: {}
+
+# 模型配置
+models:
+  gpt-3.5-turbo:
+    name: "gpt-3.5-turbo"
+    model_id: "gpt-3.5-turbo"
+    api_type: "openai"
+    base_url: ""
+    key: "sk-test-dummy-key"
+    max_output_tokens: 4096
+    max_input_tokens: 4096
+    temperature: 0.7
+    input_token_price: 0.5
+    output_token_price: 1.5
+    price_unit: "USD"
+    is_reasoning: false
+    is_llm: true
+
+  gpt-4o:
+    name: "gpt-4o"
+    model_id: "gpt-4o"
+    api_type: "openai"
+    base_url: ""
+    key: "sk-test-dummy-key"
+    max_output_tokens: 8192
+    max_input_tokens: 8192
+    temperature: 0.7
+    input_token_price: 2.5
+    output_token_price: 10
+    price_unit: "USD"
+    is_reasoning: false
+    is_llm: true
+
+  gpt-4.1-nano:
+    name: "openai/gpt-4.1-nano"
+    model_id: "openai/gpt-4.1-nano"
+    api_type: "openai"
+    base_url: ""
+    key: ""
+    max_output_tokens: 8192
+    max_input_tokens: 8192
+    temperature: 0.7
+    input_token_price: 1.0
+    output_token_price: 3.0
+    price_unit: "USD"
+    is_reasoning: false
+    is_llm: true
+
+  o1-preview:
+    name: "o1-preview"
+    model_id: "o1-preview"
+    api_type: "openai"
+    base_url: ""
+    key: ""
+    max_output_tokens: 32768
+    max_input_tokens: 128000
+    temperature: 1
+    input_token_price: 15
+    output_token_price: 60
+    price_unit: "USD"
+    is_reasoning: true
+    is_llm: true
+
+  o1-mini:
+    name: "o1-mini"
+    model_id: "o1-mini"
+    api_type: "openai"
+    base_url: ""
+    key: ""
+    max_output_tokens: 65536
+    max_input_tokens: 128000
+    temperature: 1
+    input_token_price: 3
+    output_token_price: 12
+    price_unit: "USD"
+    is_reasoning: true
+    is_llm: true
+
+  deepseek-r1:
+    name: "deepseek-r1"
+    model_id: "deepseek-r1"
+    api_type: "openai"
+    base_url: "https://api.deepseek.com/v1"
+    key: ""
+    max_output_tokens: 8192
+    max_input_tokens: 32768
+    temperature: 0.7
+    input_token_price: 0.14
+    output_token_price: 2.19
+    price_unit: "USD"
+    is_reasoning: true
+    is_llm: true
+    reasoning_tags: ["<think>", "</think>"]
+
+  qwq-32b:
+    name: "qwq-32b"
+    model_id: "qwq-32b-preview"
+    api_type: "openai"
+    base_url: ""
+    key: ""
+    max_output_tokens: 32768
+    max_input_tokens: 32768
+    temperature: 0.7
+    is_reasoning: true
+    is_llm: true
+    reasoning_tags: ["<think>", "</think>"]
+
+  qwen-plus:
+    name: "qwen-plus"
+    model_id: "qwen-plus"
+    api_type: "openai"
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    key: ""
+    max_output_tokens: 8192
+    max_input_tokens: 8192
+    temperature: 0.7
+    is_reasoning: false
+    is_llm: true
+
+  claude-3-opus:
+    name: "claude-3-opus"
+    model_id: "claude-3-opus-20240229"
+    api_type: "anthropic"
+    base_url: ""
+    key: ""
+    max_output_tokens: 4096
+    max_input_tokens: 4096
+    temperature: 0.7
+    is_reasoning: false
+    is_llm: true
+
+  claude-3-sonnet:
+    name: "claude-3-sonnet"
+    model_id: "claude-3-sonnet-20240229"
+    api_type: "anthropic"
+    base_url: ""
+    key: ""
+    max_output_tokens: 4096
+    max_input_tokens: 4096
+    temperature: 0.7
+    is_reasoning: false
+    is_llm: true
+
+  mistral-large:
+    name: "mistral-large"
+    model_id: "mistral-large-latest"
+    api_type: "mistral"
+    base_url: ""
+    key: ""
+    max_output_tokens: 8192
+    max_input_tokens: 8192
+    temperature: 0.7
+    is_reasoning: false
+    is_llm: true
+
+  # 专业翻译服务配置
+  deepl:
+    name: "deepl"
+    model_id: "deepl"
+    api_type: "deepl"
+    base_url: "https://api.deepl.com/v2"
+    key: "test-key-for-demonstration"
+    max_output_tokens: 130000
+    max_input_tokens: 130000
+    temperature: 0
+    input_token_price: 0
+    output_token_price: 0
+    price_unit: "USD"
+    is_reasoning: false
+    is_llm: false
+
+  deeplx:
+    name: "deeplx"
+    model_id: "deeplx"
+    api_type: "deeplx"
+    base_url: "http://localhost:1188/translate"
+    key: ""
+    max_output_tokens: 5000
+    max_input_tokens: 5000
+    temperature: 0
+    input_token_price: 0
+    output_token_price: 0
+    price_unit: "USD"
+    is_reasoning: false
+    is_llm: false
+
+  google-translate:
+    name: "google-translate"
+    model_id: "google-translate"
+    api_type: "google"
+    base_url: "https://translation.googleapis.com/language/translate/v2"
+    key: ""
+    max_output_tokens: 5000
+    max_input_tokens: 5000
+    temperature: 0
+    input_token_price: 0
+    output_token_price: 0
+    price_unit: "USD"
+    is_reasoning: false
+    is_llm: false
+
+  libretranslate:
+    name: "libretranslate"
+    model_id: "libretranslate"
+    api_type: "libretranslate"
+    base_url: "https://libretranslate.com"
+    key: ""
+    max_output_tokens: 5000
+    max_input_tokens: 5000
+    temperature: 0
+    input_token_price: 0
+    output_token_price: 0
+    price_unit: "USD"
+    is_reasoning: false
+    is_llm: false
+
+  # Ollama 本地模型配置
+  ollama-llama2:
+    name: "ollama-llama2"
+    model_id: "llama2"
+    api_type: "ollama"
+    base_url: "http://localhost:11434"
+    key: ""
+    max_output_tokens: 4096
+    max_input_tokens: 8192
+    temperature: 0.3
+    input_token_price: 0
+    output_token_price: 0
+    price_unit: "USD"
+    is_reasoning: false
+    is_llm: true
+
+  ollama-mistral:
+    name: "ollama-mistral"
+    model_id: "mistral"
+    api_type: "ollama"
+    base_url: "http://localhost:11434"
+    key: ""
+    max_output_tokens: 4096
+    max_input_tokens: 8192
+    temperature: 0.3
+    input_token_price: 0
+    output_token_price: 0
+    price_unit: "USD"
+    is_reasoning: false
+    is_llm: true
+
+  ollama-codellama:
+    name: "ollama-codellama"
+    model_id: "codellama"
+    api_type: "ollama"
+    base_url: "http://localhost:11434"
+    key: ""
+    max_output_tokens: 4096
+    max_input_tokens: 8192
+    temperature: 0.2
+    input_token_price: 0
+    output_token_price: 0
+    price_unit: "USD"
+    is_reasoning: false
+    is_llm: true
+
+# 步骤集配置（新格式 - 使用内置模板）
+step_sets:
+  professional:
+    id: "professional"
+    name: "专业翻译"
+    description: "使用专业翻译服务加AI优化"
+    steps:
+      - name: "initial_translation"
+        provider: "deepl"
+        model_name: "deepl"
+        temperature: 0
+        max_tokens: 4096
+      - name: "reflection"
+        provider: "openai"
+        model_name: "gpt-4o"
+        temperature: 0.2
+        max_tokens: 3000
+        additional_notes: "Pay special attention to technical terminology and cultural nuances."
+      - name: "improvement"
+        provider: "openai"
+        model_name: "gpt-4o"
+        temperature: 0.3
+        max_tokens: 4096
+        additional_notes: "Ensure the final translation sounds natural and professional."
+    fast_mode_threshold: 500
+
+  test_invalid:
+    id: "test_invalid"
+    name: "测试无效配置"
+    description: "第二步使用非LLM模型测试验证"
+    steps:
+      - name: "initial_translation"
+        provider: "deepl"
+        model_name: "deepl"
+        temperature: 0
+        max_tokens: 4096
+      - name: "invalid_review"
+        provider: "deepl"
+        model_name: "deepl"  # 这应该失败，因为第二步必须使用LLM
+        temperature: 0
+        max_tokens: 3000
+    fast_mode_threshold: 100
+
+  test_raw:
+    id: "test_raw"
+    name: "测试raw选项"
+    description: "所有步骤都使用raw/none进行测试"
+    steps:
+      - name: "initial_translation"
+        provider: "raw"
+        model_name: "raw"  # 第一步也使用raw进行测试
+        temperature: 0
+        max_tokens: 0
+      - name: "raw_review"
+        provider: "raw"
+        model_name: "raw"  # 使用raw直接返回原文
+        temperature: 0
+        max_tokens: 0
+      - name: "none_polish"
+        provider: "none"
+        model_name: "none"  # 使用none跳过此步骤
+        temperature: 0
+        max_tokens: 0
+    fast_mode_threshold: 100
+
+  test_invalid_raw:
+    id: "test_invalid_raw"
+    name: "测试无效raw配置"
+    description: "第一步使用raw应该失败"
+    steps:
+      - name: "invalid_initial"
+        provider: "raw"
+        model_name: "raw"  # 这应该失败，第一步不能使用raw
+        temperature: 0
+        max_tokens: 0
+    fast_mode_threshold: 100
+
+  multi_engine:
+    id: "multi_engine"
+    name: "多引擎对比翻译"
+    description: "使用多个翻译引擎进行对比"
+    steps:
+      - name: "deepl_translation"
+        provider: "deepl"
+        model_name: "deepl"
+        temperature: 0
+      - name: "google_translation"
+        provider: "google"
+        model_name: "google-translate"
+        temperature: 0
+      - name: "comparison"
+        provider: "openai"
+        model_name: "gpt-4o"
+        temperature: 0.2
+        max_tokens: 4096
+        additional_notes: "Compare and synthesize the best translation from multiple engines, combining their strengths."
+    fast_mode_threshold: 1000
+
+  # LLM-based translation using built-in templates
+  llm_translation:
+    id: "llm_translation"
+    name: "LLM Complete Translation"
+    description: "Full three-step translation using LLM models with built-in templates"
+    steps:
+      - name: "initial_translation"
+        provider: "openai"
+        model_name: "gpt-4o"
+        temperature: 0.3
+        max_tokens: 4096
+        additional_notes: "Pay careful attention to technical terminology and preserve all formatting."
+      - name: "reflection"
+        provider: "openai"
+        model_name: "gpt-4o"
+        temperature: 0.2
+        max_tokens: 3000
+        additional_notes: "Focus on accuracy, fluency, terminology consistency, and formatting preservation."
+      - name: "improvement"
+        provider: "openai"
+        model_name: "gpt-4o"
+        temperature: 0.3
+        max_tokens: 4096
+        additional_notes: "Create a polished final version that addresses all identified issues."
+    fast_mode_threshold: 300
+
+  test_nano:
+    id: "test_nano"
+    name: "测试nano模型"
+    description: "使用gpt-4.1-nano进行测试翻译"
+    steps:
+      - name: "initial_translation"
+        provider: "openai"
+        model_name: "gpt-4.1-nano"
+        temperature: 0
+        max_tokens: 8192
+        additional_notes: "Use simple and direct translation approach."
+
+  ollama_local:
+    id: "ollama_local"
+    name: "Ollama 本地翻译"
+    description: "使用本地Ollama模型进行完整的三步翻译流程"
+    steps:
+      - name: "initial_translation"
+        provider: "ollama"
+        model_name: "ollama-llama2"
+        temperature: 0.3
+        max_tokens: 4096
+        additional_notes: "Translate accurately while preserving formatting and technical terms."
+      - name: "reflection"
+        provider: "ollama"
+        model_name: "ollama-mistral"
+        temperature: 0.2
+        max_tokens: 3000
+        additional_notes: "Review the translation for accuracy, fluency, and cultural appropriateness."
+      - name: "improvement"
+        provider: "ollama"
+        model_name: "ollama-llama2"
+        temperature: 0.3
+        max_tokens: 4096
+        additional_notes: "Polish the translation to sound natural and professional."
+    fast_mode_threshold: 500
+
+  ollama_fast:
+    id: "ollama_fast"
+    name: "Ollama 快速翻译"
+    description: "使用单一Ollama模型的快速翻译"
+    steps:
+      - name: "direct_translation"
+        provider: "ollama"
+        model_name: "ollama-llama2"
+        temperature: 0.3
+        max_tokens: 4096
+        additional_notes: "Provide a direct, accurate translation."
+    fast_mode_threshold: 100

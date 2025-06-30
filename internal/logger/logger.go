@@ -12,8 +12,15 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// TraceLevel 定义 TRACE 日志级别，比 DEBUG 更详细
+const TraceLevel zapcore.Level = -2
+
 func NewLogger(debug bool) *zap.Logger {
-	return NewLoggerWithPath(debug, "")
+	return NewLoggerWithPath(debug, false, "")
+}
+
+func NewLoggerWithVerbose(debug, verbose bool) *zap.Logger {
+	return NewLoggerWithPath(debug, verbose, "")
 }
 
 // 你的回调函数类型
@@ -130,8 +137,8 @@ func myCustomLogCallback(entry zapcore.Entry, fields []zapcore.Field) {
 	fmt.Println("---")
 }
 
-// NewLogger 创建一个新的日志记录器
-func NewLoggerWithPath(debug bool, outputPath string) *zap.Logger {
+// NewLoggerWithPath 创建一个新的日志记录器
+func NewLoggerWithPath(debug, verbose bool, outputPath string) *zap.Logger {
 	// 控制台输出配置（彩色）
 	consoleConfig := zap.NewDevelopmentEncoderConfig()
 	consoleConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
@@ -145,6 +152,9 @@ func NewLoggerWithPath(debug bool, outputPath string) *zap.Logger {
 	// 设置日志级别
 	level := zapcore.InfoLevel
 	if debug {
+		level = zapcore.DebugLevel
+	} else if verbose {
+		// verbose 模式显示 DEBUG 级别，但只在控制台输出时
 		level = zapcore.DebugLevel
 	}
 
@@ -166,13 +176,13 @@ func NewLoggerWithPath(debug bool, outputPath string) *zap.Logger {
 	var fileWriter zapcore.WriteSyncer
 	if enableFileOutput {
 		dir := filepath.Dir(outputPath)
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			// 使用一个临时的基本logger来记录这个致命错误，因为我们的完整logger还没建好
 			tempLogger, _ := zap.NewProduction()
 			tempLogger.Fatal("创建日志输出目录失败", zap.Error(err))
 			// panic(err) // Fatal 已经会 os.Exit(1)
 		}
-		file, err := os.OpenFile(outputPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		file, err := os.OpenFile(outputPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666)
 		if err != nil {
 			tempLogger, _ := zap.NewProduction()
 			tempLogger.Fatal("打开日志输出文件失败", zap.Error(err))
@@ -183,26 +193,35 @@ func NewLoggerWithPath(debug bool, outputPath string) *zap.Logger {
 
 	// 创建基础的 cores (控制台和文件)
 	var baseCores []zapcore.Core
-	baseCores = append(baseCores, zapcore.NewCore(consoleEncoder, consoleWriter, level))
+
+	// 控制台输出级别
+	consoleLevel := level
+
+	// 文件输出级别（verbose 模式下文件仍然只记录 INFO 及以上）
+	fileLevel := zapcore.InfoLevel
+	if debug {
+		fileLevel = zapcore.DebugLevel
+	}
+
+	baseCores = append(baseCores, zapcore.NewCore(consoleEncoder, consoleWriter, consoleLevel))
 	if enableFileOutput {
-		baseCores = append(baseCores, zapcore.NewCore(fileEncoder, fileWriter, level))
+		baseCores = append(baseCores, zapcore.NewCore(fileEncoder, fileWriter, fileLevel))
 	}
 	underlyingCore := zapcore.NewTee(baseCores...)
 
-	// 用 CallbackCore 包装 underlyingCore
-	callbackEnabledCore := NewCallbackCore(underlyingCore, myCustomLogCallback)
+	// 检查是否需要包装CallbackCore（默认禁用以避免重复输出）
+	// 如果需要启用debug回调，可以通过环境变量控制
+	if os.Getenv("TRANSLATOR_DEBUG_CALLBACK") == "true" {
+		callbackEnabledCore := NewCallbackCore(underlyingCore, myCustomLogCallback)
+		return zap.New(callbackEnabledCore, zap.AddCaller())
+	}
 
-	// 创建 logger
-	// zap.AddCaller() 会在 CallbackCore 外部添加调用者信息，
-	// 如果你希望回调函数也能收到已经包含调用者信息的 Entry，这是可以的。
-	// 如果你想在 CallbackCore 内部控制调用者信息，可能会更复杂。
-	// zap.AddCallerSkip(skip) 也可以在这里调整，以确保回调收到的 Entry.Caller 是你期望的。
-	// 如果你的 CallbackCore.Write 也调用了 cc.Core.Write，那么 AddCaller 的效果会作用于最终输出。
-	return zap.New(callbackEnabledCore, zap.AddCaller() /*, zap.AddStacktrace(zapcore.ErrorLevel) */)
+	return zap.New(underlyingCore, zap.AddCaller())
 }
 
 // Logger 接口定义了日志记录功能
 type Logger interface {
+	Trace(msg string, fields ...zapcore.Field) // 新增：详细日志级别
 	Debug(msg string, fields ...zapcore.Field)
 	Info(msg string, fields ...zapcore.Field)
 	Warn(msg string, fields ...zapcore.Field)
@@ -220,6 +239,20 @@ type ZapLogger struct {
 func NewZapLogger(debug bool) *ZapLogger {
 	return &ZapLogger{
 		logger: NewLogger(debug),
+	}
+}
+
+// NewZapLoggerWithVerbose 创建支持 verbose 模式的 ZapLogger 实例
+func NewZapLoggerWithVerbose(debug, verbose bool) *ZapLogger {
+	return &ZapLogger{
+		logger: NewLoggerWithVerbose(debug, verbose),
+	}
+}
+
+// Trace 记录详细级别的日志
+func (l *ZapLogger) Trace(msg string, fields ...zapcore.Field) {
+	if ce := l.logger.Check(TraceLevel, msg); ce != nil {
+		ce.Write(fields...)
 	}
 }
 
@@ -258,4 +291,123 @@ func (l *ZapLogger) With(fields ...zapcore.Field) Logger {
 // GetZapLogger 返回底层的 zap.Logger
 func (l *ZapLogger) GetZapLogger() *zap.Logger {
 	return l.logger
+}
+
+// DetailedLogConfig 详细日志配置
+type DetailedLogConfig struct {
+	EnableDetailedLog bool   // 是否启用详细日志
+	LogLevel          string // 基础日志级别 (trace/debug/info/warn/error)
+	ConsoleLogLevel   string // 控制台日志级别
+	NormalLogFile     string // 普通日志文件路径
+	DetailedLogFile   string // 详细日志文件路径
+	Debug             bool   // 调试模式
+	Verbose           bool   // 详细模式
+}
+
+// NewDetailedLogger 创建支持详细日志的新Logger
+func NewDetailedLogger(config DetailedLogConfig) *ZapLogger {
+	logger := NewLoggerWithDetailedConfig(config)
+	return &ZapLogger{
+		logger: logger,
+	}
+}
+
+// NewLoggerWithDetailedConfig 根据详细配置创建日志记录器
+func NewLoggerWithDetailedConfig(config DetailedLogConfig) *zap.Logger {
+	// 解析日志级别
+	parseLevel := func(levelStr string) zapcore.Level {
+		switch strings.ToLower(levelStr) {
+		case "trace":
+			return TraceLevel
+		case "debug":
+			return zapcore.DebugLevel
+		case "info":
+			return zapcore.InfoLevel
+		case "warn", "warning":
+			return zapcore.WarnLevel
+		case "error":
+			return zapcore.ErrorLevel
+		default:
+			return zapcore.InfoLevel
+		}
+	}
+
+	// 控制台配置（彩色）
+	consoleConfig := zap.NewDevelopmentEncoderConfig()
+	consoleConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	consoleConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	consoleConfig.EncodeCaller = customCallerEncoder
+
+	// 文件配置（JSON）
+	fileConfig := zap.NewProductionEncoderConfig()
+	fileConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+
+	// 设置各层级日志级别
+	consoleLevel := parseLevel(config.ConsoleLogLevel)
+	if config.ConsoleLogLevel == "" {
+		consoleLevel = zapcore.InfoLevel // 控制台默认INFO级别
+	}
+
+	normalFileLevel := parseLevel(config.LogLevel)
+	if config.Debug {
+		normalFileLevel = zapcore.DebugLevel
+	} else if config.Verbose {
+		normalFileLevel = zapcore.DebugLevel
+	}
+
+	detailedFileLevel := TraceLevel // 详细日志文件包含所有级别
+
+	// 创建编码器
+	consoleEncoder := zapcore.NewConsoleEncoder(consoleConfig)
+	fileEncoder := zapcore.NewJSONEncoder(fileConfig)
+
+	// 创建输出目标
+	var cores []zapcore.Core
+
+	// 1. 控制台输出（确保不包含 TRACE 级别）
+	consoleWriter := zapcore.AddSync(os.Stdout)
+	// 如果控制台级别设置为 TRACE，提升到 DEBUG
+	actualConsoleLevel := consoleLevel
+	if consoleLevel == TraceLevel {
+		actualConsoleLevel = zapcore.DebugLevel
+	}
+	cores = append(cores, zapcore.NewCore(consoleEncoder, consoleWriter, actualConsoleLevel))
+
+	// 2. 普通日志文件
+	if config.NormalLogFile != "" {
+		if err := ensureDir(config.NormalLogFile); err == nil {
+			if normalFile, err := os.OpenFile(config.NormalLogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666); err == nil {
+				normalWriter := zapcore.AddSync(normalFile)
+				cores = append(cores, zapcore.NewCore(fileEncoder, normalWriter, normalFileLevel))
+			}
+		}
+	}
+
+	// 3. 详细日志文件（仅在启用详细日志时）
+	if config.EnableDetailedLog && config.DetailedLogFile != "" {
+		if err := ensureDir(config.DetailedLogFile); err == nil {
+			if detailedFile, err := os.OpenFile(config.DetailedLogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666); err == nil {
+				detailedWriter := zapcore.AddSync(detailedFile)
+				cores = append(cores, zapcore.NewCore(fileEncoder, detailedWriter, detailedFileLevel))
+			}
+		}
+	}
+
+	// 创建组合核心
+	core := zapcore.NewTee(cores...)
+
+	// 检查是否需要包装CallbackCore（默认禁用以避免重复输出）
+	// 如果需要启用debug回调，可以通过环境变量控制
+	if os.Getenv("TRANSLATOR_DEBUG_CALLBACK") == "true" {
+		callbackCore := NewCallbackCore(core, myCustomLogCallback)
+		return zap.New(callbackCore, zap.AddCaller())
+	}
+
+	return zap.New(core, zap.AddCaller())
+}
+
+// ensureDir 确保目录存在
+func ensureDir(filePath string) error {
+	dir := filepath.Dir(filePath)
+	return os.MkdirAll(dir, 0o755)
 }

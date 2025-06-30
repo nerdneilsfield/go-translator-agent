@@ -1,0 +1,243 @@
+# 词汇表示例 - 技术术语英译中
+source_lang: "English"
+target_lang: "Chinese"
+version: "1.0"
+
+# 术语列表
+terms:
+  # 高优先级技术术语
+  - source: "machine learning"
+    target: "机器学习"
+    pattern: "machine learning"
+    match_type: "exact"
+    case_sensitive: false
+    priority: 100
+    category: "ai_technology"
+    context: ["AI", "technology", "computer science"]
+    notes: "核心AI术语，必须统一翻译"
+    
+  - source: "artificial intelligence"
+    target: "人工智能"
+    pattern: "artificial intelligence|AI"
+    match_type: "regex"
+    case_sensitive: false
+    priority: 100
+    category: "ai_technology"
+    
+  - source: "deep learning"
+    target: "深度学习"
+    pattern: "deep learning"
+    match_type: "exact"
+    case_sensitive: false
+    priority: 95
+    category: "ai_technology"
+    
+  - source: "neural network"
+    target: "神经网络"
+    pattern: "neural networks?"
+    match_type: "regex"
+    case_sensitive: false
+    priority: 90
+    category: "ai_technology"
+    
+  - source: "natural language processing"
+    target: "自然语言处理"
+    pattern: "natural language processing|NLP"
+    match_type: "regex"
+    case_sensitive: false
+    priority: 90
+    category: "ai_technology"
+    
+  # 编程术语
+  - source: "API"
+    target: "API"
+    pattern: "API|Application Programming Interface"
+    match_type: "regex"
+    case_sensitive: false
+    priority: 80
+    category: "programming"
+    notes: "保持英文缩写"
+    
+  - source: "framework"
+    target: "框架"
+    pattern: "frameworks?"
+    match_type: "regex"
+    case_sensitive: false
+    priority: 70
+    category: "programming"
+    
+  - source: "algorithm"
+    target: "算法"
+    pattern: "algorithms?"
+    match_type: "regex"
+    case_sensitive: false
+    priority: 75
+    category: "programming"
+    
+  - source: "database"
+    target: "数据库"
+    pattern: "databases?"
+    match_type: "regex"
+    case_sensitive: false
+    priority: 70
+    category: "programming"
+    
+  # 数据科学术语
+  - source: "data science"
+    target: "数据科学"
+    pattern: "data science"
+    match_type: "exact"
+    case_sensitive: false
+    priority: 85
+    category: "data_science"
+    
+  - source: "big data"
+    target: "大数据"
+    pattern: "big data"
+    match_type: "exact"
+    case_sensitive: false
+    priority: 80
+    category: "data_science"
+    
+  - source: "data mining"
+    target: "数据挖掘"
+    pattern: "data mining"
+    match_type: "exact"
+    case_sensitive: false
+    priority: 75
+    category: "data_science"
+    
+  # 品牌名和专有名词（保持英文）
+  - source: "Google"
+    target: "Google"
+    pattern: "Google"
+    match_type: "exact"
+    case_sensitive: true
+    priority: 90
+    category: "brand"
+    notes: "品牌名保持英文"
+    
+  - source: "Microsoft"
+    target: "Microsoft"
+    pattern: "Microsoft"
+    match_type: "exact"
+    case_sensitive: true
+    priority: 90
+    category: "brand"
+    
+  - source: "Apple"
+    target: "Apple"
+    pattern: "Apple"
+    match_type: "exact"
+    case_sensitive: true
+    priority: 90
+    category: "brand"
+    
+  - source: "GitHub"
+    target: "GitHub"
+    pattern: "GitHub"
+    match_type: "exact"
+    case_sensitive: true
+    priority: 85
+    category: "brand"
+    
+  # 容易误翻译的术语
+  - source: "pipeline"
+    target: "流水线"
+    pattern: "pipelines?"
+    match_type: "regex"
+    case_sensitive: false
+    priority: 70
+    category: "technical"
+    context: ["data processing", "machine learning", "CI/CD"]
+    notes: "技术语境下翻译为流水线，而非管道"
+    
+  - source: "model"
+    target: "模型"
+    pattern: "models?"
+    match_type: "regex"
+    case_sensitive: false
+    priority: 75
+    category: "technical"
+    context: ["machine learning", "AI"]
+    
+  - source: "feature"
+    target: "特征"
+    pattern: "features?"
+    match_type: "regex"
+    case_sensitive: false
+    priority: 70
+    category: "technical"
+    context: ["machine learning", "data science"]
+    notes: "在ML语境下翻译为特征"
+    
+  # 避免翻译的技术术语
+  - source: "Docker"
+    target: "Docker"
+    pattern: "Docker"
+    match_type: "exact"
+    case_sensitive: true
+    priority: 85
+    category: "technology"
+    
+  - source: "Kubernetes"
+    target: "Kubernetes"
+    pattern: "Kubernetes|K8s"
+    match_type: "regex"
+    case_sensitive: true
+    priority: 85
+    category: "technology"
+    
+  - source: "HTTP"
+    target: "HTTP"
+    pattern: "HTTP|HTTPS"
+    match_type: "regex"
+    case_sensitive: true
+    priority: 80
+    category: "protocol"
+    
+  - source: "REST"
+    target: "REST"
+    pattern: "REST|RESTful"
+    match_type: "regex"
+    case_sensitive: true
+    priority: 80
+    category: "protocol"
+    
+  - source: "JSON"
+    target: "JSON"
+    pattern: "JSON"
+    match_type: "exact"
+    case_sensitive: true
+    priority: 80
+    category: "format"
+    
+  - source: "XML"
+    target: "XML"
+    pattern: "XML"
+    match_type: "exact"
+    case_sensitive: true
+    priority: 80
+    category: "format"
+
+# 按类别组织的术语
+categories:
+  ai_technology:
+    - source: "machine learning"
+      target: "机器学习"
+    - source: "artificial intelligence"
+      target: "人工智能"
+    - source: "deep learning"
+      target: "深度学习"
+      
+  programming:
+    - source: "API"
+      target: "API"
+    - source: "framework"
+      target: "框架"
+      
+  brand:
+    - source: "Google"
+      target: "Google"
+    - source: "Microsoft"
+      target: "Microsoft"
